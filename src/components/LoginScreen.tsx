@@ -39,7 +39,7 @@ export default function LoginScreen() {
       <div style={{ position: 'absolute', inset: 0, background: 'radial-gradient(ellipse at center,transparent 30%,rgba(0,0,0,0.45) 100%)', pointerEvents: 'none' }} />
       <div style={{ position: 'relative', zIndex: 1 }}>
         <div className="login-card">
-          <img src={logoImg} alt="Boswa CIB Logo" style={{ width: 90, height: 90, borderRadius: 16, objectFit: 'cover', marginBottom: 8 }} />
+          <img src={logoImg} alt="Boswa CIB Logo" style={{ width: 160, marginBottom: 12 }} />
           <div className="login-title">Boswa CIB</div>
           <div className="login-sub">School Management System</div>
           <div className="login-role">
