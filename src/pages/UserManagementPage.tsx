@@ -95,18 +95,71 @@ export default function UserManagementPage() {
     ));
   };
 
-  const handleEditUser = (u: UserRow) => {
-    let name = u.name, email = u.email, dept = u.dept;
+  const handleEditUser = async (u: UserRow) => {
+    let name = u.name, email = u.email, dept = u.dept, role = u.role;
     if (u.source === 'student') {
-      // Edit student record
+      // Load full student record for all fields
+      const { data: stu } = await supabase.from('students').select('*').eq('id', u.user_id).single();
+      if (!stu) { toast('Student not found', 'error'); return; }
+      let studentId = stu.student_id || '', gender = stu.gender || '', dob = stu.dob || '';
+      let mobile = stu.mobile || '', guardian = stu.guardian || '', programme = stu.programme || '';
+      let classId = stu.class_id || '', nationalId = stu.national_id || '', status = stu.status || 'active';
+      const programmes = db?.config?.programmes || [];
+      const classes = db?.classes || [];
       showModal('Edit Student: ' + u.name, (
         <div>
           <div className="form-row cols2">
             <div className="form-group"><label>Full Name</label><input className="form-input" defaultValue={name} onChange={e => name = e.target.value} /></div>
+            <div className="form-group"><label>Student ID</label><input className="form-input" defaultValue={studentId} onChange={e => studentId = e.target.value} /></div>
+          </div>
+          <div className="form-row cols2">
             <div className="form-group"><label>Email</label><input className="form-input" type="email" defaultValue={email} onChange={e => email = e.target.value} /></div>
+            <div className="form-group"><label>National ID</label><input className="form-input" defaultValue={nationalId} onChange={e => nationalId = e.target.value} /></div>
+          </div>
+          <div className="form-row cols2">
+            <div className="form-group"><label>Gender</label>
+              <select className="form-select" defaultValue={gender} onChange={e => gender = e.target.value}>
+                <option value="">— Select —</option>
+                <option value="Male">Male</option>
+                <option value="Female">Female</option>
+              </select>
+            </div>
+            <div className="form-group"><label>Date of Birth</label><input className="form-input" type="date" defaultValue={dob} onChange={e => dob = e.target.value} /></div>
+          </div>
+          <div className="form-row cols2">
+            <div className="form-group"><label>Mobile</label><input className="form-input" defaultValue={mobile} onChange={e => mobile = e.target.value} /></div>
+            <div className="form-group"><label>Guardian</label><input className="form-input" defaultValue={guardian} onChange={e => guardian = e.target.value} /></div>
+          </div>
+          <div className="form-row cols2">
+            <div className="form-group"><label>Programme</label>
+              <select className="form-select" defaultValue={programme} onChange={e => programme = e.target.value}>
+                <option value="">— Select —</option>
+                {programmes.map((p: any) => <option key={p.id} value={p.id}>{p.name}</option>)}
+              </select>
+            </div>
+            <div className="form-group"><label>Class</label>
+              <select className="form-select" defaultValue={classId} onChange={e => classId = e.target.value}>
+                <option value="">— Select —</option>
+                {classes.map((c: any) => <option key={c.id} value={c.id}>{c.name}</option>)}
+              </select>
+            </div>
+          </div>
+          <div className="form-row cols2">
+            <div className="form-group"><label>Status</label>
+              <select className="form-select" defaultValue={status} onChange={e => status = e.target.value}>
+                <option value="active">Active</option>
+                <option value="inactive">Inactive</option>
+                <option value="graduated">Graduated</option>
+                <option value="suspended">Suspended</option>
+              </select>
+            </div>
           </div>
           <button className="btn btn-primary" style={{ marginTop: 12 }} onClick={async () => {
-            const { error } = await supabase.from('students').update({ name, email }).eq('id', u.user_id);
+            const { error } = await supabase.from('students').update({
+              name, email, student_id: studentId, national_id: nationalId,
+              gender, dob: dob || null, mobile, guardian, programme: programme || null,
+              class_id: classId || null, status,
+            }).eq('id', u.user_id);
             if (error) { toast(error.message, 'error'); } else {
               toast('Student updated!', 'success'); closeModal(); loadUsers(); reloadDb();
             }
@@ -114,24 +167,45 @@ export default function UserManagementPage() {
         </div>
       ));
     } else {
-      // Edit auth user profile
+      // Load profile code
+      const { data: profile } = await supabase.from('profiles').select('code').eq('user_id', u.user_id).single();
+      let code = profile?.code || '';
       showModal('Edit User: ' + u.name, (
         <div>
           <div className="form-row cols2">
             <div className="form-group"><label>Full Name</label><input className="form-input" defaultValue={name} onChange={e => name = e.target.value} /></div>
             <div className="form-group"><label>Email</label><input className="form-input" type="email" defaultValue={email} onChange={e => email = e.target.value} /></div>
           </div>
-          <div className="form-group"><label>Department</label>
-            <select className="form-select" defaultValue={dept} onChange={e => dept = e.target.value}>
-              <option value="">— Select —</option>
-              {DEPARTMENTS.map(d => <option key={d} value={d}>{d}</option>)}
-            </select>
+          <div className="form-row cols2">
+            <div className="form-group"><label>Role</label>
+              <select className="form-select" defaultValue={role} onChange={e => role = e.target.value}>
+                <option value="admin">Admin</option>
+                <option value="hod">HOD</option>
+                <option value="hoy">HOY</option>
+                <option value="lecturer">Lecturer</option>
+                <option value="student">Student</option>
+              </select>
+            </div>
+            <div className="form-group"><label>Department</label>
+              <select className="form-select" defaultValue={dept} onChange={e => dept = e.target.value}>
+                <option value="">— Select —</option>
+                {DEPARTMENTS.map(d => <option key={d} value={d}>{d}</option>)}
+              </select>
+            </div>
+          </div>
+          <div className="form-row cols2">
+            <div className="form-group"><label>Staff Code</label><input className="form-input" defaultValue={code} onChange={e => code = e.target.value} /></div>
           </div>
           <button className="btn btn-primary" style={{ marginTop: 12 }} onClick={async () => {
-            const { error } = await supabase.from('profiles').update({ name, email, dept }).eq('user_id', u.user_id);
-            if (error) { toast(error.message, 'error'); } else {
-              toast('User updated!', 'success'); closeModal(); loadUsers(); reloadDb();
+            // Update profile
+            const { error: profErr } = await supabase.from('profiles').update({ name, email, dept, code }).eq('user_id', u.user_id);
+            if (profErr) { toast(profErr.message, 'error'); return; }
+            // Update role if changed
+            if (role !== u.role) {
+              const { error: roleErr } = await supabase.from('user_roles').update({ role: role as any }).eq('user_id', u.user_id);
+              if (roleErr) { toast(roleErr.message, 'error'); return; }
             }
+            toast('User updated!', 'success'); closeModal(); loadUsers(); reloadDb();
           }}>Save Changes</button>
         </div>
       ));
