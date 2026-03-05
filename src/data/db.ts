@@ -1,7 +1,8 @@
 export interface Student {
   id: string; studentId: string; name: string; gender: string; dob: string;
   mobile: string; classId: string; guardian: string; programme: string;
-  year: number; semester: number; status: string;
+  year: number; semester: number; status: string; email?: string;
+  progressionStatus?: string;
 }
 export interface User {
   id: string; username: string; password: string; role: string; name: string;
@@ -63,8 +64,8 @@ export interface StudentModuleOverride {
 
 export interface DB {
   config: {
-    schoolName: string; currentYear: number; currentSemester: number; currentTerm: number;
-    terms: Term[]; programmes: Programme[];
+    schoolName: string; currentYear: number; currentSemester: number;
+    programmes: Programme[];
   };
   departments: Department[];
   users: User[];
@@ -86,13 +87,7 @@ export function createInitialDB(): DB {
   const db: DB = {
     config: {
       schoolName: 'Boswa Culinary Institute of Botswana',
-      currentYear: 2026, currentSemester: 1, currentTerm: 1,
-      terms: [
-        { id: 't1', name: 'Term 1', semesterId: 1, startDate: '2025-07-07', endDate: '2025-09-19' },
-        { id: 't2', name: 'Term 2', semesterId: 1, startDate: '2025-09-22', endDate: '2025-12-05' },
-        { id: 't3', name: 'Term 3', semesterId: 2, startDate: '2026-01-12', endDate: '2026-03-27' },
-        { id: 't4', name: 'Term 4', semesterId: 2, startDate: '2026-04-07', endDate: '2026-06-19' },
-      ],
+      currentYear: 2026, currentSemester: 1,
       programmes: [
         { id: 'DIPL2023', name: 'Diploma in Culinary Arts', years: 3, semesters: 2, type: 'Diploma', startYear: 2023 },
         { id: 'DIPL2024', name: 'Diploma in Culinary Arts', years: 3, semesters: 2, type: 'Diploma', startYear: 2024 },
