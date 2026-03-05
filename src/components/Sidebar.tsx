@@ -70,7 +70,6 @@ function getNavConfig(role: string, db: any): NavSection[] {
         { id: 'exams', label: 'Exams', icon: 'fa-solid fa-file-pen' },
         { id: 'assignments', label: 'Assignments', icon: 'fa-solid fa-list-check' },
         { id: 'results', label: 'Input Results', icon: 'fa-solid fa-chart-line' },
-        { id: 'transcripts', label: 'Transcripts', icon: 'fa-solid fa-scroll' },
       ]},
     ],
     student: [

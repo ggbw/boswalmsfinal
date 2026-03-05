@@ -27,7 +27,6 @@ export default function UserManagementPage() {
 
   const loadUsers = useCallback(async () => {
     setLoading(true);
-    // Load auth users (staff)
     const { data: profiles } = await supabase.from('profiles').select('*');
     const { data: roles } = await supabase.from('user_roles').select('*');
     const roleMap: Record<string, string> = {};
@@ -41,7 +40,6 @@ export default function UserManagementPage() {
       source: 'auth' as const,
     }));
 
-    // Load students from students table
     const { data: students } = await supabase.from('students').select('*');
     const studentUsers: UserRow[] = (students || []).map((s: any) => ({
       user_id: s.id,
@@ -72,15 +70,9 @@ export default function UserManagementPage() {
       if (error) { toast(error.message, 'error'); } else { toast('Student deleted', 'success'); loadUsers(); reloadDb(); }
       return;
     }
-    const { data, error } = await supabase.functions.invoke('delete-user', {
-      body: { user_id: u.user_id },
-    });
-    if (error || data?.error) {
-      toast(data?.error || error?.message || 'Delete failed', 'error');
-    } else {
-      toast('User deleted', 'success');
-      loadUsers();
-    }
+    const { data, error } = await supabase.functions.invoke('delete-user', { body: { user_id: u.user_id } });
+    if (error || data?.error) { toast(data?.error || error?.message || 'Delete failed', 'error'); }
+    else { toast('User deleted', 'success'); loadUsers(); }
   };
 
   const handleResetPassword = (u: UserRow) => {
@@ -96,15 +88,54 @@ export default function UserManagementPage() {
           const { data, error } = await supabase.functions.invoke('reset-password', {
             body: { user_id: u.user_id, new_password: newPwd },
           });
-          if (error || data?.error) {
-            toast(data?.error || error?.message || 'Reset failed', 'error');
-          } else {
-            toast('Password reset successfully', 'success');
-            closeModal();
-          }
+          if (error || data?.error) { toast(data?.error || error?.message || 'Reset failed', 'error'); }
+          else { toast('Password reset successfully', 'success'); closeModal(); }
         }}>Reset Password</button>
       </div>
     ));
+  };
+
+  const handleEditUser = (u: UserRow) => {
+    let name = u.name, email = u.email, dept = u.dept;
+    if (u.source === 'student') {
+      // Edit student record
+      showModal('Edit Student: ' + u.name, (
+        <div>
+          <div className="form-row cols2">
+            <div className="form-group"><label>Full Name</label><input className="form-input" defaultValue={name} onChange={e => name = e.target.value} /></div>
+            <div className="form-group"><label>Email</label><input className="form-input" type="email" defaultValue={email} onChange={e => email = e.target.value} /></div>
+          </div>
+          <button className="btn btn-primary" style={{ marginTop: 12 }} onClick={async () => {
+            const { error } = await supabase.from('students').update({ name, email }).eq('id', u.user_id);
+            if (error) { toast(error.message, 'error'); } else {
+              toast('Student updated!', 'success'); closeModal(); loadUsers(); reloadDb();
+            }
+          }}>Save Changes</button>
+        </div>
+      ));
+    } else {
+      // Edit auth user profile
+      showModal('Edit User: ' + u.name, (
+        <div>
+          <div className="form-row cols2">
+            <div className="form-group"><label>Full Name</label><input className="form-input" defaultValue={name} onChange={e => name = e.target.value} /></div>
+            <div className="form-group"><label>Email</label><input className="form-input" type="email" defaultValue={email} onChange={e => email = e.target.value} /></div>
+          </div>
+          <div className="form-group"><label>Department</label>
+            <select className="form-select" defaultValue={dept} onChange={e => dept = e.target.value}>
+              <option value="">— Select —</option>
+              {DEPARTMENTS.map(d => <option key={d} value={d}>{d}</option>)}
+            </select>
+          </div>
+          <button className="btn btn-primary" style={{ marginTop: 12 }} onClick={async () => {
+            const { error } = await supabase.from('profiles').update({ name, email, dept }).eq('user_id', u.user_id);
+            if (error) { toast(error.message, 'error'); } else {
+              toast('User updated!', 'success'); closeModal(); loadUsers(); reloadDb();
+            }
+          }}>Save Changes</button>
+        </div>
+      ));
+    }
   };
 
   const handleCreate = () => {
@@ -140,34 +171,23 @@ export default function UserManagementPage() {
           const { data, error } = await supabase.functions.invoke('create-user', {
             body: { email, password, name, role, dept },
           });
-          if (error || data?.error) {
-            toast(data?.error || error?.message || 'Create failed', 'error');
-          } else {
-            toast('User created!', 'success');
-            closeModal();
-            loadUsers();
-            reloadDb();
-          }
+          if (error || data?.error) { toast(data?.error || error?.message || 'Create failed', 'error'); }
+          else { toast('User created!', 'success'); closeModal(); loadUsers(); reloadDb(); }
         }}>Create User</button>
       </div>
     ));
   };
 
-
-
-
   const handleSeedFaculty = async () => {
     if (!confirm('This will create 7 faculty accounts with default password BoswaStaff2026!. Continue?')) return;
     const { data, error } = await supabase.functions.invoke('seed-faculty');
-    if (error) {
-      toast('Seed failed: ' + error.message, 'error');
-    } else {
+    if (error) { toast('Seed failed: ' + error.message, 'error'); }
+    else {
       const results = data?.results || [];
       const created = results.filter((r: any) => r.status === 'created').length;
       const existing = results.filter((r: any) => r.status === 'already_exists').length;
       toast(`${created} created, ${existing} already existed`, 'success');
-      loadUsers();
-      reloadDb();
+      loadUsers(); reloadDb();
     }
   };
 
@@ -208,6 +228,7 @@ export default function UserManagementPage() {
                     <td>{u.dept || '—'}</td>
                     <td>
                       <div style={{ display: 'flex', gap: 4 }}>
+                        <button className="btn btn-outline btn-sm" onClick={() => handleEditUser(u)}>Edit</button>
                         {u.source === 'auth' && <button className="btn btn-outline btn-sm" onClick={() => handleResetPassword(u)}>Reset Pwd</button>}
                         <button className="btn btn-outline btn-sm" onClick={() => handleDelete(u)} style={{ color: '#f85149' }}>Delete</button>
                       </div>
