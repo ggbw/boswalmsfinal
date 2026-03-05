@@ -98,8 +98,14 @@ export function createInitialDB(): DB {
     departments: [
       { id: 'ADM', name: 'Administration', hod: 'Julia' },
       { id: 'ADMIN_OPS', name: 'Admin & Operations', hod: 'Malcom' },
+      { id: 'ACAD', name: 'Academics', hod: '' },
+      { id: 'COMP', name: 'Compliance', hod: '' },
+      { id: 'COMP_MON', name: 'Compliance & Monitoring', hod: '' },
       { id: 'CULH', name: 'Culinary & Hospitality', hod: 'Bonang Keabetswe' },
+      { id: 'CULHP', name: 'Culinary & Hospitality Practicals', hod: '' },
       { id: 'CULP', name: 'Culinary Practicals', hod: 'Poneso Kgakge' },
+      { id: 'MKTG', name: 'Marketing', hod: '' },
+      { id: 'OPS', name: 'Operations', hod: '' },
     ],
     users: [
       { id: 'u001', username: 'admin', password: 'password', role: 'admin', name: 'Admin Julia', changed: false, email: 'admin@boswa.ac.bw', dept: 'ADM' },

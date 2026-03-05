@@ -6,13 +6,13 @@ const corsHeaders = {
 };
 
 const faculty = [
-  { email: "malcom@boswa.ac.bw", name: "Malcom", role: "hoy", dept: "ADMIN_OPS" },
-  { email: "bonang@boswa.ac.bw", name: "Bonang Keabetswe", role: "hod", dept: "CULH" },
-  { email: "poneso@boswa.ac.bw", name: "Poneso Kgakge", role: "lecturer", dept: "CULP", code: "004" },
-  { email: "nthoyapelo@boswa.ac.bw", name: "Nthoyapelo Senatla", role: "lecturer", dept: "CULP", code: "006" },
-  { email: "sekgele@boswa.ac.bw", name: "Sekgele Mono", role: "lecturer", dept: "CULP", code: "005" },
-  { email: "neo@boswa.ac.bw", name: "Neo Medupe", role: "lecturer", dept: "CULH", code: "008" },
-  { email: "tshepang@boswa.ac.bw", name: "Tshepang Utlwang", role: "lecturer", dept: "CULH", code: "007" },
+  { email: "malcom@boswa.ac.bw", name: "Malcom", role: "hoy", dept: "Admin & Operations" },
+  { email: "bonang@boswa.ac.bw", name: "Bonang Keabetswe", role: "hod", dept: "Culinary & Hospitality" },
+  { email: "poneso@boswa.ac.bw", name: "Poneso Kgakge", role: "lecturer", dept: "Culinary Practicals", code: "004" },
+  { email: "nthoyapelo@boswa.ac.bw", name: "Nthoyapelo Senatla", role: "lecturer", dept: "Culinary Practicals", code: "006" },
+  { email: "sekgele@boswa.ac.bw", name: "Sekgele Mono", role: "lecturer", dept: "Culinary Practicals", code: "005" },
+  { email: "neo@boswa.ac.bw", name: "Neo Medupe", role: "lecturer", dept: "Culinary & Hospitality", code: "008" },
+  { email: "tshepang@boswa.ac.bw", name: "Tshepang Utlwang", role: "lecturer", dept: "Culinary & Hospitality", code: "007" },
 ];
 
 Deno.serve(async (req) => {
