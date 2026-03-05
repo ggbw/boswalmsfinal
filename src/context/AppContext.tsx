@@ -1,11 +1,13 @@
 import React, { createContext, useContext, useState, useCallback, ReactNode } from 'react';
-import { DB, User, createInitialDB } from '@/data/db';
+import { DB, User } from '@/data/db';
+import { useAuth } from '@/hooks/useAuth';
+import { useDbData } from '@/hooks/useDbData';
 
 interface ToastItem { id: number; msg: string; type: string; }
 
 interface AppContextType {
   db: DB;
-  setDb: React.Dispatch<React.SetStateAction<DB>>;
+  setDb: React.Dispatch<React.SetStateAction<DB | null>>;
   currentUser: User | null;
   setCurrentUser: (u: User | null) => void;
   activePage: string;
@@ -15,16 +17,36 @@ interface AppContextType {
   modalContent: { title: string; body: ReactNode; size?: string } | null;
   showModal: (title: string, body: ReactNode, size?: string) => void;
   closeModal: () => void;
+  reloadDb: () => void;
 }
 
 const AppContext = createContext<AppContextType | null>(null);
 
 export function AppProvider({ children }: { children: ReactNode }) {
-  const [db, setDb] = useState<DB>(() => createInitialDB());
-  const [currentUser, setCurrentUser] = useState<User | null>(null);
+  const { profile, role, signOut } = useAuth();
+  const { db, loading, reload, setDb } = useDbData();
   const [activePage, setActivePage] = useState('dashboard');
   const [toasts, setToasts] = useState<ToastItem[]>([]);
   const [modalContent, setModalContent] = useState<{ title: string; body: ReactNode; size?: string } | null>(null);
+
+  // Create a compatible User object from auth profile
+  const currentUser: User | null = profile ? {
+    id: profile.user_id,
+    username: profile.email || '',
+    password: '',
+    role: role || 'admin',
+    name: profile.name,
+    changed: false,
+    email: profile.email || '',
+    dept: profile.dept || '',
+    code: profile.code || '',
+    studentRef: profile.student_ref || '',
+    studentId: profile.student_id || '',
+  } : null;
+
+  const setCurrentUser = (u: User | null) => {
+    if (!u) signOut();
+  };
 
   const navigate = useCallback((page: string) => setActivePage(page), []);
 
@@ -40,8 +62,22 @@ export function AppProvider({ children }: { children: ReactNode }) {
 
   const closeModal = useCallback(() => setModalContent(null), []);
 
+  if (loading || !db) {
+    return (
+      <div style={{ display: 'flex', height: '100vh', alignItems: 'center', justifyContent: 'center', background: '#0d1117', color: '#e6edf3' }}>
+        <div style={{ textAlign: 'center' }}>
+          <div style={{ fontSize: 18, marginBottom: 8 }}>Loading...</div>
+          <div style={{ fontSize: 12, color: '#484f58' }}>Connecting to database</div>
+        </div>
+      </div>
+    );
+  }
+
   return (
-    <AppContext.Provider value={{ db, setDb, currentUser, setCurrentUser, activePage, navigate, toast, toasts, modalContent, showModal, closeModal }}>
+    <AppContext.Provider value={{ 
+      db, setDb, currentUser, setCurrentUser, activePage, navigate, 
+      toast, toasts, modalContent, showModal, closeModal, reloadDb: reload 
+    }}>
       {children}
     </AppContext.Provider>
   );
