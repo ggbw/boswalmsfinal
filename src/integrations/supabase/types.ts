@@ -542,12 +542,14 @@ export type Database = {
         Row: {
           class_id: string | null
           dob: string | null
+          email: string | null
           gender: string | null
           guardian: string | null
           id: string
           mobile: string | null
           name: string
           programme: string | null
+          progression_status: string | null
           semester: number
           status: string
           student_id: string
@@ -556,12 +558,14 @@ export type Database = {
         Insert: {
           class_id?: string | null
           dob?: string | null
+          email?: string | null
           gender?: string | null
           guardian?: string | null
           id: string
           mobile?: string | null
           name: string
           programme?: string | null
+          progression_status?: string | null
           semester?: number
           status?: string
           student_id: string
@@ -570,12 +574,14 @@ export type Database = {
         Update: {
           class_id?: string | null
           dob?: string | null
+          email?: string | null
           gender?: string | null
           guardian?: string | null
           id?: string
           mobile?: string | null
           name?: string
           programme?: string | null
+          progression_status?: string | null
           semester?: number
           status?: string
           student_id?: string

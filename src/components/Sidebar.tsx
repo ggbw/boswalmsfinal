@@ -28,6 +28,7 @@ function getNavConfig(role: string, db: any): NavSection[] {
       { section: 'Management', items: [
         { id: 'admissions', label: 'Admissions', icon: 'fa-solid fa-door-open' },
         { id: 'progression', label: 'Progression', icon: 'fa-solid fa-arrow-up-right-dots' },
+        { id: 'usermanagement', label: 'User Management', icon: 'fa-solid fa-users-gear' },
         { id: 'config', label: 'Configuration', icon: 'fa-solid fa-gear' },
       ]},
     ],

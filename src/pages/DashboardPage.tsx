@@ -51,7 +51,7 @@ export default function DashboardPage() {
           <div><div style={{ fontSize: 12, fontWeight: 700 }}>{n.title}</div><div style={{ fontSize: 11, color: 'var(--text2)', marginTop: 2 }}>{n.body.substring(0, 100)}…</div></div>
         </div>
       ))}
-      <div className="page-header"><div><div className="page-title">Welcome back, {currentUser?.name?.split(' ')[0] || 'Admin'}</div><div className="page-sub">Academic Year {db.config.currentYear} · Term {db.config.currentTerm} · Semester {db.config.currentSemester} · Boswa Culinary Institute of Botswana</div></div></div>
+      <div className="page-header"><div><div className="page-title">Welcome back, {currentUser?.name?.split(' ')[0] || 'Admin'}</div><div className="page-sub">Academic Year {db.config.currentYear} · Semester {db.config.currentSemester} · Boswa Culinary Institute of Botswana</div></div></div>
       {isStaff && (
         <div className="stat-grid">
           <div className="stat-card"><div className="stat-icon" style={{ background: '#fff0cc' }}><i className="fa-solid fa-user-graduate" style={{ color: '#d4920a' }} /></div><div><div className="stat-val">{totalStudents}</div><div className="stat-label">Total Students</div></div></div>

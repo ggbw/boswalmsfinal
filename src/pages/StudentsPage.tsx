@@ -38,6 +38,7 @@ export default function StudentsPage() {
         <div className="info-row"><span className="info-label">Gender</span><span className="info-val">{s.gender}</span></div>
         <div className="info-row"><span className="info-label">Date of Birth</span><span className="info-val">{s.dob}</span></div>
         <div className="info-row"><span className="info-label">Mobile</span><span className="info-val">{s.mobile || '—'}</span></div>
+        <div className="info-row"><span className="info-label">Email</span><span className="info-val">{s.email || '—'}</span></div>
         <div className="info-row"><span className="info-label">Class</span><span className="info-val">{cls?.name || '—'}</span></div>
         <div className="info-row"><span className="info-label">Programme</span><span className="info-val">{prog?.name || '—'}</span></div>
         <div className="info-row"><span className="info-label">Year / Semester</span><span className="info-val">Year {s.year} · Sem {s.semester}</span></div>
@@ -55,7 +56,7 @@ export default function StudentsPage() {
   };
 
   const showAddStudent = () => {
-    let name = '', sid = '', dob = '', gender = 'Female', mobile = '', classId = db.classes[0]?.id || '', guard = '';
+    let name = '', sid = '', dob = '', gender = 'Female', mobile = '', classId = db.classes[0]?.id || '', guard = '', email = '';
     showModal('Add New Student', (
       <div>
         <div className="form-row cols2">
@@ -68,9 +69,10 @@ export default function StudentsPage() {
         </div>
         <div className="form-row cols2">
           <div className="form-group"><label>Mobile</label><input className="form-input" onChange={e => mobile = e.target.value} /></div>
-          <div className="form-group"><label>Class</label><select className="form-select" onChange={e => classId = e.target.value}>{db.classes.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}</select></div>
+          <div className="form-group"><label>Email</label><input className="form-input" type="email" onChange={e => email = e.target.value} /></div>
         </div>
         <div className="form-row cols2">
+          <div className="form-group"><label>Class</label><select className="form-select" onChange={e => classId = e.target.value}>{db.classes.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}</select></div>
           <div className="form-group"><label>Guardian Name</label><input className="form-input" onChange={e => guard = e.target.value} /></div>
         </div>
         <button className="btn btn-primary" onClick={() => {

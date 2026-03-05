@@ -18,7 +18,7 @@ export function useDbData() {
         admissionRes,
       ] = await Promise.all([
         supabase.from('school_config').select('*').single(),
-        supabase.from('terms').select('*'),
+        supabase.from('terms').select('*'), // kept for compat but not used in UI
         supabase.from('programmes').select('*'),
         supabase.from('departments').select('*'),
         supabase.from('classes').select('*'),
@@ -58,8 +58,6 @@ export function useDbData() {
           schoolName: config?.school_name || 'Boswa CIB',
           currentYear: config?.current_year || 2026,
           currentSemester: config?.current_semester || 1,
-          currentTerm: config?.current_term || 1,
-          terms,
           programmes,
         },
         departments: (departmentsRes.data || []).map((d: any) => ({
@@ -81,6 +79,7 @@ export function useDbData() {
           mobile: s.mobile || '', classId: s.class_id || '',
           guardian: s.guardian || '', programme: s.programme || '',
           year: s.year, semester: s.semester, status: s.status,
+          email: (s as any).email || '', progressionStatus: (s as any).progression_status || 'pending',
         })),
         marks: (marksRes.data || []).map((m: any) => ({
           studentId: m.student_id, moduleId: m.module_id, classId: m.class_id,

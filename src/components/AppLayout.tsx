@@ -21,6 +21,7 @@ import GradesPage from '@/pages/GradesPage';
 import MyStudentsPage from '@/pages/MyStudentsPage';
 import MyModulesPage from '@/pages/MyModulesPage';
 import MappingPage from '@/pages/MappingPage';
+import UserManagementPage from '@/pages/UserManagementPage';
 
 const pageComponents: Record<string, React.ComponentType> = {
   dashboard: Dashboard, students: StudentsPage, lecturers: LecturersPage,
@@ -30,12 +31,13 @@ const pageComponents: Record<string, React.ComponentType> = {
   admissions: AdmissionsPage, progression: ProgressionPage, config: ConfigPage,
   notifications: NotificationsPage, profile: ProfilePage, grades: GradesPage,
   mystudents: MyStudentsPage, mymodules: MyModulesPage, mapping: MappingPage,
+  usermanagement: UserManagementPage,
 };
 
 export default function AppLayout() {
   const { db, activePage, toasts, modalContent, closeModal } = useApp();
   const PageComponent = pageComponents[activePage] || Dashboard;
-  const currentTerm = db.config.terms.find(t => t.id === 't' + db.config.currentTerm) || db.config.terms[0];
+  // Removed term reference - semester only
 
   return (
     <div style={{ display: 'flex', height: '100vh', overflow: 'hidden' }}>
@@ -48,7 +50,7 @@ export default function AppLayout() {
             <span className="current">{activePage.charAt(0).toUpperCase() + activePage.slice(1).replace(/([A-Z])/g, ' $1')}</span>
           </div>
           <div className="topbar-right">
-            <span className="tb-badge">{db.config.currentYear} · {currentTerm?.name || 'Term 1'} · Sem {db.config.currentSemester}</span>
+            <span className="tb-badge">{db.config.currentYear} · Semester {db.config.currentSemester}</span>
           </div>
         </div>
         <div className="content-area">
