@@ -75,9 +75,15 @@ export default function UserManagementPage() {
     else { toast('User deleted', 'success'); loadUsers(); }
   };
 
-  const handleResetPassword = (u: UserRow) => {
-    if (u.source === 'student') { toast('Students don\'t have auth accounts to reset', 'error'); return; }
-    let newPwd = 'BoswaStaff2026!';
+  const handleResetPassword = async (u: UserRow) => {
+    // For students from the students table, find their auth account via profile linkage
+    let targetUserId = u.user_id;
+    if (u.source === 'student') {
+      const { data: profile } = await supabase.from('profiles').select('user_id').eq('student_ref', u.user_id).single();
+      if (!profile) { toast('This student does not have a login account yet. Provision their account first.', 'error'); return; }
+      targetUserId = profile.user_id;
+    }
+    let newPwd = u.source === 'student' ? 'BoswaStudent2026!' : 'BoswaStaff2026!';
     showModal('Reset Password: ' + u.name, (
       <div>
         <div className="form-group">
@@ -86,7 +92,7 @@ export default function UserManagementPage() {
         </div>
         <button className="btn btn-primary" style={{ marginTop: 12 }} onClick={async () => {
           const { data, error } = await supabase.functions.invoke('reset-password', {
-            body: { user_id: u.user_id, new_password: newPwd },
+            body: { user_id: targetUserId, new_password: newPwd },
           });
           if (error || data?.error) { toast(data?.error || error?.message || 'Reset failed', 'error'); }
           else { toast('Password reset successfully', 'success'); closeModal(); }
@@ -315,7 +321,7 @@ export default function UserManagementPage() {
                     <td>
                       <div style={{ display: 'flex', gap: 4 }}>
                         <button className="btn btn-outline btn-sm" onClick={() => handleEditUser(u)}>Edit</button>
-                        {u.source === 'auth' && <button className="btn btn-outline btn-sm" onClick={() => handleResetPassword(u)}>Reset Pwd</button>}
+                        <button className="btn btn-outline btn-sm" onClick={() => handleResetPassword(u)}>Reset Pwd</button>
                         <button className="btn btn-outline btn-sm" onClick={() => handleDelete(u)} style={{ color: '#f85149' }}>Delete</button>
                       </div>
                     </td>
