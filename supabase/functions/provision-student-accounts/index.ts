@@ -5,6 +5,12 @@ const corsHeaders = {
   "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
 };
 
+function generateEmail(name: string, studentId: string): string {
+  // Create email from student_id: BCI2023D-01 -> bci2023d01@boswa.ac.bw
+  const cleaned = studentId.toLowerCase().replace(/[^a-z0-9]/g, '');
+  return `${cleaned}@boswa.ac.bw`;
+}
+
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") {
     return new Response("ok", { headers: corsHeaders });
@@ -49,11 +55,10 @@ Deno.serve(async (req) => {
 
     const body = await req.json();
     const defaultPassword = body.default_password || "BoswaStudent2026!";
-    // Optional: provision only specific student IDs
     const studentIds: string[] | undefined = body.student_ids;
 
-    // Get all students with emails
-    let query = adminClient.from("students").select("*").not("email", "is", null).neq("email", "");
+    // Get all students
+    let query = adminClient.from("students").select("*");
     if (studentIds && studentIds.length > 0) {
       query = query.in("id", studentIds);
     }
@@ -64,29 +69,28 @@ Deno.serve(async (req) => {
       });
     }
 
-    // Get existing profiles to find which students already have accounts
+    // Get existing profiles to check for already-provisioned students
     const { data: existingProfiles } = await adminClient.from("profiles").select("student_ref, email");
-    const existingEmails = new Set((existingProfiles || []).map(p => p.email?.toLowerCase()));
     const existingStudentRefs = new Set((existingProfiles || []).map(p => p.student_ref));
 
     const results: Array<{ student_id: string; name: string; email: string; status: string; error?: string }> = [];
 
     for (const student of students || []) {
-      if (!student.email) {
-        results.push({ student_id: student.student_id, name: student.name, email: "", status: "skipped_no_email" });
+      // Skip if already provisioned
+      if (existingStudentRefs.has(student.id)) {
+        results.push({ student_id: student.student_id, name: student.name, email: student.email || "", status: "already_exists" });
         continue;
       }
 
-      const email = student.email.toLowerCase().trim();
-
-      // Skip if already has an account
-      if (existingEmails.has(email) || existingStudentRefs.has(student.id)) {
-        results.push({ student_id: student.student_id, name: student.name, email, status: "already_exists" });
-        continue;
+      // Generate email if missing
+      let email = student.email?.trim();
+      if (!email) {
+        email = generateEmail(student.name, student.student_id);
+        // Update student record with generated email
+        await adminClient.from("students").update({ email }).eq("id", student.id);
       }
 
       try {
-        // Create auth user
         const { data: newUser, error: createErr } = await adminClient.auth.admin.createUser({
           email,
           password: defaultPassword,
@@ -95,7 +99,6 @@ Deno.serve(async (req) => {
         });
 
         if (createErr) {
-          // If user already exists in auth, try to link
           if (createErr.message.includes("already been registered")) {
             results.push({ student_id: student.student_id, name: student.name, email, status: "already_exists" });
           } else {
@@ -126,9 +129,8 @@ Deno.serve(async (req) => {
     const created = results.filter(r => r.status === "created").length;
     const existing = results.filter(r => r.status === "already_exists").length;
     const errors = results.filter(r => r.status === "error").length;
-    const skipped = results.filter(r => r.status === "skipped_no_email").length;
 
-    return new Response(JSON.stringify({ results, summary: { created, existing, errors, skipped } }), {
+    return new Response(JSON.stringify({ results, summary: { created, existing, errors } }), {
       status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" },
     });
   } catch (error) {
