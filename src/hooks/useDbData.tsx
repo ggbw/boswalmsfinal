@@ -80,6 +80,7 @@ export function useDbData() {
           guardian: s.guardian || '', programme: s.programme || '',
           year: s.year, semester: s.semester, status: s.status,
           email: (s as any).email || '', progressionStatus: (s as any).progression_status || 'pending',
+          nationalId: (s as any).national_id || '',
         })),
         marks: (marksRes.data || []).map((m: any) => ({
           studentId: m.student_id, moduleId: m.module_id, classId: m.class_id,
@@ -100,6 +101,7 @@ export function useDbData() {
           id: e.id, name: e.name, moduleId: e.module_id || '',
           classId: e.class_id || '', date: e.date || '',
           status: e.status || '', type: e.type || '',
+          createdBy: e.created_by || '',
         })),
         assignments: (assignmentsRes.data || []).map((a: any) => ({
           id: a.id, title: a.title, moduleId: a.module_id || '',
@@ -109,6 +111,8 @@ export function useDbData() {
           attachmentName: a.attachment_name || null,
           attachmentData: a.attachment_data || null,
           uploadedBy: a.uploaded_by || '', uploadedDate: a.uploaded_date || '',
+          submissionType: a.submission_type || 'softcopy',
+          createdBy: a.created_by || '',
         })),
         submissions: (submissionsRes.data || []).map((s: any) => ({
           id: s.id, assignmentId: s.assignment_id || '',

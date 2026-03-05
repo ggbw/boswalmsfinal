@@ -52,6 +52,7 @@ export type Database = {
           attachment_data: string | null
           attachment_name: string | null
           class_id: string | null
+          created_by: string | null
           description: string | null
           due_date: string | null
           id: string
@@ -59,6 +60,7 @@ export type Database = {
           marks: number | null
           module_id: string | null
           status: string | null
+          submission_type: string | null
           title: string
           uploaded_by: string | null
           uploaded_date: string | null
@@ -67,6 +69,7 @@ export type Database = {
           attachment_data?: string | null
           attachment_name?: string | null
           class_id?: string | null
+          created_by?: string | null
           description?: string | null
           due_date?: string | null
           id: string
@@ -74,6 +77,7 @@ export type Database = {
           marks?: number | null
           module_id?: string | null
           status?: string | null
+          submission_type?: string | null
           title: string
           uploaded_by?: string | null
           uploaded_date?: string | null
@@ -82,6 +86,7 @@ export type Database = {
           attachment_data?: string | null
           attachment_name?: string | null
           class_id?: string | null
+          created_by?: string | null
           description?: string | null
           due_date?: string | null
           id?: string
@@ -89,6 +94,7 @@ export type Database = {
           marks?: number | null
           module_id?: string | null
           status?: string | null
+          submission_type?: string | null
           title?: string
           uploaded_by?: string | null
           uploaded_date?: string | null
@@ -211,6 +217,7 @@ export type Database = {
       exams: {
         Row: {
           class_id: string | null
+          created_by: string | null
           date: string | null
           id: string
           module_id: string | null
@@ -220,6 +227,7 @@ export type Database = {
         }
         Insert: {
           class_id?: string | null
+          created_by?: string | null
           date?: string | null
           id: string
           module_id?: string | null
@@ -229,6 +237,7 @@ export type Database = {
         }
         Update: {
           class_id?: string | null
+          created_by?: string | null
           date?: string | null
           id?: string
           module_id?: string | null
@@ -548,6 +557,7 @@ export type Database = {
           id: string
           mobile: string | null
           name: string
+          national_id: string | null
           programme: string | null
           progression_status: string | null
           semester: number
@@ -564,6 +574,7 @@ export type Database = {
           id: string
           mobile?: string | null
           name: string
+          national_id?: string | null
           programme?: string | null
           progression_status?: string | null
           semester?: number
@@ -580,6 +591,7 @@ export type Database = {
           id?: string
           mobile?: string | null
           name?: string
+          national_id?: string | null
           programme?: string | null
           progression_status?: string | null
           semester?: number

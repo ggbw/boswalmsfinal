@@ -1,8 +1,10 @@
 import { useApp } from '@/context/AppContext';
 import { calcModuleMark, grade, gradeColor } from '@/data/db';
+
 export default function ResultsPage() {
   const { db, currentUser } = useApp();
   const role = currentUser?.role;
+
   if (role === 'student') {
     const stu = db.students.find(s => s.studentId === currentUser?.studentId || s.name.split(' ')[0].toLowerCase() === (currentUser?.name||'').split(' ')[0].toLowerCase());
     if (!stu) return <div className="card" style={{textAlign:'center',padding:40}}>Student record not found.</div>;
@@ -14,7 +16,15 @@ export default function ResultsPage() {
       </table></div></div>
     </>);
   }
-  const marks = db.marks;
+
+  // Lecturer: only see marks for modules in their classes
+  let marks = db.marks;
+  if (role === 'lecturer') {
+    const lecClasses = db.classes.filter(c => c.lecturer === currentUser?.name).map(c => c.id);
+    const lecModuleIds = db.modules.filter(m => m.classes.some(cid => lecClasses.includes(cid))).map(m => m.id);
+    marks = marks.filter(m => lecModuleIds.includes(m.moduleId) && lecClasses.includes(m.classId));
+  }
+
   return (<>
     <div className="page-header"><div className="page-title">Exam Results</div></div>
     <div className="card"><div className="table-wrap"><table><thead><tr><th>Student</th><th>ID</th><th>Module</th><th>Mark</th><th>Grade</th></tr></thead>

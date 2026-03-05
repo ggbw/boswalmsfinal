@@ -2,7 +2,7 @@ export interface Student {
   id: string; studentId: string; name: string; gender: string; dob: string;
   mobile: string; classId: string; guardian: string; programme: string;
   year: number; semester: number; status: string; email?: string;
-  progressionStatus?: string;
+  progressionStatus?: string; nationalId?: string;
 }
 export interface User {
   id: string; username: string; password: string; role: string; name: string;
@@ -23,13 +23,14 @@ export interface Mark {
 }
 export interface Exam {
   id: string; name: string; moduleId: string; classId: string; date: string;
-  status: string; type?: string;
+  status: string; type?: string; createdBy?: string;
 }
 export interface Assignment {
   id: string; title: string; moduleId: string; classId: string; dueDate: string;
   marks: number; status: string; description?: string; instructions?: string;
   attachmentName?: string | null; attachmentData?: string | null;
-  uploadedBy?: string; uploadedDate?: string;
+  uploadedBy?: string; uploadedDate?: string; submissionType?: string;
+  createdBy?: string;
 }
 export interface Submission {
   id: string; assignmentId: string; studentId: string; submittedDate: string;

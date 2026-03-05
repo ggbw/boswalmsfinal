@@ -39,6 +39,7 @@ export default function StudentsPage() {
         <div className="info-row"><span className="info-label">Date of Birth</span><span className="info-val">{s.dob}</span></div>
         <div className="info-row"><span className="info-label">Mobile</span><span className="info-val">{s.mobile || '—'}</span></div>
         <div className="info-row"><span className="info-label">Email</span><span className="info-val">{s.email || '—'}</span></div>
+        <div className="info-row"><span className="info-label">National ID</span><span className="info-val">{s.nationalId || '—'}</span></div>
         <div className="info-row"><span className="info-label">Class</span><span className="info-val">{cls?.name || '—'}</span></div>
         <div className="info-row"><span className="info-label">Programme</span><span className="info-val">{prog?.name || '—'}</span></div>
         <div className="info-row"><span className="info-label">Year / Semester</span><span className="info-val">Year {s.year} · Sem {s.semester}</span></div>
