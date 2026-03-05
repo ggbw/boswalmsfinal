@@ -153,18 +153,8 @@ export default function UserManagementPage() {
     ));
   };
 
-  const handleResetAll = async () => {
-    const authStaff = users.filter(u => u.source === 'auth');
-    if (!confirm(`Reset passwords for all ${authStaff.length} auth users to BoswaStaff2026!?`)) return;
-    let success = 0, fail = 0;
-    for (const u of authStaff) {
-      const { data, error } = await supabase.functions.invoke('reset-password', {
-        body: { user_id: u.user_id, new_password: 'BoswaStaff2026!' },
-      });
-      if (error || data?.error) fail++; else success++;
-    }
-    toast(`${success} reset, ${fail} failed`, success > 0 ? 'success' : 'error');
-  };
+
+
 
   const handleSeedFaculty = async () => {
     if (!confirm('This will create 7 faculty accounts with default password BoswaStaff2026!. Continue?')) return;
@@ -198,7 +188,6 @@ export default function UserManagementPage() {
             <option value="staff">Staff Only ({users.filter(u => u.source === 'auth' && u.role !== 'student').length})</option>
             <option value="student">Students Only ({users.filter(u => u.role === 'student').length})</option>
           </select>
-          <button className="btn btn-outline btn-sm" onClick={handleResetAll}><i className="fa-solid fa-key" /> Reset All Passwords</button>
           <button className="btn btn-outline btn-sm" onClick={handleSeedFaculty}><i className="fa-solid fa-database" /> Seed Faculty</button>
           <button className="btn btn-primary btn-sm" onClick={handleCreate}><i className="fa-solid fa-user-plus" /> Add User</button>
         </div>
