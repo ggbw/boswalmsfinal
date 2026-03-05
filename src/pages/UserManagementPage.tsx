@@ -265,6 +265,17 @@ export default function UserManagementPage() {
     }
   };
 
+  const handleProvisionStudents = async () => {
+    if (!confirm('This will create login accounts for all students who have an email address. Default password: BoswaStudent2026!. Continue?')) return;
+    const { data, error } = await supabase.functions.invoke('provision-student-accounts', {
+      body: { default_password: 'BoswaStudent2026!' },
+    });
+    if (error) { toast('Provisioning failed: ' + error.message, 'error'); return; }
+    const s = data?.summary || {};
+    toast(`${s.created || 0} accounts created, ${s.existing || 0} already existed, ${s.skipped || 0} skipped (no email), ${s.errors || 0} errors`, s.errors > 0 ? 'error' : 'success');
+    loadUsers(); reloadDb();
+  };
+
   const roleBadgeClass = (role: string) => {
     if (role === 'admin') return 'badge-fail';
     if (role === 'hod' || role === 'hoy') return 'badge-pass';
@@ -283,6 +294,7 @@ export default function UserManagementPage() {
             <option value="student">Students Only ({users.filter(u => u.role === 'student').length})</option>
           </select>
           <button className="btn btn-outline btn-sm" onClick={handleSeedFaculty}><i className="fa-solid fa-database" /> Seed Faculty</button>
+          <button className="btn btn-outline btn-sm" onClick={handleProvisionStudents}><i className="fa-solid fa-user-graduate" /> Provision Student Accounts</button>
           <button className="btn btn-primary btn-sm" onClick={handleCreate}><i className="fa-solid fa-user-plus" /> Add User</button>
         </div>
       </div>
