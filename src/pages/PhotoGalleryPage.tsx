@@ -3,7 +3,7 @@ import { useApp } from '@/context/AppContext';
 import { supabase } from '@/integrations/supabase/client';
 
 export default function PhotoGalleryPage() {
-  const { db, showModal } = useApp();
+  const { db } = useApp();
   const [search, setSearch] = useState('');
   const [classFilter, setClassFilter] = useState('');
   const [photoMap, setPhotoMap] = useState<Record<string, string[]>>({});
@@ -55,23 +55,10 @@ export default function PhotoGalleryPage() {
     });
   }, [db.students, classFilter, search]);
 
-  const viewStudentPhotos = (studentId: string, studentName: string) => {
-    const photos = photoMap[studentId] || [];
-    showModal(`${studentName} — Photos (${photos.length})`, (
-      <div>
-        {photos.length === 0 ? (
-          <div style={{textAlign:'center',padding:30,color:'var(--text2)'}}>No photos uploaded.</div>
-        ) : (
-          <div style={{display:'grid',gridTemplateColumns:'repeat(auto-fill, minmax(200px, 1fr))',gap:12}}>
-            {photos.map((url, i) => (
-              <div key={i} style={{borderRadius:8,overflow:'hidden',background:'var(--bg3)',aspectRatio:'1'}}>
-                <img src={url + '?t=' + Date.now()} alt={`${studentName} photo ${i+1}`} style={{width:'100%',height:'100%',objectFit:'cover'}} />
-              </div>
-            ))}
-          </div>
-        )}
-      </div>
-    ), 'lg');
+  const [selectedStudent, setSelectedStudent] = useState<string | null>(null);
+
+  const viewStudentPhotos = (studentId: string) => {
+    setSelectedStudent(selectedStudent === studentId ? null : studentId);
   };
 
   return (
@@ -103,8 +90,9 @@ export default function PhotoGalleryPage() {
             const hasPhoto = !!thumbMap[s.id];
             const photoCount = photoMap[s.id]?.length || 0;
             const cls = db.classes.find(c => c.id === s.classId);
+            const isSelected = selectedStudent === s.id;
             return (
-              <div key={s.id} className="card" style={{ padding: 12, textAlign: 'center', cursor: hasPhoto ? 'pointer' : 'default' }} onClick={() => hasPhoto && viewStudentPhotos(s.id, s.name)}>
+              <div key={s.id} className="card" style={{ padding: 12, textAlign: 'center', cursor: 'pointer', border: isSelected ? '2px solid var(--accent)' : undefined }} onClick={() => viewStudentPhotos(s.id)}>
                 <div style={{
                   width: 100, height: 100, borderRadius: 12, margin: '0 auto 8px',
                   overflow: 'hidden', background: 'var(--bg3)',
@@ -132,6 +120,38 @@ export default function PhotoGalleryPage() {
           )}
         </div>
       )}
+
+      {/* Expanded photo view for selected student */}
+      {selectedStudent && (() => {
+        const student = db.students.find(s => s.id === selectedStudent);
+        if (!student) return null;
+        const photos = photoMap[selectedStudent] || [];
+        const cls = db.classes.find(c => c.id === student.classId);
+        return (
+          <div className="card" style={{marginTop:16}}>
+            <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:12}}>
+              <div>
+                <div className="card-title" style={{margin:0}}>{student.name} — Photos ({photos.length})</div>
+                <div style={{fontSize:12,color:'var(--text2)'}}>{student.studentId} • {cls?.name}</div>
+              </div>
+              <button className="btn btn-outline btn-sm" onClick={() => setSelectedStudent(null)}>
+                <i className="fa-solid fa-times" /> Close
+              </button>
+            </div>
+            {photos.length === 0 ? (
+              <div style={{textAlign:'center',padding:30,color:'var(--text2)'}}>No photos uploaded by this student.</div>
+            ) : (
+              <div style={{display:'grid',gridTemplateColumns:'repeat(auto-fill, minmax(200px, 1fr))',gap:12}}>
+                {photos.map((url, i) => (
+                  <div key={i} style={{borderRadius:8,overflow:'hidden',background:'var(--bg3)',aspectRatio:'1'}}>
+                    <img src={url + '?t=' + Date.now()} alt={`${student.name} photo ${i+1}`} style={{width:'100%',height:'100%',objectFit:'cover'}} />
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        );
+      })()}
     </>
   );
 }
