@@ -34,6 +34,7 @@ export default function AssignmentsPage() {
     const lecModules = getLecturerModules();
     let title = '', description = '', moduleId = lecModules[0]?.id || '', classId = '';
     let dueDate = '', marks = 100, submissionType = 'softcopy';
+    let attachmentFile: File | null = null;
 
     const getClassesForModule = (mid: string) => {
       const mod = db.modules.find(m => m.id === mid);
@@ -71,14 +72,35 @@ export default function AssignmentsPage() {
             <option value="hardcopy">Hardcopy (Physical Submission)</option>
           </select>
         </div>
+        <div className="form-group">
+          <label>Attach File (optional)</label>
+          <input className="form-input" type="file" onChange={e => { attachmentFile = e.target.files?.[0] || null; }} />
+          <div style={{fontSize:11,color:'var(--text2)',marginTop:4}}>Attach a reference document, rubric, or instructions file (max 10MB)</div>
+        </div>
         <button className="btn btn-primary" style={{ marginTop: 12 }} onClick={async () => {
           if (!title || !moduleId) { toast('Title and module are required', 'error'); return; }
+          if (attachmentFile && attachmentFile.size > 10 * 1024 * 1024) { toast('Attachment must be under 10MB', 'error'); return; }
+
+          let attachmentData: string | null = null;
+          let attachmentName: string | null = null;
+
+          if (attachmentFile) {
+            attachmentName = attachmentFile.name;
+            attachmentData = await new Promise<string>((resolve, reject) => {
+              const reader = new FileReader();
+              reader.onload = () => resolve(reader.result as string);
+              reader.onerror = () => reject(new Error('Failed to read file'));
+              reader.readAsDataURL(attachmentFile!);
+            });
+          }
+
           const id = 'asgn_' + Date.now();
           const { error } = await supabase.from('assignments').insert({
             id, title, description, module_id: moduleId, class_id: classId || null,
             due_date: dueDate || null, marks, status: 'active',
             submission_type: submissionType, created_by: currentUser?.id || null,
             uploaded_by: currentUser?.name || null, uploaded_date: new Date().toISOString().split('T')[0],
+            attachment_name: attachmentName, attachment_data: attachmentData,
           });
           if (error) { toast(error.message, 'error'); } else {
             toast('Assignment created!', 'success'); closeModal(); reloadDb();
@@ -227,6 +249,14 @@ export default function AssignmentsPage() {
             <div style={{marginTop:12}}>
               <div style={{fontSize:12,fontWeight:600,color:'var(--text2)',marginBottom:4}}>Instructions</div>
               <div style={{fontSize:13,color:'var(--text1)',lineHeight:1.6,whiteSpace:'pre-wrap'}}>{a.instructions}</div>
+            </div>
+          )}
+          {a.attachmentName && a.attachmentData && (
+            <div style={{marginTop:12}}>
+              <div style={{fontSize:12,fontWeight:600,color:'var(--text2)',marginBottom:4}}>Attachment</div>
+              <a href={a.attachmentData} download={a.attachmentName} className="btn btn-outline btn-sm" style={{display:'inline-flex',alignItems:'center',gap:6}}>
+                <i className="fa-solid fa-paperclip" /> {a.attachmentName}
+              </a>
             </div>
           )}
 
