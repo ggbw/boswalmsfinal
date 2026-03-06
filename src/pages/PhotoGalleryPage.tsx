@@ -3,7 +3,7 @@ import { useApp } from '@/context/AppContext';
 import { supabase } from '@/integrations/supabase/client';
 
 export default function PhotoGalleryPage() {
-  const { db } = useApp();
+  const { db, toast } = useApp();
   const [search, setSearch] = useState('');
   const [classFilter, setClassFilter] = useState('');
   const [photoMap, setPhotoMap] = useState<Record<string, string[]>>({});
@@ -32,7 +32,6 @@ export default function PhotoGalleryPage() {
             return data.publicUrl;
           });
           
-          // Use first thumb as grid thumbnail
           if (thumbFiles.length > 0) {
             const { data } = supabase.storage.from('student-photos').getPublicUrl(`${folder.name}/${thumbFiles[0].name}`);
             thumbs[folder.name] = data.publicUrl;
@@ -59,6 +58,29 @@ export default function PhotoGalleryPage() {
 
   const viewStudentPhotos = (studentId: string) => {
     setSelectedStudent(selectedStudent === studentId ? null : studentId);
+  };
+
+  const handleDownloadPhoto = async (url: string, studentName: string, index: number) => {
+    try {
+      const response = await fetch(url);
+      const blob = await response.blob();
+      const link = document.createElement('a');
+      link.href = URL.createObjectURL(blob);
+      link.download = `${studentName.replace(/\s+/g, '_')}_photo_${index + 1}.webp`;
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      URL.revokeObjectURL(link.href);
+    } catch {
+      toast('Failed to download photo', 'error');
+    }
+  };
+
+  const handleDownloadAll = async (photos: string[], studentName: string) => {
+    for (let i = 0; i < photos.length; i++) {
+      await handleDownloadPhoto(photos[i], studentName, i);
+    }
+    toast(`Downloaded ${photos.length} photo(s)`, 'success');
   };
 
   return (
@@ -134,17 +156,27 @@ export default function PhotoGalleryPage() {
                 <div className="card-title" style={{margin:0}}>{student.name} — Photos ({photos.length})</div>
                 <div style={{fontSize:12,color:'var(--text2)'}}>{student.studentId} • {cls?.name}</div>
               </div>
-              <button className="btn btn-outline btn-sm" onClick={() => setSelectedStudent(null)}>
-                <i className="fa-solid fa-times" /> Close
-              </button>
+              <div style={{display:'flex',gap:8}}>
+                {photos.length > 0 && (
+                  <button className="btn btn-primary btn-sm" onClick={() => handleDownloadAll(photos, student.name)}>
+                    <i className="fa-solid fa-download" /> Download All
+                  </button>
+                )}
+                <button className="btn btn-outline btn-sm" onClick={() => setSelectedStudent(null)}>
+                  <i className="fa-solid fa-times" /> Close
+                </button>
+              </div>
             </div>
             {photos.length === 0 ? (
               <div style={{textAlign:'center',padding:30,color:'var(--text2)'}}>No photos uploaded by this student.</div>
             ) : (
               <div style={{display:'grid',gridTemplateColumns:'repeat(auto-fill, minmax(200px, 1fr))',gap:12}}>
                 {photos.map((url, i) => (
-                  <div key={i} style={{borderRadius:8,overflow:'hidden',background:'var(--bg3)',aspectRatio:'1'}}>
+                  <div key={i} style={{borderRadius:8,overflow:'hidden',background:'var(--bg3)',aspectRatio:'1',position:'relative'}}>
                     <img src={url + '?t=' + Date.now()} alt={`${student.name} photo ${i+1}`} style={{width:'100%',height:'100%',objectFit:'cover'}} />
+                    <button onClick={() => handleDownloadPhoto(url, student.name, i)} style={{position:'absolute',bottom:8,right:8,background:'rgba(0,0,0,0.7)',color:'#fff',border:'none',borderRadius:6,padding:'6px 10px',cursor:'pointer',fontSize:12,display:'flex',alignItems:'center',gap:4}}>
+                      <i className="fa-solid fa-download" /> Download
+                    </button>
                   </div>
                 ))}
               </div>
