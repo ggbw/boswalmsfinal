@@ -9,24 +9,31 @@ export default function ProfilePage() {
   const [currentPwd, setCurrentPwd] = useState('');
   const [newPwd, setNewPwd] = useState('');
   const [confirmPwd, setConfirmPwd] = useState('');
-  const [photoUrl, setPhotoUrl] = useState<string | null>(null);
+  const [photos, setPhotos] = useState<{ name: string; url: string }[]>([]);
   const [uploading, setUploading] = useState(false);
   const fileRef = useRef<HTMLInputElement>(null);
 
   const u = currentUser;
 
-  // Compute student record before hooks
   const studentRecord = u?.role === 'student'
     ? db.students.find(s => s.studentId === u.studentId || s.name.split(' ')[0].toLowerCase() === (u.name||'').split(' ')[0].toLowerCase())
     : null;
 
   useEffect(() => {
     if (!studentRecord) return;
-    const { data } = supabase.storage.from('student-photos').getPublicUrl(`${studentRecord.id}/photo.webp`);
-    fetch(data.publicUrl, { method: 'HEAD' }).then(r => {
-      if (r.ok) setPhotoUrl(data.publicUrl + '?t=' + Date.now());
-    }).catch(() => {});
+    loadPhotos(studentRecord.id);
   }, [studentRecord?.id]);
+
+  const loadPhotos = async (studentId: string) => {
+    const { data: files } = await supabase.storage.from('student-photos').list(studentId, { limit: 100 });
+    if (!files || files.length === 0) { setPhotos([]); return; }
+    const photoFiles = files.filter(f => f.name.endsWith('.webp') && !f.name.startsWith('thumb_'));
+    const urls = photoFiles.map(f => {
+      const { data } = supabase.storage.from('student-photos').getPublicUrl(`${studentId}/${f.name}`);
+      return { name: f.name, url: data.publicUrl + '?t=' + Date.now() };
+    });
+    setPhotos(urls);
+  };
 
   if (!u) return null;
 
@@ -57,31 +64,46 @@ export default function ProfilePage() {
     ));
   };
 
-
   const handlePhotoUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (!file || !studentRecord) return;
-    if (!file.type.startsWith('image/')) { toast('Please select an image file', 'error'); return; }
+    const files = e.target.files;
+    if (!files || files.length === 0 || !studentRecord) return;
     setUploading(true);
     try {
-      const [compressed, thumb] = await Promise.all([compressImage(file), createThumbnail(file)]);
-      const path = `${studentRecord.id}/photo.webp`;
-      const thumbPath = `${studentRecord.id}/thumb.webp`;
-      const [r1, r2] = await Promise.all([
-        supabase.storage.from('student-photos').upload(path, compressed, { contentType: 'image/webp', upsert: true }),
-        supabase.storage.from('student-photos').upload(thumbPath, thumb, { contentType: 'image/webp', upsert: true }),
-      ]);
-      if (r1.error) throw r1.error;
-      if (r2.error) throw r2.error;
-      const { data } = supabase.storage.from('student-photos').getPublicUrl(path);
-      setPhotoUrl(data.publicUrl + '?t=' + Date.now());
-      toast('Photo uploaded successfully!', 'success');
+      for (let i = 0; i < files.length; i++) {
+        const file = files[i];
+        if (!file.type.startsWith('image/')) { toast(`${file.name} is not an image`, 'error'); continue; }
+        const timestamp = Date.now() + '_' + i;
+        const photoName = `photo_${timestamp}.webp`;
+        const thumbName = `thumb_${timestamp}.webp`;
+        const [compressed, thumb] = await Promise.all([compressImage(file), createThumbnail(file)]);
+        const path = `${studentRecord.id}/${photoName}`;
+        const thumbPath = `${studentRecord.id}/${thumbName}`;
+        const [r1, r2] = await Promise.all([
+          supabase.storage.from('student-photos').upload(path, compressed, { contentType: 'image/webp', upsert: true }),
+          supabase.storage.from('student-photos').upload(thumbPath, thumb, { contentType: 'image/webp', upsert: true }),
+        ]);
+        if (r1.error) throw r1.error;
+        if (r2.error) throw r2.error;
+      }
+      toast(`${files.length} photo(s) uploaded successfully!`, 'success');
+      await loadPhotos(studentRecord.id);
     } catch (err: any) {
       toast(err.message || 'Upload failed', 'error');
     } finally {
       setUploading(false);
       if (fileRef.current) fileRef.current.value = '';
     }
+  };
+
+  const handleDeletePhoto = async (photoName: string) => {
+    if (!studentRecord) return;
+    const thumbName = photoName.replace('photo_', 'thumb_');
+    await Promise.all([
+      supabase.storage.from('student-photos').remove([`${studentRecord.id}/${photoName}`]),
+      supabase.storage.from('student-photos').remove([`${studentRecord.id}/${thumbName}`]),
+    ]);
+    toast('Photo deleted', 'success');
+    await loadPhotos(studentRecord.id);
   };
 
   if (u.role === 'student') {
@@ -133,13 +155,9 @@ export default function ProfilePage() {
       <div className="two-col">
         <div className="card">
           <div style={{textAlign:'center',marginBottom:20}}>
-            <div style={{width:100,height:100,borderRadius:16,overflow:'hidden',background:'linear-gradient(135deg,#d4920a,#f0b429)',display:'flex',alignItems:'center',justifyContent:'center',fontSize:28,fontWeight:700,color:'#fff',margin:'0 auto 8px',cursor:'pointer',position:'relative'}} onClick={() => fileRef.current?.click()}>
-              {photoUrl ? <img src={photoUrl} alt={stu.name} style={{width:'100%',height:'100%',objectFit:'cover'}} /> : stu.name[0]}
+            <div style={{width:100,height:100,borderRadius:16,overflow:'hidden',background:'linear-gradient(135deg,#d4920a,#f0b429)',display:'flex',alignItems:'center',justifyContent:'center',fontSize:28,fontWeight:700,color:'#fff',margin:'0 auto 8px'}}>
+              {photos.length > 0 ? <img src={photos[0].url} alt={stu.name} style={{width:'100%',height:'100%',objectFit:'cover'}} /> : stu.name[0]}
             </div>
-            <input ref={fileRef} type="file" accept="image/*" style={{display:'none'}} onChange={handlePhotoUpload} />
-            <button className="btn btn-outline btn-sm" style={{marginBottom:8}} onClick={() => fileRef.current?.click()} disabled={uploading}>
-              <i className="fa-solid fa-camera" /> {uploading ? 'Uploading...' : 'Upload Photo'}
-            </button>
             <div style={{fontSize:18,fontWeight:700}}>{stu.name}</div><span className="badge badge-pass">STUDENT</span>
           </div>
           <div className="info-row"><span className="info-label">Student ID</span><span className="info-val">{stu.studentId}</span></div>
@@ -157,6 +175,33 @@ export default function ProfilePage() {
           <div className="info-row"><span className="info-label">Semester</span><span className="info-val">Semester {stu.semester}</span></div>
           <div className="info-row"><span className="info-label">Status</span><span className="info-val"><span className="badge badge-active">Active</span></span></div>
         </div>
+      </div>
+
+      {/* Photo Gallery Section */}
+      <div className="card" style={{marginTop:16}}>
+        <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:12}}>
+          <div className="card-title" style={{margin:0}}>My Photos</div>
+          <div>
+            <input ref={fileRef} type="file" accept="image/*" multiple style={{display:'none'}} onChange={handlePhotoUpload} />
+            <button className="btn btn-primary btn-sm" onClick={() => fileRef.current?.click()} disabled={uploading}>
+              <i className="fa-solid fa-upload" /> {uploading ? 'Uploading...' : 'Upload Photos'}
+            </button>
+          </div>
+        </div>
+        {photos.length === 0 ? (
+          <div style={{textAlign:'center',padding:30,color:'var(--text2)'}}>No photos uploaded yet. Click "Upload Photos" to add your photos.</div>
+        ) : (
+          <div style={{display:'grid',gridTemplateColumns:'repeat(auto-fill, minmax(120px, 1fr))',gap:12}}>
+            {photos.map(p => (
+              <div key={p.name} style={{position:'relative',borderRadius:8,overflow:'hidden',background:'var(--bg3)',aspectRatio:'1'}}>
+                <img src={p.url} alt="Student photo" style={{width:'100%',height:'100%',objectFit:'cover'}} />
+                <button onClick={() => handleDeletePhoto(p.name)} style={{position:'absolute',top:4,right:4,background:'rgba(0,0,0,0.6)',color:'#fff',border:'none',borderRadius:4,width:24,height:24,cursor:'pointer',display:'flex',alignItems:'center',justifyContent:'center',fontSize:12}}>
+                  <i className="fa-solid fa-trash" />
+                </button>
+              </div>
+            ))}
+          </div>
+        )}
       </div>
     </>);
   }

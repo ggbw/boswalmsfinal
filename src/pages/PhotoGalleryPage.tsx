@@ -3,39 +3,46 @@ import { useApp } from '@/context/AppContext';
 import { supabase } from '@/integrations/supabase/client';
 
 export default function PhotoGalleryPage() {
-  const { db } = useApp();
+  const { db, showModal } = useApp();
   const [search, setSearch] = useState('');
   const [classFilter, setClassFilter] = useState('');
-  const [photoMap, setPhotoMap] = useState<Record<string, string>>({});
+  const [photoMap, setPhotoMap] = useState<Record<string, string[]>>({});
+  const [thumbMap, setThumbMap] = useState<Record<string, string>>({});
   const [loading, setLoading] = useState(true);
 
-  // Load all thumbnails from bucket
   useEffect(() => {
     (async () => {
       const { data: files } = await supabase.storage.from('student-photos').list('', { limit: 2000 });
       if (!files) { setLoading(false); return; }
 
-      // List folders (student ids)
       const folders = files.filter(f => f.id && !f.name.includes('.'));
-      const map: Record<string, string> = {};
+      const allPhotos: Record<string, string[]> = {};
+      const thumbs: Record<string, string> = {};
 
-      // For each student folder, get thumbnail
       for (const folder of folders) {
-        const { data: inner } = await supabase.storage.from('student-photos').list(folder.name, { limit: 10 });
-        const thumb = inner?.find(f => f.name === 'thumb.webp');
-        if (thumb) {
-          const { data: urlData } = supabase.storage.from('student-photos').getPublicUrl(`${folder.name}/thumb.webp`);
-          map[folder.name] = urlData.publicUrl;
-        } else {
-          // fallback to full photo
-          const photo = inner?.find(f => f.name === 'photo.webp');
-          if (photo) {
-            const { data: urlData } = supabase.storage.from('student-photos').getPublicUrl(`${folder.name}/photo.webp`);
-            map[folder.name] = urlData.publicUrl;
+        const { data: inner } = await supabase.storage.from('student-photos').list(folder.name, { limit: 100 });
+        if (!inner) continue;
+        
+        const photoFiles = inner.filter(f => f.name.endsWith('.webp') && !f.name.startsWith('thumb_'));
+        const thumbFiles = inner.filter(f => f.name.startsWith('thumb_'));
+        
+        if (photoFiles.length > 0) {
+          allPhotos[folder.name] = photoFiles.map(f => {
+            const { data } = supabase.storage.from('student-photos').getPublicUrl(`${folder.name}/${f.name}`);
+            return data.publicUrl;
+          });
+          
+          // Use first thumb as grid thumbnail
+          if (thumbFiles.length > 0) {
+            const { data } = supabase.storage.from('student-photos').getPublicUrl(`${folder.name}/${thumbFiles[0].name}`);
+            thumbs[folder.name] = data.publicUrl;
+          } else {
+            thumbs[folder.name] = allPhotos[folder.name][0];
           }
         }
       }
-      setPhotoMap(map);
+      setPhotoMap(allPhotos);
+      setThumbMap(thumbs);
       setLoading(false);
     })();
   }, []);
@@ -47,6 +54,25 @@ export default function PhotoGalleryPage() {
       return true;
     });
   }, [db.students, classFilter, search]);
+
+  const viewStudentPhotos = (studentId: string, studentName: string) => {
+    const photos = photoMap[studentId] || [];
+    showModal(`${studentName} — Photos (${photos.length})`, (
+      <div>
+        {photos.length === 0 ? (
+          <div style={{textAlign:'center',padding:30,color:'var(--text2)'}}>No photos uploaded.</div>
+        ) : (
+          <div style={{display:'grid',gridTemplateColumns:'repeat(auto-fill, minmax(200px, 1fr))',gap:12}}>
+            {photos.map((url, i) => (
+              <div key={i} style={{borderRadius:8,overflow:'hidden',background:'var(--bg3)',aspectRatio:'1'}}>
+                <img src={url + '?t=' + Date.now()} alt={`${studentName} photo ${i+1}`} style={{width:'100%',height:'100%',objectFit:'cover'}} />
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+    ), 'lg');
+  };
 
   return (
     <>
@@ -74,17 +100,23 @@ export default function PhotoGalleryPage() {
       ) : (
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(160px, 1fr))', gap: 16 }}>
           {filtered.map(s => {
-            const hasPhoto = !!photoMap[s.id];
+            const hasPhoto = !!thumbMap[s.id];
+            const photoCount = photoMap[s.id]?.length || 0;
             const cls = db.classes.find(c => c.id === s.classId);
             return (
-              <div key={s.id} className="card" style={{ padding: 12, textAlign: 'center' }}>
+              <div key={s.id} className="card" style={{ padding: 12, textAlign: 'center', cursor: hasPhoto ? 'pointer' : 'default' }} onClick={() => hasPhoto && viewStudentPhotos(s.id, s.name)}>
                 <div style={{
                   width: 100, height: 100, borderRadius: 12, margin: '0 auto 8px',
                   overflow: 'hidden', background: 'var(--bg3)',
-                  display: 'flex', alignItems: 'center', justifyContent: 'center',
+                  display: 'flex', alignItems: 'center', justifyContent: 'center', position: 'relative',
                 }}>
                   {hasPhoto ? (
-                    <img src={photoMap[s.id]} alt={s.name} style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+                    <>
+                      <img src={thumbMap[s.id]} alt={s.name} style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+                      {photoCount > 1 && (
+                        <span style={{position:'absolute',bottom:4,right:4,background:'rgba(0,0,0,0.7)',color:'#fff',fontSize:10,padding:'2px 6px',borderRadius:8,fontWeight:600}}>{photoCount}</span>
+                      )}
+                    </>
                   ) : (
                     <span style={{ fontSize: 32, fontWeight: 700, color: 'var(--text2)' }}>{s.name[0]}</span>
                   )}
