@@ -1,6 +1,7 @@
-import { useState } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { useApp } from '@/context/AppContext';
 import { supabase } from '@/integrations/supabase/client';
+import { compressImage, createThumbnail } from '@/lib/imageCompression';
 
 export default function ProfilePage() {
   const { currentUser, db, toast, showModal, closeModal, reloadDb } = useApp();
@@ -8,9 +9,26 @@ export default function ProfilePage() {
   const [currentPwd, setCurrentPwd] = useState('');
   const [newPwd, setNewPwd] = useState('');
   const [confirmPwd, setConfirmPwd] = useState('');
+  const [photoUrl, setPhotoUrl] = useState<string | null>(null);
+  const [uploading, setUploading] = useState(false);
+  const fileRef = useRef<HTMLInputElement>(null);
 
-  if (!currentUser) return null;
   const u = currentUser;
+
+  // Compute student record before hooks
+  const studentRecord = u?.role === 'student'
+    ? db.students.find(s => s.studentId === u.studentId || s.name.split(' ')[0].toLowerCase() === (u.name||'').split(' ')[0].toLowerCase())
+    : null;
+
+  useEffect(() => {
+    if (!studentRecord) return;
+    const { data } = supabase.storage.from('student-photos').getPublicUrl(`${studentRecord.id}/photo.webp`);
+    fetch(data.publicUrl, { method: 'HEAD' }).then(r => {
+      if (r.ok) setPhotoUrl(data.publicUrl + '?t=' + Date.now());
+    }).catch(() => {});
+  }, [studentRecord?.id]);
+
+  if (!u) return null;
 
   const handleChangePassword = async () => {
     if (!newPwd || newPwd.length < 6) { toast('Password must be at least 6 characters', 'error'); return; }
@@ -39,8 +57,35 @@ export default function ProfilePage() {
     ));
   };
 
+
+  const handlePhotoUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file || !studentRecord) return;
+    if (!file.type.startsWith('image/')) { toast('Please select an image file', 'error'); return; }
+    setUploading(true);
+    try {
+      const [compressed, thumb] = await Promise.all([compressImage(file), createThumbnail(file)]);
+      const path = `${studentRecord.id}/photo.webp`;
+      const thumbPath = `${studentRecord.id}/thumb.webp`;
+      const [r1, r2] = await Promise.all([
+        supabase.storage.from('student-photos').upload(path, compressed, { contentType: 'image/webp', upsert: true }),
+        supabase.storage.from('student-photos').upload(thumbPath, thumb, { contentType: 'image/webp', upsert: true }),
+      ]);
+      if (r1.error) throw r1.error;
+      if (r2.error) throw r2.error;
+      const { data } = supabase.storage.from('student-photos').getPublicUrl(path);
+      setPhotoUrl(data.publicUrl + '?t=' + Date.now());
+      toast('Photo uploaded successfully!', 'success');
+    } catch (err: any) {
+      toast(err.message || 'Upload failed', 'error');
+    } finally {
+      setUploading(false);
+      if (fileRef.current) fileRef.current.value = '';
+    }
+  };
+
   if (u.role === 'student') {
-    const stu = db.students.find(s => s.studentId === u.studentId || s.name.split(' ')[0].toLowerCase() === (u.name||'').split(' ')[0].toLowerCase());
+    const stu = studentRecord;
     if (!stu) return <div className="card" style={{textAlign:'center',padding:40,color:'var(--text2)'}}>Student record not found.</div>;
     const cls = db.classes.find(c => c.id === stu.classId);
     const prog = db.config.programmes.find(p => p.id === stu.programme);
@@ -87,7 +132,16 @@ export default function ProfilePage() {
       )}
       <div className="two-col">
         <div className="card">
-          <div style={{textAlign:'center',marginBottom:20}}><div style={{width:72,height:72,borderRadius:16,background:'linear-gradient(135deg,#d4920a,#f0b429)',display:'flex',alignItems:'center',justifyContent:'center',fontSize:28,fontWeight:700,color:'#fff',margin:'0 auto 12px'}}>{stu.name[0]}</div><div style={{fontSize:18,fontWeight:700}}>{stu.name}</div><span className="badge badge-pass">STUDENT</span></div>
+          <div style={{textAlign:'center',marginBottom:20}}>
+            <div style={{width:100,height:100,borderRadius:16,overflow:'hidden',background:'linear-gradient(135deg,#d4920a,#f0b429)',display:'flex',alignItems:'center',justifyContent:'center',fontSize:28,fontWeight:700,color:'#fff',margin:'0 auto 8px',cursor:'pointer',position:'relative'}} onClick={() => fileRef.current?.click()}>
+              {photoUrl ? <img src={photoUrl} alt={stu.name} style={{width:'100%',height:'100%',objectFit:'cover'}} /> : stu.name[0]}
+            </div>
+            <input ref={fileRef} type="file" accept="image/*" style={{display:'none'}} onChange={handlePhotoUpload} />
+            <button className="btn btn-outline btn-sm" style={{marginBottom:8}} onClick={() => fileRef.current?.click()} disabled={uploading}>
+              <i className="fa-solid fa-camera" /> {uploading ? 'Uploading...' : 'Upload Photo'}
+            </button>
+            <div style={{fontSize:18,fontWeight:700}}>{stu.name}</div><span className="badge badge-pass">STUDENT</span>
+          </div>
           <div className="info-row"><span className="info-label">Student ID</span><span className="info-val">{stu.studentId}</span></div>
           <div className="info-row"><span className="info-label">Gender</span><span className="info-val">{stu.gender}</span></div>
           <div className="info-row"><span className="info-label">DOB</span><span className="info-val">{stu.dob}</span></div>
