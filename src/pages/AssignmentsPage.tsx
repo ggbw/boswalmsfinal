@@ -13,7 +13,6 @@ export default function AssignmentsPage() {
     assignments = assignments.filter(a => a.createdBy === currentUser?.id);
   }
 
-  // Find current student record
   const currentStudent = role === 'student'
     ? db.students.find(s => s.studentId === currentUser?.studentId || s.name.split(' ')[0].toLowerCase() === (currentUser?.name||'').split(' ')[0].toLowerCase())
     : null;
@@ -110,8 +109,52 @@ export default function AssignmentsPage() {
     ));
   };
 
+  const handleDeleteAssignment = async (assignmentId: string) => {
+    if (!confirm('Are you sure you want to delete this assignment? This will also remove all submissions.')) return;
+    // Delete submissions first
+    await supabase.from('submissions').delete().eq('assignment_id', assignmentId);
+    const { error } = await supabase.from('assignments').delete().eq('id', assignmentId);
+    if (error) { toast(error.message, 'error'); } else {
+      toast('Assignment deleted', 'success');
+      setSelectedAssignment(null);
+      reloadDb();
+    }
+  };
+
   const handleViewAssignment = (assignmentId: string) => {
     setSelectedAssignment(selectedAssignment === assignmentId ? null : assignmentId);
+  };
+
+  const handleGradeSubmission = (submission: any, assignment: any) => {
+    let grade = submission.grade ?? '';
+    let feedback = submission.feedback ?? '';
+
+    showModal(`Grade: ${db.students.find(s => s.id === submission.studentId)?.name || 'Student'}`, (
+      <div>
+        <div className="form-row cols2">
+          <div className="form-group">
+            <label>Grade (out of {assignment.marks})</label>
+            <input className="form-input" type="number" min={0} max={assignment.marks} defaultValue={grade} onChange={e => grade = Number(e.target.value)} />
+          </div>
+          <div className="form-group">
+            <label>Status</label>
+            <div style={{padding:'8px 0',fontSize:13,color:'var(--text2)'}}>Will be set to "graded"</div>
+          </div>
+        </div>
+        <div className="form-group">
+          <label>Feedback</label>
+          <textarea className="form-input" rows={3} defaultValue={feedback} placeholder="Provide feedback to the student..." onChange={e => feedback = e.target.value} />
+        </div>
+        <button className="btn btn-primary" style={{ marginTop: 12 }} onClick={async () => {
+          const { error } = await supabase.from('submissions').update({
+            grade: Number(grade), feedback, status: 'graded'
+          }).eq('id', submission.id);
+          if (error) { toast(error.message, 'error'); } else {
+            toast('Submission graded!', 'success'); closeModal(); reloadDb();
+          }
+        }}>Save Grade</button>
+      </div>
+    ));
   };
 
   const handleSubmitAssignment = (assignment: typeof assignments[0]) => {
@@ -143,7 +186,6 @@ export default function AssignmentsPage() {
           if (!selectedFile) { toast('Please select a file to upload', 'error'); return; }
           if (selectedFile.size > 10 * 1024 * 1024) { toast('File size must be under 10MB', 'error'); return; }
 
-          // Convert file to base64 for storage in submissions table
           const reader = new FileReader();
           reader.onload = async () => {
             const base64 = reader.result as string;
@@ -171,17 +213,22 @@ export default function AssignmentsPage() {
     ));
   };
 
+  // Get submissions for an assignment (for lecturer/admin view)
+  const getAssignmentSubmissions = (assignmentId: string) => {
+    return db.submissions.filter(sub => sub.assignmentId === assignmentId);
+  };
+
   return (<>
     <div className="page-header">
       <div><div className="page-title"><i className="fa-solid fa-list-check" style={{color:'var(--accent)',marginRight:8}}/>Assignments</div><div className="page-sub">{assignments.length} assignment(s)</div></div>
       {role === 'lecturer' && <button className="btn btn-primary btn-sm" onClick={handleCreateAssignment}><i className="fa-solid fa-plus" /> Create Assignment</button>}
     </div>
-    <div className="card"><div className="table-wrap"><table><thead><tr><th>Title</th><th>Module</th><th>Class</th><th>Due Date</th><th style={{textAlign:'center'}}>Marks</th><th>Type</th><th>Status</th>{role === 'student' && <th>Action</th>}</tr></thead>
+    <div className="card"><div className="table-wrap"><table><thead><tr><th>Title</th><th>Module</th><th>Class</th><th>Due Date</th><th style={{textAlign:'center'}}>Marks</th><th>Type</th><th>Status</th><th>Submissions</th>{role === 'student' && <th>Action</th>}{(role === 'lecturer' || role === 'admin') && <th>Actions</th>}</tr></thead>
       <tbody>{assignments.map(a => {
         const mod = db.modules.find(m => m.id === a.moduleId);
         const cls = db.classes.find(c => c.id === a.classId);
         const mySubmission = currentStudent ? db.submissions.find(sub => sub.assignmentId === a.id && sub.studentId === currentStudent.id) : null;
-        const isExpanded = selectedAssignment === a.id;
+        const submissionCount = db.submissions.filter(sub => sub.assignmentId === a.id).length;
 
         return (
           <tr key={a.id} onClick={() => handleViewAssignment(a.id)} style={{cursor:'pointer'}}>
@@ -197,6 +244,7 @@ export default function AssignmentsPage() {
                 : <span className={`badge ${a.status==='graded'?'badge-credit':a.status==='active'?'badge-pass':'badge-inactive'}`}>{a.status}</span>
               }
             </td>
+            <td style={{textAlign:'center'}}>{submissionCount}</td>
             {role === 'student' && (
               <td onClick={e => e.stopPropagation()}>
                 {a.submissionType === 'softcopy' && !mySubmission && a.status === 'active' && (
@@ -205,6 +253,13 @@ export default function AssignmentsPage() {
                   </button>
                 )}
                 {mySubmission && <span style={{fontSize:11,color:'var(--text2)'}}>✓ Submitted</span>}
+              </td>
+            )}
+            {(role === 'lecturer' || role === 'admin') && (
+              <td onClick={e => e.stopPropagation()}>
+                <button className="btn btn-outline btn-sm" style={{color:'var(--danger)'}} onClick={() => handleDeleteAssignment(a.id)}>
+                  <i className="fa-solid fa-trash" />
+                </button>
               </td>
             )}
           </tr>
@@ -219,6 +274,7 @@ export default function AssignmentsPage() {
       const mod = db.modules.find(m => m.id === a.moduleId);
       const cls = db.classes.find(c => c.id === a.classId);
       const mySubmission = currentStudent ? db.submissions.find(sub => sub.assignmentId === a.id && sub.studentId === currentStudent.id) : null;
+      const allSubmissions = getAssignmentSubmissions(a.id);
 
       return (
         <div className="card" style={{marginTop:16}}>
@@ -227,9 +283,16 @@ export default function AssignmentsPage() {
               <div className="card-title" style={{margin:0}}>{a.title}</div>
               <div style={{fontSize:12,color:'var(--text2)',marginTop:4}}>{mod?.name} • {cls?.name}</div>
             </div>
-            <button className="btn btn-outline btn-sm" onClick={() => setSelectedAssignment(null)}>
-              <i className="fa-solid fa-times" /> Close
-            </button>
+            <div style={{display:'flex',gap:8}}>
+              {(role === 'lecturer' || role === 'admin') && (
+                <button className="btn btn-outline btn-sm" style={{color:'var(--danger)'}} onClick={() => handleDeleteAssignment(a.id)}>
+                  <i className="fa-solid fa-trash" /> Delete
+                </button>
+              )}
+              <button className="btn btn-outline btn-sm" onClick={() => setSelectedAssignment(null)}>
+                <i className="fa-solid fa-times" /> Close
+              </button>
+            </div>
           </div>
           <div style={{marginTop:16,display:'grid',gridTemplateColumns:'1fr 1fr',gap:12}}>
             <div className="info-row"><span className="info-label">Due Date</span><span className="info-val">{a.dueDate || '—'}</span></div>
@@ -281,6 +344,54 @@ export default function AssignmentsPage() {
               <button className="btn btn-primary" onClick={() => handleSubmitAssignment(a)}>
                 <i className="fa-solid fa-upload" /> Submit Assignment
               </button>
+            </div>
+          )}
+
+          {/* Lecturer/Admin: Submissions list */}
+          {(role === 'lecturer' || role === 'admin') && (
+            <div style={{marginTop:20}}>
+              <div style={{fontSize:14,fontWeight:700,color:'var(--text1)',marginBottom:12}}>
+                Submissions ({allSubmissions.length})
+              </div>
+              {allSubmissions.length === 0 ? (
+                <div style={{textAlign:'center',padding:20,color:'var(--text2)',fontSize:13}}>No submissions yet.</div>
+              ) : (
+                <div className="table-wrap"><table>
+                  <thead><tr><th>Student</th><th>Student ID</th><th>File</th><th>Submitted</th><th>Status</th><th>Grade</th><th>Actions</th></tr></thead>
+                  <tbody>
+                    {allSubmissions.map(sub => {
+                      const student = db.students.find(s => s.id === sub.studentId);
+                      return (
+                        <tr key={sub.id}>
+                          <td className="td-name">{student?.name || 'Unknown'}</td>
+                          <td style={{fontSize:11,fontFamily:"'JetBrains Mono',monospace"}}>{student?.studentId || '—'}</td>
+                          <td>
+                            {sub.fileData ? (
+                              <a href={sub.fileData} download={sub.fileName} className="btn btn-outline btn-sm" style={{fontSize:11}} onClick={e => e.stopPropagation()}>
+                                <i className="fa-solid fa-download" /> {sub.fileName}
+                              </a>
+                            ) : (
+                              <span style={{fontSize:11,color:'var(--text2)'}}>{sub.fileName || '—'}</span>
+                            )}
+                          </td>
+                          <td style={{fontSize:11}}>{sub.submittedDate} {sub.submittedTime}</td>
+                          <td>
+                            <span className={`badge ${sub.status === 'graded' ? 'badge-credit' : 'badge-pending'}`}>{sub.status}</span>
+                          </td>
+                          <td style={{fontFamily:"'JetBrains Mono',monospace",textAlign:'center'}}>
+                            {sub.grade !== null && sub.grade !== undefined ? `${sub.grade}/${a.marks}` : '—'}
+                          </td>
+                          <td onClick={e => e.stopPropagation()}>
+                            <button className="btn btn-primary btn-sm" onClick={() => handleGradeSubmission(sub, a)}>
+                              <i className="fa-solid fa-pen" /> Grade
+                            </button>
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table></div>
+              )}
             </div>
           )}
         </div>
