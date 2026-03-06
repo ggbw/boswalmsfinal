@@ -28,6 +28,7 @@ function getNavConfig(role: string, db: any): NavSection[] {
       { section: 'Management', items: [
         { id: 'admissions', label: 'Admissions', icon: 'fa-solid fa-door-open' },
         { id: 'progression', label: 'Progression', icon: 'fa-solid fa-arrow-up-right-dots' },
+        { id: 'photogallery', label: 'Photo Gallery', icon: 'fa-solid fa-images' },
         { id: 'usermanagement', label: 'User Management', icon: 'fa-solid fa-users-gear' },
         { id: 'config', label: 'Configuration', icon: 'fa-solid fa-gear' },
       ]},
@@ -70,6 +71,7 @@ function getNavConfig(role: string, db: any): NavSection[] {
         { id: 'exams', label: 'Exams', icon: 'fa-solid fa-file-pen' },
         { id: 'assignments', label: 'Assignments', icon: 'fa-solid fa-list-check' },
         { id: 'results', label: 'Input Results', icon: 'fa-solid fa-chart-line' },
+        { id: 'photogallery', label: 'Photo Gallery', icon: 'fa-solid fa-images' },
       ]},
     ],
     student: [
