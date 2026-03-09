@@ -554,6 +554,8 @@ export type Database = {
           email: string | null
           gender: string | null
           guardian: string | null
+          guardian_email: string | null
+          guardian_mobile: string | null
           id: string
           mobile: string | null
           name: string
@@ -571,6 +573,8 @@ export type Database = {
           email?: string | null
           gender?: string | null
           guardian?: string | null
+          guardian_email?: string | null
+          guardian_mobile?: string | null
           id: string
           mobile?: string | null
           name: string
@@ -588,6 +592,8 @@ export type Database = {
           email?: string | null
           gender?: string | null
           guardian?: string | null
+          guardian_email?: string | null
+          guardian_mobile?: string | null
           id?: string
           mobile?: string | null
           name?: string
