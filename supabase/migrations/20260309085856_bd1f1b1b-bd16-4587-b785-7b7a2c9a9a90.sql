@@ -1,0 +1,3 @@
+ALTER TABLE students 
+  ADD COLUMN IF NOT EXISTS guardian_email TEXT DEFAULT '',
+  ADD COLUMN IF NOT EXISTS guardian_mobile TEXT DEFAULT '';
