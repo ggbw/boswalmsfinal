@@ -1,27 +1,14 @@
 import { useState } from "react";
-// eslint-disable-next-line @typescript-eslint/ban-ts-comment
-// @ts-ignore
-import * as docxLib from "docx";
 import { useApp } from "@/context/AppContext";
 import { calcModuleMark } from "@/data/db";
 
-const {
-  Document,
-  Packer,
-  Paragraph,
-  TextRun,
-  Table,
-  TableRow,
-  TableCell,
-  AlignmentType,
-  BorderStyle,
-  WidthType,
-  ShadingType,
-  VerticalAlign,
-  ImageRun,
-  Header,
-  Footer,
-} = docxLib as any;
+// Load docx from CDN at runtime (not installed as a package)
+let _docx: any = null;
+async function getDocx(): Promise<any> {
+  if (_docx) return _docx;
+  _docx = await import("https://cdn.jsdelivr.net/npm/docx@8.5.0/build/index.min.js" as any);
+  return _docx;
+}
 
 // ── Grading ───────────────────────────────────────────────────────────────────
 function transcriptGrade(pct: number): string {
@@ -60,11 +47,30 @@ interface PassedModule {
 }
 
 async function buildTranscriptDocx(student: any, programme: any, passedModules: PassedModule[]): Promise<Blob> {
-  // Load images
-  const [logoData, footerData] = await Promise.all([
-    fetchImage("/images/transcript_logo.png"),
-    fetchImage("/images/transcript_footer.png"),
+  // Load docx library and images in parallel
+  const [docxMod, logoData, footerData] = await Promise.all([
+    getDocx(),
+    fetchImage("/transcript_logo.png"),
+    fetchImage("/transcript_footer.png"),
   ]);
+
+  const {
+    Document,
+    Packer,
+    Paragraph,
+    TextRun,
+    Table,
+    TableRow,
+    TableCell,
+    AlignmentType,
+    BorderStyle,
+    WidthType,
+    ShadingType,
+    VerticalAlign,
+    ImageRun,
+    Header,
+    Footer,
+  } = docxMod;
 
   // ── Constants ──────────────────────────────────────────────────────────────
   const DARK_BLUE = "002060";
