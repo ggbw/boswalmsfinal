@@ -46,7 +46,8 @@ export default function ConfigPage() {
       type = "Diploma",
       years = 3,
       semesters = 2,
-      startYear = new Date().getFullYear();
+      startYear = new Date().getFullYear(),
+      level = 6;
     showModal(
       "Add Programme",
       <div>
@@ -64,6 +65,19 @@ export default function ConfigPage() {
             </select>
           </div>
           <div className="form-group">
+            <label>Level (NQF)</label>
+            <input
+              className="form-input"
+              type="number"
+              min={1}
+              max={10}
+              defaultValue={level}
+              onChange={(e) => (level = Number(e.target.value))}
+            />
+          </div>
+        </div>
+        <div className="form-row cols2">
+          <div className="form-group">
             <label>Start Year</label>
             <input
               className="form-input"
@@ -72,8 +86,6 @@ export default function ConfigPage() {
               onChange={(e) => (startYear = Number(e.target.value))}
             />
           </div>
-        </div>
-        <div className="form-row cols2">
           <div className="form-group">
             <label>Number of Years</label>
             <input
@@ -85,17 +97,17 @@ export default function ConfigPage() {
               onChange={(e) => (years = Number(e.target.value))}
             />
           </div>
-          <div className="form-group">
-            <label>Semesters per Year</label>
-            <input
-              className="form-input"
-              type="number"
-              min={1}
-              max={4}
-              defaultValue={semesters}
-              onChange={(e) => (semesters = Number(e.target.value))}
-            />
-          </div>
+        </div>
+        <div className="form-group">
+          <label>Semesters per Year</label>
+          <input
+            className="form-input"
+            type="number"
+            min={1}
+            max={4}
+            defaultValue={semesters}
+            onChange={(e) => (semesters = Number(e.target.value))}
+          />
         </div>
         <button
           className="btn btn-primary"
@@ -108,7 +120,7 @@ export default function ConfigPage() {
             const id = "prog_" + Date.now();
             const { error } = await supabase
               .from("programmes")
-              .insert({ id, name, type, years, semesters, start_year: startYear });
+              .insert({ id, name, type, years, semesters, start_year: startYear, level });
             if (error) {
               toast(error.message, "error");
             } else {
@@ -129,7 +141,8 @@ export default function ConfigPage() {
       type = prog.type,
       years = prog.years,
       semesters = prog.semesters,
-      startYear = prog.startYear;
+      startYear = prog.startYear,
+      level = prog.level ?? 6;
     showModal(
       "Edit Programme",
       <div>
@@ -147,6 +160,19 @@ export default function ConfigPage() {
             </select>
           </div>
           <div className="form-group">
+            <label>Level (NQF)</label>
+            <input
+              className="form-input"
+              type="number"
+              min={1}
+              max={10}
+              defaultValue={level}
+              onChange={(e) => (level = Number(e.target.value))}
+            />
+          </div>
+        </div>
+        <div className="form-row cols2">
+          <div className="form-group">
             <label>Start Year</label>
             <input
               className="form-input"
@@ -155,8 +181,6 @@ export default function ConfigPage() {
               onChange={(e) => (startYear = Number(e.target.value))}
             />
           </div>
-        </div>
-        <div className="form-row cols2">
           <div className="form-group">
             <label>Number of Years</label>
             <input
@@ -168,17 +192,17 @@ export default function ConfigPage() {
               onChange={(e) => (years = Number(e.target.value))}
             />
           </div>
-          <div className="form-group">
-            <label>Semesters per Year</label>
-            <input
-              className="form-input"
-              type="number"
-              min={1}
-              max={4}
-              defaultValue={semesters}
-              onChange={(e) => (semesters = Number(e.target.value))}
-            />
-          </div>
+        </div>
+        <div className="form-group">
+          <label>Semesters per Year</label>
+          <input
+            className="form-input"
+            type="number"
+            min={1}
+            max={4}
+            defaultValue={semesters}
+            onChange={(e) => (semesters = Number(e.target.value))}
+          />
         </div>
         <div style={{ display: "flex", gap: 8, marginTop: 12 }}>
           <button
@@ -186,7 +210,7 @@ export default function ConfigPage() {
             onClick={async () => {
               const { error } = await supabase
                 .from("programmes")
-                .update({ name, type, years, semesters, start_year: startYear })
+                .update({ name, type, years, semesters, start_year: startYear, level })
                 .eq("id", prog.id);
               if (error) {
                 toast(error.message, "error");
@@ -529,6 +553,7 @@ export default function ConfigPage() {
                 <tr>
                   <th>Programme Name</th>
                   <th>Type</th>
+                  <th>Level</th>
                   <th>Years</th>
                   <th>Semesters/Year</th>
                   <th>Start Year</th>
@@ -542,6 +567,7 @@ export default function ConfigPage() {
                     <td>
                       <span className="badge badge-pass">{p.type}</span>
                     </td>
+                    <td>{p.level ? `Level ${p.level}` : "—"}</td>
                     <td>{p.years} yr</td>
                     <td>{p.semesters} sem</td>
                     <td style={{ fontFamily: "'JetBrains Mono',monospace", fontSize: 11 }}>{p.startYear}</td>
