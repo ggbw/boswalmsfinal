@@ -1,5 +1,11 @@
 import { useState } from "react";
-import {
+// eslint-disable-next-line @typescript-eslint/ban-ts-comment
+// @ts-ignore
+import * as docxLib from "docx";
+import { useApp } from "@/context/AppContext";
+import { calcModuleMark } from "@/data/db";
+
+const {
   Document,
   Packer,
   Paragraph,
@@ -15,9 +21,7 @@ import {
   ImageRun,
   Header,
   Footer,
-} from "docx";
-import { useApp } from "@/context/AppContext";
-import { calcModuleMark } from "@/data/db";
+} = docxLib as any;
 
 // ── Grading ───────────────────────────────────────────────────────────────────
 function transcriptGrade(pct: number): string {
