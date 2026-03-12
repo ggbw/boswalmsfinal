@@ -2,12 +2,19 @@ import { useState } from "react";
 import { useApp } from "@/context/AppContext";
 import { calcModuleMark } from "@/data/db";
 
-// Load docx from CDN at runtime (not installed as a package)
-let _docx: any = null;
-async function getDocx(): Promise<any> {
-  if (_docx) return _docx;
-  _docx = await import("https://cdn.jsdelivr.net/npm/docx@8.5.0/build/index.min.js" as any);
-  return _docx;
+// Load docx from CDN via script tag (UMD build sets window.docx)
+let _docxLoading: Promise<any> | null = null;
+function getDocx(): Promise<any> {
+  if ((window as any).docx) return Promise.resolve((window as any).docx);
+  if (_docxLoading) return _docxLoading;
+  _docxLoading = new Promise((resolve, reject) => {
+    const script = document.createElement("script");
+    script.src = "https://cdn.jsdelivr.net/npm/docx@8.5.0/build/index.umd.js";
+    script.onload = () => resolve((window as any).docx);
+    script.onerror = reject;
+    document.head.appendChild(script);
+  });
+  return _docxLoading;
 }
 
 // ── Grading ───────────────────────────────────────────────────────────────────
