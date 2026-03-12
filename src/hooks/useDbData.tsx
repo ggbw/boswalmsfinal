@@ -63,6 +63,7 @@ export function useDbData() {
         semesters: p.semesters,
         type: p.type,
         startYear: p.start_year,
+        level: p.level ?? null,
       }));
 
       const dbData: DB = {
