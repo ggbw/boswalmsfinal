@@ -300,7 +300,7 @@ async function buildTranscriptDocx(student: any, programme: any, passedModules: 
   });
 
   const buildModuleTable = (items: PassedModule[]) => {
-    const rows: TableRow[] = [modHeaderRow];
+    const rows: any[] = [modHeaderRow];
     items.forEach((m, i) => {
       const shd = i % 2 === 0 ? { fill: LIGHT_GREY, type: ShadingType.CLEAR } : undefined;
       const cc: any = { borders: thinBorders, shading: shd };
