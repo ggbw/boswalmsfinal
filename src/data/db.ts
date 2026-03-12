@@ -128,6 +128,7 @@ export interface Programme {
   semesters: number;
   type: string;
   startYear: number;
+  level?: number;
 }
 export interface Term {
   id: string;
