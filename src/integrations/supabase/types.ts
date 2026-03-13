@@ -460,6 +460,7 @@ export type Database = {
       programmes: {
         Row: {
           id: string
+          level: number | null
           name: string
           semesters: number
           start_year: number
@@ -468,6 +469,7 @@ export type Database = {
         }
         Insert: {
           id: string
+          level?: number | null
           name: string
           semesters?: number
           start_year: number
@@ -476,6 +478,7 @@ export type Database = {
         }
         Update: {
           id?: string
+          level?: number | null
           name?: string
           semesters?: number
           start_year?: number
