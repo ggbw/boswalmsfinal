@@ -133,9 +133,9 @@ function printTranscript(student: any, prog: any, passedModules: PassedModule[])
   <!-- Student info -->
   <div style="display:grid;grid-template-columns:1fr 1fr;gap:4px 32px;margin-bottom:14px;background:#f9f9f9;padding:12px;border-radius:6px;font-size:12px;border-bottom:2px solid #C9A227">
     <div><strong style="color:#002060">Student Name:</strong> ${student.name}</div>
-    <div><strong style="color:#002060">Date of Admission:</strong> ${formatDate(student.dob)}</div>
+    <div><strong style="color:#002060">Date of Admission:</strong> ${student.enrolmentDate ? formatDate(student.enrolmentDate) : "—"}</div>
     <div><strong style="color:#002060">Student Number:</strong> ${student.studentId}</div>
-    <div><strong style="color:#002060">Date of Completion:</strong> —</div>
+    <div><strong style="color:#002060">Date of Completion:</strong> ${student.completionDate ? formatDate(student.completionDate) : "—"}</div>
     <div><strong style="color:#002060">ID/Passport No.:</strong> ${student.nationalId || "—"}</div>
     <div><strong style="color:#002060">Program of Study:</strong> ${prog?.name || "—"}</div>
     <div><strong style="color:#002060">Gender:</strong> ${student.gender || "—"}</div>
@@ -397,9 +397,9 @@ export function TranscriptView({ stu }: { stu: any }) {
         {(
           [
             ["Student Name", stu.name],
-            ["Date of Admission", formatDate(stu.dob)],
+            ["Date of Admission", stu.enrolmentDate ? formatDate(stu.enrolmentDate) : "—"],
             ["Student Number", stu.studentId],
-            ["Date of Completion", "—"],
+            ["Date of Completion", stu.completionDate ? formatDate(stu.completionDate) : "—"],
             ["ID/Passport No.", stu.nationalId || "—"],
             ["Program of Study", prog?.name || "—"],
             ["Gender", stu.gender || "—"],
