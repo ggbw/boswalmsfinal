@@ -2,21 +2,6 @@ import { useState } from "react";
 import { useApp } from "@/context/AppContext";
 import { calcModuleMark } from "@/data/db";
 
-// Load docx from CDN via script tag (UMD build sets window.docx)
-let _docxLoading: Promise<any> | null = null;
-function getDocx(): Promise<any> {
-  if ((window as any).docx) return Promise.resolve((window as any).docx);
-  if (_docxLoading) return _docxLoading;
-  _docxLoading = new Promise((resolve, reject) => {
-    const script = document.createElement("script");
-    script.src = "https://cdn.jsdelivr.net/npm/docx@8.5.0/build/index.umd.js";
-    script.onload = () => resolve((window as any).docx);
-    script.onerror = reject;
-    document.head.appendChild(script);
-  });
-  return _docxLoading;
-}
-
 // ── Grading ───────────────────────────────────────────────────────────────────
 function transcriptGrade(pct: number): string {
   if (pct >= 80) return "Distinction";
@@ -36,13 +21,6 @@ function todayStr(): string {
   return new Date().toLocaleDateString("en-GB", { day: "numeric", month: "long", year: "numeric" });
 }
 
-// ── Fetch images as ArrayBuffer ───────────────────────────────────────────────
-async function fetchImage(path: string): Promise<ArrayBuffer> {
-  const res = await fetch(path);
-  return res.arrayBuffer();
-}
-
-// ── DOCX builder ──────────────────────────────────────────────────────────────
 interface PassedModule {
   name: string;
   code: string;
@@ -53,306 +31,11 @@ interface PassedModule {
   semester: number;
 }
 
-async function buildTranscriptDocx(student: any, programme: any, passedModules: PassedModule[]): Promise<Blob> {
-  // Load docx library and images in parallel
-  const [docxMod, logoData, footerData] = await Promise.all([
-    getDocx(),
-    fetchImage("/transcript_logo.png"),
-    fetchImage("/transcript_footer.png"),
-  ]);
+// ── Print transcript in a new window ─────────────────────────────────────────
+function printTranscript(student: any, prog: any, passedModules: PassedModule[]) {
+  const studyYears = prog?.startYear ? `${prog.startYear}–${prog.startYear + (prog.years || 3)}` : "—";
 
-  const {
-    Document,
-    Packer,
-    Paragraph,
-    TextRun,
-    Table,
-    TableRow,
-    TableCell,
-    AlignmentType,
-    BorderStyle,
-    WidthType,
-    ShadingType,
-    VerticalAlign,
-    ImageRun,
-    Header,
-    Footer,
-  } = docxMod;
-
-  // ── Constants ──────────────────────────────────────────────────────────────
-  const DARK_BLUE = "002060";
-  const MID_BLUE = "1F3864";
-  const GOLD = "C9A227";
-  const LIGHT_GREY = "D9D9D9";
-  const WHITE = "FFFFFF";
-
-  const A4_W = 11906;
-  const A4_H = 16838;
-  const MARGIN = 1080;
-  const CONTENT_W = A4_W - MARGIN * 2; // 9746
-
-  const NO_BDR = { style: BorderStyle.NONE, size: 0, color: WHITE };
-  const THIN = { style: BorderStyle.SINGLE, size: 4, color: "AAAAAA" };
-  const noBorders = { top: NO_BDR, bottom: NO_BDR, left: NO_BDR, right: NO_BDR };
-  const thinBorders = { top: THIN, bottom: THIN, left: THIN, right: THIN };
-  const hdrBdr = { style: BorderStyle.SINGLE, size: 4, color: WHITE };
-  const hdrBorders = { top: hdrBdr, bottom: hdrBdr, left: hdrBdr, right: hdrBdr };
-
-  const R = (text: string, opts: any = {}) => new TextRun({ text, font: "Arial", size: 20, ...opts });
-  const RB = (text: string, opts: any = {}) => R(text, { bold: true, ...opts });
-
-  const sp = (before = 0, after = 0) => new Paragraph({ spacing: { before, after }, children: [] });
-
-  // ── Header section (logo centered) ────────────────────────────────────────
-  const docHeader = new Header({
-    children: [
-      new Paragraph({
-        alignment: AlignmentType.CENTER,
-        spacing: { before: 0, after: 0 },
-        children: [
-          new ImageRun({
-            data: logoData,
-            transformation: { width: 101, height: 70 },
-            type: "png",
-          } as any),
-        ],
-      }),
-    ],
-  });
-
-  // ── Footer section (full-width contact banner) ────────────────────────────
-  const docFooter = new Footer({
-    children: [
-      new Paragraph({
-        alignment: AlignmentType.CENTER,
-        spacing: { before: 0, after: 0 },
-        indent: { left: -1080, right: -1080 },
-        children: [
-          new ImageRun({
-            data: footerData,
-            transformation: { width: 793, height: 70 },
-            type: "png",
-          } as any),
-        ],
-      }),
-    ],
-  });
-
-  // ── Helper: make a table cell ─────────────────────────────────────────────
-  const mkCell = (content: string | string[], w: number, opts: any = {}) => {
-    const lines = Array.isArray(content) ? content : [content];
-    return new TableCell({
-      borders: opts.borders || noBorders,
-      shading: opts.fill ? { fill: opts.fill, type: ShadingType.CLEAR } : undefined,
-      width: { size: w, type: WidthType.DXA },
-      margins: { top: opts.padV || 80, bottom: opts.padV || 80, left: 120, right: 120 },
-      verticalAlign: opts.vAlign || VerticalAlign.CENTER,
-      columnSpan: opts.span,
-      children: lines.map(
-        (line) =>
-          new Paragraph({
-            alignment: opts.align || AlignmentType.LEFT,
-            children: [
-              opts.bold
-                ? RB(line, { size: opts.size || 20, color: opts.color || "000000" })
-                : R(line, { size: opts.size || 20, color: opts.color || "000000" }),
-            ],
-          }),
-      ),
-    });
-  };
-
-  // ── Title header table (dark blue band) ───────────────────────────────────
-  const titleTable = new Table({
-    width: { size: CONTENT_W, type: WidthType.DXA },
-    columnWidths: [CONTENT_W],
-    borders: {
-      top: NO_BDR,
-      left: NO_BDR,
-      right: NO_BDR,
-      insideH: NO_BDR,
-      insideV: NO_BDR,
-      bottom: { style: BorderStyle.SINGLE, size: 12, color: GOLD },
-    },
-    rows: [
-      new TableRow({
-        children: [
-          new TableCell({
-            borders: noBorders,
-            shading: { fill: DARK_BLUE, type: ShadingType.CLEAR },
-            width: { size: CONTENT_W, type: WidthType.DXA },
-            margins: { top: 160, bottom: 160, left: 200, right: 200 },
-            children: [
-              new Paragraph({
-                alignment: AlignmentType.CENTER,
-                children: [RB("BOSSWA CULINARY INSTITUTE OF BOTSWANA", { size: 32, color: WHITE })],
-              }),
-              new Paragraph({
-                alignment: AlignmentType.CENTER,
-                spacing: { before: 60 },
-                children: [R("Official Academic Transcript", { size: 22, color: GOLD, italics: true })],
-              }),
-            ],
-          }),
-        ],
-      }),
-    ],
-  });
-
-  // ── Student info table (2-column) ─────────────────────────────────────────
-  const COL_L = Math.round(CONTENT_W * 0.5);
-  const COL_R = CONTENT_W - COL_L;
-
-  const infoRow = (lLabel: string, lVal: string, rLabel: string, rVal: string) =>
-    new TableRow({
-      children: [
-        new TableCell({
-          borders: noBorders,
-          width: { size: COL_L, type: WidthType.DXA },
-          margins: { top: 60, bottom: 60, left: 80, right: 80 },
-          children: [
-            new Paragraph({ children: [RB(lLabel + " : ", { size: 19, color: DARK_BLUE }), R(lVal, { size: 19 })] }),
-          ],
-        }),
-        new TableCell({
-          borders: noBorders,
-          width: { size: COL_R, type: WidthType.DXA },
-          margins: { top: 60, bottom: 60, left: 80, right: 80 },
-          children: [
-            new Paragraph({ children: [RB(rLabel + " : ", { size: 19, color: DARK_BLUE }), R(rVal, { size: 19 })] }),
-          ],
-        }),
-      ],
-    });
-
-  const issueDate = todayStr();
-  const studyYears = programme?.startYear
-    ? `${programme.startYear}–${programme.startYear + (programme.years || 3)}`
-    : "—";
-
-  const studentInfoTable = new Table({
-    width: { size: CONTENT_W, type: WidthType.DXA },
-    columnWidths: [COL_L, COL_R],
-    borders: {
-      top: NO_BDR,
-      left: NO_BDR,
-      right: NO_BDR,
-      insideH: NO_BDR,
-      insideV: NO_BDR,
-      bottom: { style: BorderStyle.SINGLE, size: 6, color: GOLD },
-    },
-    rows: [
-      infoRow("Student Name", student.name, "Date of Admission", formatDate(student.dob)),
-      infoRow("Student Number", student.studentId, "Date of Completion", "—"),
-      infoRow("ID/Passport No.", student.nationalId || "—", "Program of Study", programme?.name || "—"),
-      infoRow("Gender", student.gender || "—", "Level", programme?.level ? `Level ${programme.level}` : "—"),
-      infoRow("Nationality", "Motswana", "Issue Date", issueDate),
-    ],
-  });
-
-  // ── Semester heading bar ───────────────────────────────────────────────────
-  const semHeading = (label: string) =>
-    new Table({
-      width: { size: CONTENT_W, type: WidthType.DXA },
-      columnWidths: [CONTENT_W],
-      rows: [
-        new TableRow({
-          children: [
-            new TableCell({
-              borders: noBorders,
-              shading: { fill: MID_BLUE, type: ShadingType.CLEAR },
-              width: { size: CONTENT_W, type: WidthType.DXA },
-              margins: { top: 100, bottom: 100, left: 160, right: 160 },
-              children: [
-                new Paragraph({
-                  children: [RB(label, { size: 22, color: WHITE })],
-                }),
-              ],
-            }),
-          ],
-        }),
-      ],
-    });
-
-  // ── Module table ───────────────────────────────────────────────────────────
-  const modColW = [
-    Math.round(CONTENT_W * 0.44),
-    Math.round(CONTENT_W * 0.22),
-    Math.round(CONTENT_W * 0.1),
-    Math.round(CONTENT_W * 0.1),
-    CONTENT_W - Math.round(CONTENT_W * 0.44) - Math.round(CONTENT_W * 0.22) - Math.round(CONTENT_W * 0.1) * 2,
-  ];
-
-  const modHeaderRow = new TableRow({
-    tableHeader: true,
-    children: [
-      ["Module Names", "Module Code", "Marks %", "Grade", "Credits"].map(
-        (h, i) =>
-          new TableCell({
-            borders: hdrBorders,
-            shading: { fill: DARK_BLUE, type: ShadingType.CLEAR },
-            width: { size: modColW[i], type: WidthType.DXA },
-            margins: { top: 100, bottom: 100, left: 120, right: 120 },
-            children: [
-              new Paragraph({
-                alignment: AlignmentType.CENTER,
-                children: [RB(h, { size: 20, color: WHITE })],
-              }),
-            ],
-          }),
-      ),
-    ],
-  });
-
-  // Group modules by year+semester
-  const semGroups: Record<string, PassedModule[]> = {};
-  passedModules.forEach((m) => {
-    const k = `Year ${m.year} Semester ${m.semester}`;
-    if (!semGroups[k]) semGroups[k] = [];
-    semGroups[k].push(m);
-  });
-
-  const buildModuleTable = (items: PassedModule[]) => {
-    const rows: any[] = [modHeaderRow];
-    items.forEach((m, i) => {
-      const shd = i % 2 === 0 ? { fill: LIGHT_GREY, type: ShadingType.CLEAR } : undefined;
-      const cc: any = { borders: thinBorders, shading: shd };
-      const dataCell = (text: string, w: number, align = AlignmentType.LEFT, bold = false) =>
-        new TableCell({
-          ...cc,
-          width: { size: w, type: WidthType.DXA },
-          margins: { top: 80, bottom: 80, left: 120, right: 120 },
-          children: [
-            new Paragraph({
-              alignment: align,
-              children: [bold ? RB(text, { size: 19 }) : R(text, { size: 19 })],
-            }),
-          ],
-        });
-      rows.push(
-        new TableRow({
-          children: [
-            dataCell(m.name, modColW[0]),
-            dataCell(m.code || "—", modColW[1]),
-            dataCell(`${m.mark}%`, modColW[2], AlignmentType.CENTER, true),
-            dataCell(m.grade, modColW[3], AlignmentType.CENTER, true),
-            dataCell(`${m.credits}`, modColW[4], AlignmentType.CENTER),
-          ],
-        }),
-      );
-    });
-    return new Table({
-      width: { size: CONTENT_W, type: WidthType.DXA },
-      columnWidths: modColW,
-      rows,
-    });
-  };
-
-  // ── Totals helper ──────────────────────────────────────────────────────────
-  const totalCredits = passedModules.reduce((s, m) => s + (m.credits || 10), 0);
-  const totalHours = totalCredits * 10;
-
-  // Simple GPA from mark averages
+  const totalCredits = passedModules.reduce((s, m) => s + m.credits, 0);
   const avgMark = passedModules.length
     ? Math.round(passedModules.reduce((s, m) => s + m.mark, 0) / passedModules.length)
     : 0;
@@ -366,221 +49,163 @@ async function buildTranscriptDocx(student: any, programme: any, passedModules: 
           : "0.00"
     : "—";
 
-  const totalRow = (text: string, fill: string) =>
-    new Table({
-      width: { size: CONTENT_W, type: WidthType.DXA },
-      columnWidths: [CONTENT_W],
-      rows: [
-        new TableRow({
-          children: [
-            new TableCell({
-              borders: thinBorders,
-              shading: { fill, type: ShadingType.CLEAR },
-              width: { size: CONTENT_W, type: WidthType.DXA },
-              margins: { top: 60, bottom: 60, left: 120, right: 120 },
-              children: [new Paragraph({ children: [RB(text, { size: 19 })] })],
-            }),
-          ],
-        }),
-      ],
-    });
-
-  // ── Grading scale table ────────────────────────────────────────────────────
-  const gsColW = [Math.round(CONTENT_W * 0.3), CONTENT_W - Math.round(CONTENT_W * 0.3)];
-  const gradeScaleTable = new Table({
-    width: { size: CONTENT_W, type: WidthType.DXA },
-    columnWidths: gsColW,
-    rows: [
-      new TableRow({
-        children: [
-          mkCell("Grade (%)", gsColW[0], {
-            fill: MID_BLUE,
-            bold: true,
-            size: 19,
-            color: WHITE,
-            borders: hdrBorders,
-            align: AlignmentType.CENTER,
-          }),
-          mkCell("Description", gsColW[1], {
-            fill: MID_BLUE,
-            bold: true,
-            size: 19,
-            color: WHITE,
-            borders: hdrBorders,
-            align: AlignmentType.CENTER,
-          }),
-        ],
-      }),
-      new TableRow({
-        children: [
-          mkCell("80 – 100%", gsColW[0], {
-            fill: LIGHT_GREY,
-            borders: thinBorders,
-            bold: true,
-            size: 19,
-            align: AlignmentType.CENTER,
-          }),
-          mkCell("Distinction", gsColW[1], { fill: LIGHT_GREY, borders: thinBorders, size: 19 }),
-        ],
-      }),
-      new TableRow({
-        children: [
-          mkCell("65 – 79%", gsColW[0], { borders: thinBorders, bold: true, size: 19, align: AlignmentType.CENTER }),
-          mkCell("Pass with Credit", gsColW[1], { borders: thinBorders, size: 19 }),
-        ],
-      }),
-      new TableRow({
-        children: [
-          mkCell("50 – 64%", gsColW[0], {
-            fill: LIGHT_GREY,
-            borders: thinBorders,
-            bold: true,
-            size: 19,
-            align: AlignmentType.CENTER,
-          }),
-          mkCell("Pass", gsColW[1], { fill: LIGHT_GREY, borders: thinBorders, size: 19 }),
-        ],
-      }),
-      new TableRow({
-        children: [
-          mkCell("0 – 49%", gsColW[0], { borders: thinBorders, bold: true, size: 19, align: AlignmentType.CENTER }),
-          mkCell("Fail", gsColW[1], { borders: thinBorders, size: 19 }),
-        ],
-      }),
-    ],
+  const semGroups: Record<string, PassedModule[]> = {};
+  passedModules.forEach((m) => {
+    const k = `Year ${m.year} · Semester ${m.semester}`;
+    if (!semGroups[k]) semGroups[k] = [];
+    semGroups[k].push(m);
   });
 
-  // ── Award classification table ─────────────────────────────────────────────
-  const awColW = [
-    Math.round(CONTENT_W * 0.3),
-    Math.round(CONTENT_W * 0.2),
-    CONTENT_W - Math.round(CONTENT_W * 0.3) - Math.round(CONTENT_W * 0.2),
-  ];
+  // Build the logo URL (absolute so it works in a new window)
+  const logoUrl = window.location.origin + "/transcript_logo.png";
+  const footerUrl = window.location.origin + "/transcript_footer.png";
 
-  const awMulti = (lines: string[], w: number, fill?: string) =>
-    new TableCell({
-      borders: thinBorders,
-      shading: fill ? { fill, type: ShadingType.CLEAR } : undefined,
-      width: { size: w, type: WidthType.DXA },
-      margins: { top: 60, bottom: 60, left: 120, right: 120 },
-      children: lines.map((l) => new Paragraph({ children: [R(l, { size: 18 })] })),
-    });
-
-  const awardTable = new Table({
-    width: { size: CONTENT_W, type: WidthType.DXA },
-    columnWidths: awColW,
-    rows: [
-      new TableRow({
-        children: ["Award", "Classification", "Remarks"].map((h, i) =>
-          mkCell(h, awColW[i], {
-            fill: MID_BLUE,
-            bold: true,
-            size: 19,
-            color: WHITE,
-            borders: hdrBorders,
-            align: AlignmentType.CENTER,
-          }),
-        ),
-      }),
-      new TableRow({
-        children: [
-          awMulti(["Short courses (HRDC)", "Distinction", "Pass with merit", "Pass", "Fail"], awColW[0], LIGHT_GREY),
-          awMulti(["", "3.75-4.00", "2.75-3.74", "2.00-2.74", "Below 2.00"], awColW[1], LIGHT_GREY),
-          awMulti(
-            ["", "An award is confirmed by official transcript and a Certificate letter."],
-            awColW[2],
-            LIGHT_GREY,
-          ),
-        ],
-      }),
-      new TableRow({
-        children: [
-          awMulti(["Certificate", "Distinction", "Pass with merit", "Pass", "Fail"], awColW[0]),
-          awMulti(["", "3.75-4.00", "2.75-3.74", "2.00-2.74", "Below 2.00"], awColW[1]),
-          awMulti(
-            ["", "An award is confirmed by official transcript, Certificate and student confirmation letter."],
-            awColW[2],
-          ),
-        ],
-      }),
-      new TableRow({
-        children: [
-          awMulti(["Diploma", "Distinction", "Pass with merit", "Pass", "Fail"], awColW[0], LIGHT_GREY),
-          awMulti(["", "3.75-4.00", "2.75-3.74", "2.00-2.74", "Below 2.00"], awColW[1], LIGHT_GREY),
-          awMulti(
-            ["", "An award is confirmed by official transcript, diploma and Reference/confirmation letter."],
-            awColW[2],
-            LIGHT_GREY,
-          ),
-        ],
-      }),
-    ],
-  });
-
-  // ── Certification + signature ──────────────────────────────────────────────
-  const certText = `I do hereby self-certify and affirm that this is the official transcript and record of ${student.name} in the academic studies of ${studyYears}.`;
-
-  // ── Assemble body ──────────────────────────────────────────────────────────
-  const bodyChildren: any[] = [titleTable, sp(140, 100), studentInfoTable, sp(120, 80)];
-
-  // One section per year/semester, each with its own heading + table
-  Object.keys(semGroups)
+  const semSections = Object.keys(semGroups)
     .sort()
-    .forEach((semKey) => {
-      bodyChildren.push(semHeading(semKey), sp(80, 40));
-      bodyChildren.push(buildModuleTable(semGroups[semKey]), sp(40, 40));
-      bodyChildren.push(
-        totalRow(`GPA = ${gpa}`, LIGHT_GREY),
-        totalRow(`Total Credit Hours = ${totalHours} hours`, WHITE),
-        totalRow(`Total Credit Points = ${totalCredits} Cr`, LIGHT_GREY),
-      );
-      bodyChildren.push(sp(100, 60));
-    });
+    .map((semKey) => {
+      const rows = semGroups[semKey]
+        .map(
+          (m, i) => `
+      <tr style="background:${i % 2 === 0 ? "#D9D9D9" : "#fff"}">
+        <td style="padding:5px 10px">${m.name}</td>
+        <td style="padding:5px 10px;text-align:center;font-family:monospace;font-size:11px">${m.code}</td>
+        <td style="padding:5px 10px;text-align:center;font-weight:700">${m.mark}%</td>
+        <td style="padding:5px 10px;text-align:center;font-weight:700">${m.grade}</td>
+        <td style="padding:5px 10px;text-align:center">${m.credits}</td>
+      </tr>`,
+        )
+        .join("");
 
-  // Certification
-  bodyChildren.push(
-    new Paragraph({
-      alignment: AlignmentType.LEFT,
-      spacing: { before: 60, after: 60 },
-      children: [R(certText, { size: 19, italics: true, color: "333333" })],
-    }),
-    sp(80, 60),
-    new Paragraph({ spacing: { before: 0, after: 0 }, children: [RB("Issued By: "), R("Boisi Dibuile")] }),
-    new Paragraph({ spacing: { before: 0, after: 0 }, children: [RB("Position   : "), R("Deputy Principal")] }),
-    new Paragraph({ spacing: { before: 0, after: 0 }, children: [RB("Date         : "), R(issueDate)] }),
-    sp(160, 80),
-    new Paragraph({
-      spacing: { before: 0, after: 60 },
-      children: [RB("Award Classification", { size: 22, color: DARK_BLUE })],
-    }),
-    gradeScaleTable,
-    sp(100, 60),
-    awardTable,
-    sp(60, 0),
-  );
+      return `
+      <div style="margin-bottom:18px">
+        <div style="background:#1F3864;color:#fff;padding:6px 12px;font-weight:700;font-size:12px;border-radius:4px 4px 0 0">
+          ${semKey}
+        </div>
+        <table style="width:100%;border-collapse:collapse;font-size:12px">
+          <thead>
+            <tr style="background:#002060;color:#fff">
+              <th style="padding:6px 10px;text-align:left">Module Names</th>
+              <th style="padding:6px 10px;text-align:center">Module Code</th>
+              <th style="padding:6px 10px;text-align:center">Marks %</th>
+              <th style="padding:6px 10px;text-align:center">Grade</th>
+              <th style="padding:6px 10px;text-align:center">Credits</th>
+            </tr>
+          </thead>
+          <tbody>${rows}</tbody>
+        </table>
+        <div style="font-size:12px;font-weight:700;display:flex;gap:20px;padding:6px 10px;background:#f4f4f4;border:1px solid #ddd;border-radius:0 0 4px 4px">
+          <span>GPA = ${gpa}</span>
+          <span>Total Credit Hours = ${totalCredits * 10} hrs</span>
+          <span>Total Credit Points = ${totalCredits} Cr</span>
+        </div>
+      </div>`;
+    })
+    .join("");
 
-  // ── Build document ─────────────────────────────────────────────────────────
-  const doc = new Document({
-    styles: { default: { document: { run: { font: "Arial", size: 20 } } } },
-    sections: [
-      {
-        properties: {
-          page: {
-            size: { width: A4_W, height: A4_H },
-            margin: { top: MARGIN, right: MARGIN, bottom: 1440, left: MARGIN },
-          },
-        },
-        headers: { default: docHeader },
-        footers: { default: docFooter },
-        children: bodyChildren,
-      },
-    ],
-  });
+  const html = `<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="UTF-8"/>
+  <title>Transcript — ${student.name}</title>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body { font-family: Arial, sans-serif; font-size: 12px; color: #000; background: #fff; padding: 20px 30px; }
+    @page { size: A4; margin: 15mm 15mm 20mm 15mm; }
+    @media print {
+      body { padding: 0; }
+      .no-print { display: none !important; }
+    }
+    table { border-collapse: collapse; }
+  </style>
+</head>
+<body>
+  <!-- Header -->
+  <div style="text-align:center;margin-bottom:10px">
+    <img src="${logoUrl}" style="height:70px;object-fit:contain" onerror="this.style.display='none'" />
+  </div>
 
-  const buffer = await Packer.toBuffer(doc);
-  return new Blob([buffer], {
-    type: "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
-  });
+  <!-- Title band -->
+  <div style="background:#002060;padding:12px 20px;text-align:center;border-bottom:3px solid #C9A227;margin-bottom:14px">
+    <div style="font-size:15px;font-weight:800;color:#fff;letter-spacing:0.5px">BOSSWA CULINARY INSTITUTE OF BOTSWANA</div>
+    <div style="font-size:12px;color:#C9A227;margin-top:4px;font-style:italic">Official Academic Transcript</div>
+  </div>
+
+  <!-- Student info -->
+  <div style="display:grid;grid-template-columns:1fr 1fr;gap:4px 32px;margin-bottom:14px;background:#f9f9f9;padding:12px;border-radius:6px;font-size:12px;border-bottom:2px solid #C9A227">
+    <div><strong style="color:#002060">Student Name:</strong> ${student.name}</div>
+    <div><strong style="color:#002060">Date of Admission:</strong> ${formatDate(student.dob)}</div>
+    <div><strong style="color:#002060">Student Number:</strong> ${student.studentId}</div>
+    <div><strong style="color:#002060">Date of Completion:</strong> —</div>
+    <div><strong style="color:#002060">ID/Passport No.:</strong> ${student.nationalId || "—"}</div>
+    <div><strong style="color:#002060">Program of Study:</strong> ${prog?.name || "—"}</div>
+    <div><strong style="color:#002060">Gender:</strong> ${student.gender || "—"}</div>
+    <div><strong style="color:#002060">Level:</strong> ${prog?.level ? `Level ${prog.level}` : "—"}</div>
+    <div><strong style="color:#002060">Nationality:</strong> Motswana</div>
+    <div><strong style="color:#002060">Issue Date:</strong> ${todayStr()}</div>
+  </div>
+
+  <!-- Modules -->
+  ${
+    passedModules.length === 0
+      ? `<div style="text-align:center;padding:20px;color:#666">No passed modules on record yet.</div>`
+      : semSections
+  }
+
+  <!-- Certification -->
+  <p style="font-size:12px;color:#555;font-style:italic;margin:14px 0 8px">
+    I do hereby self-certify and affirm that this is the official transcript and record of
+    <strong>${student.name}</strong> in the academic studies of ${studyYears}.
+  </p>
+  <div style="font-size:12px;margin-bottom:16px;line-height:1.8">
+    <div><strong>Issued By:</strong> Boisi Dibuile</div>
+    <div><strong>Position:</strong> Deputy Principal</div>
+    <div><strong>Date:</strong> ${todayStr()}</div>
+  </div>
+
+  <!-- Grading scale -->
+  <div style="border-top:1px solid #ccc;padding-top:10px;margin-bottom:14px">
+    <div style="font-size:11px;font-weight:700;color:#002060;margin-bottom:6px">Grading Scale</div>
+    <div style="display:flex;gap:6px;flex-wrap:wrap">
+      ${[
+        ["80–100%", "Distinction"],
+        ["65–79%", "Pass with Credit"],
+        ["50–64%", "Pass"],
+        ["0–49%", "Fail"],
+      ]
+        .map(
+          ([r, d]) =>
+            `<div style="font-size:10px;background:#f0f0f0;border:1px solid #ddd;border-radius:4px;padding:3px 10px"><strong>${r}</strong> — ${d}</div>`,
+        )
+        .join("")}
+    </div>
+  </div>
+
+  <!-- Footer image -->
+  <div style="text-align:center;margin-top:20px">
+    <img src="${footerUrl}" style="width:100%;max-width:700px;object-fit:contain" onerror="this.style.display='none'" />
+  </div>
+
+  <!-- Print button (hidden when printing) -->
+  <div class="no-print" style="text-align:center;margin-top:20px">
+    <button onclick="window.print()" style="background:#002060;color:#fff;border:none;padding:10px 28px;font-size:14px;border-radius:6px;cursor:pointer;font-family:Arial">
+      🖨️ Print / Save as PDF
+    </button>
+  </div>
+
+  <script>
+    // Auto-trigger print dialog after images load
+    window.onload = function() { window.print(); };
+  </script>
+</body>
+</html>`;
+
+  const win = window.open("", "_blank", "width=900,height=700");
+  if (!win) {
+    alert("Pop-up blocked. Please allow pop-ups for this site to print transcripts.");
+    return;
+  }
+  win.document.write(html);
+  win.document.close();
 }
 
 // ── Pages ──────────────────────────────────────────────────────────────────────
@@ -639,12 +264,38 @@ export default function TranscriptsPage() {
                     <td className="td-name">{s.name}</td>
                     <td style={{ fontFamily: "'JetBrains Mono',monospace", fontSize: 11 }}>{s.studentId}</td>
                     <td>{cls?.name}</td>
-                    <td>
+                    <td style={{ display: "flex", gap: 6 }}>
                       <button
                         className="btn btn-outline btn-sm"
                         onClick={() => showModal("Transcript — " + s.name, <TranscriptView stu={s} />, "large")}
                       >
                         <i className="fa-solid fa-eye" /> View
+                      </button>
+                      <button
+                        className="btn btn-primary btn-sm"
+                        onClick={() => {
+                          const prog = db.config.programmes.find((p: any) => p.id === s.programme);
+                          const allMarks = db.marks.filter((m: any) => m.studentId === s.studentId);
+                          const passed: PassedModule[] = allMarks
+                            .map((m: any) => {
+                              const mod = db.modules.find((mo: any) => mo.id === m.moduleId);
+                              const mark = calcModuleMark(m);
+                              return { mark, module: mod, markRecord: m };
+                            })
+                            .filter((x: any) => x.mark >= 50 && x.module)
+                            .map((x: any) => ({
+                              name: x.module.name,
+                              code: x.module.code,
+                              mark: x.mark,
+                              grade: transcriptGrade(x.mark),
+                              credits: 10,
+                              year: x.markRecord.year,
+                              semester: x.markRecord.semester,
+                            }));
+                          printTranscript(s, prog, passed);
+                        }}
+                      >
+                        <i className="fa-solid fa-print" /> Print
                       </button>
                     </td>
                   </tr>
@@ -661,10 +312,8 @@ export default function TranscriptsPage() {
 // ── TranscriptView ─────────────────────────────────────────────────────────────
 export function TranscriptView({ stu }: { stu: any }) {
   const { db } = useApp();
-  const [downloading, setDownloading] = useState(false);
 
   const prog = db.config.programmes.find((p: any) => p.id === stu.programme);
-  const cls = db.classes.find((c: any) => c.id === stu.classId);
   const allMarks = db.marks.filter((m: any) => m.studentId === stu.studentId);
 
   const passedModules: PassedModule[] = allMarks
@@ -707,25 +356,7 @@ export function TranscriptView({ stu }: { stu: any }) {
 
   const studyYears = prog?.startYear ? `${prog.startYear}–${prog.startYear + (prog.years || 3)}` : "—";
 
-  const handleDownload = async () => {
-    setDownloading(true);
-    try {
-      const blob = await buildTranscriptDocx(stu, prog, passedModules);
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement("a");
-      a.href = url;
-      a.download = `Transcript_${stu.name.replace(/\s+/g, "_")}_${new Date().toISOString().split("T")[0]}.docx`;
-      document.body.appendChild(a);
-      a.click();
-      document.body.removeChild(a);
-      URL.revokeObjectURL(url);
-    } catch (err) {
-      console.error(err);
-      alert("Download failed. Please try again.");
-    } finally {
-      setDownloading(false);
-    }
-  };
+  const handlePrint = () => printTranscript(stu, prog, passedModules);
 
   // ── On-screen preview ──────────────────────────────────────────────────────
   return (
@@ -839,14 +470,12 @@ export function TranscriptView({ stu }: { stu: any }) {
                   ))}
                 </tbody>
               </table>
-              {/* Totals */}
               <div
                 style={{
                   fontSize: 12,
                   fontWeight: 700,
                   display: "flex",
                   gap: 20,
-                  marginTop: 6,
                   padding: "6px 10px",
                   background: "#f4f4f4",
                   border: "1px solid #ddd",
@@ -866,7 +495,7 @@ export function TranscriptView({ stu }: { stu: any }) {
         I do hereby self-certify and affirm that this is the official transcript and record of{" "}
         <strong>{stu.name}</strong> in the academic studies of {studyYears}.
       </p>
-      <div style={{ fontSize: 12, marginBottom: 14 }}>
+      <div style={{ fontSize: 12, marginBottom: 14, lineHeight: 1.8 }}>
         <div>
           <strong>Issued By:</strong> Boisi Dibuile
         </div>
@@ -904,11 +533,11 @@ export function TranscriptView({ stu }: { stu: any }) {
         </div>
       </div>
 
-      {/* Download button */}
+      {/* Print button */}
       <div style={{ display: "flex", justifyContent: "flex-end" }}>
-        <button className="btn btn-primary" onClick={handleDownload} disabled={downloading}>
-          <i className="fa-solid fa-file-word" style={{ marginRight: 6 }} />
-          {downloading ? "Generating..." : "Download Transcript (.docx)"}
+        <button className="btn btn-primary" onClick={handlePrint}>
+          <i className="fa-solid fa-print" style={{ marginRight: 6 }} />
+          Print / Save as PDF
         </button>
       </div>
     </div>
