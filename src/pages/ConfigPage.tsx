@@ -38,7 +38,9 @@ const ALL_MODULES = [
 
 export default function ConfigPage() {
   const { db, toast, showModal, closeModal, reloadDb } = useApp();
-  const [activeTab, setActiveTab] = useState<"programmes" | "departments" | "modules" | "mapping">("programmes");
+  const [activeTab, setActiveTab] = useState<"programmes" | "departments" | "modules" | "mapping" | "rooms">(
+    "programmes",
+  );
 
   // ---- PROGRAMMES ----
   const handleAddProgramme = () => {
@@ -524,14 +526,20 @@ export default function ConfigPage() {
       </div>
 
       {/* Tabs */}
-      <div style={{ display: "flex", gap: 4, marginBottom: 16 }}>
-        {(["programmes", "departments", "modules", "mapping"] as const).map((tab) => (
+      <div style={{ display: "flex", gap: 4, marginBottom: 16, flexWrap: "wrap" }}>
+        {(["programmes", "departments", "modules", "mapping", "rooms"] as const).map((tab) => (
           <button
             key={tab}
             className={`btn ${activeTab === tab ? "btn-primary" : "btn-outline"} btn-sm`}
             onClick={() => setActiveTab(tab)}
           >
-            {tab.charAt(0).toUpperCase() + tab.slice(1)}
+            {tab === "rooms" ? (
+              <>
+                <i className="fa-solid fa-door-open" /> Rooms
+              </>
+            ) : (
+              tab.charAt(0).toUpperCase() + tab.slice(1)
+            )}
           </button>
         ))}
       </div>
@@ -703,6 +711,11 @@ export default function ConfigPage() {
         </div>
       )}
 
+      {/* Rooms Tab */}
+      {activeTab === "rooms" && (
+        <RoomsTab db={db} toast={toast} showModal={showModal} closeModal={closeModal} reloadDb={reloadDb} />
+      )}
+
       {/* Academic Year Settings */}
       <div className="card" style={{ marginTop: 16 }}>
         <div className="card-title">
@@ -723,7 +736,238 @@ export default function ConfigPage() {
   );
 }
 
-// Separate component for the programme module mapper (needs state)
+// ── Rooms Tab Component ────────────────────────────────────────────────────────
+function RoomsTab({ db, toast, showModal, closeModal, reloadDb }: any) {
+  const ROOM_TYPES = ["Classroom", "Kitchen", "Lab", "Auditorium", "Office", "Other"];
+
+  const handleAdd = () => {
+    let name = "",
+      type = ROOM_TYPES[0],
+      capacity = 30,
+      notes = "";
+    showModal(
+      "Add Room",
+      <div>
+        <div className="form-row cols2">
+          <div className="form-group">
+            <label>Room Name *</label>
+            <input className="form-input" placeholder="e.g. Kitchen 1" onChange={(e) => (name = e.target.value)} />
+          </div>
+          <div className="form-group">
+            <label>Type</label>
+            <select className="form-select" defaultValue={type} onChange={(e) => (type = e.target.value)}>
+              {ROOM_TYPES.map((t) => (
+                <option key={t}>{t}</option>
+              ))}
+            </select>
+          </div>
+        </div>
+        <div className="form-row cols2">
+          <div className="form-group">
+            <label>Capacity</label>
+            <input
+              className="form-input"
+              type="number"
+              min={1}
+              defaultValue={capacity}
+              onChange={(e) => (capacity = Number(e.target.value))}
+            />
+          </div>
+          <div className="form-group">
+            <label>Notes</label>
+            <input className="form-input" placeholder="Optional notes" onChange={(e) => (notes = e.target.value)} />
+          </div>
+        </div>
+        <button
+          className="btn btn-primary"
+          style={{ marginTop: 12 }}
+          onClick={async () => {
+            if (!name.trim()) {
+              toast("Room name is required", "error");
+              return;
+            }
+            const id = "room_" + Date.now();
+            const { error } = await supabase
+              .from("rooms")
+              .insert({ id, name: name.trim(), type, capacity, notes: notes || null });
+            if (error) {
+              toast(error.message, "error");
+            } else {
+              toast("Room added!", "success");
+              closeModal();
+              reloadDb();
+            }
+          }}
+        >
+          Add Room
+        </button>
+      </div>,
+    );
+  };
+
+  const handleEdit = (room: any) => {
+    let name = room.name,
+      type = room.type,
+      capacity = room.capacity,
+      notes = room.notes || "";
+    showModal(
+      "Edit Room",
+      <div>
+        <div className="form-row cols2">
+          <div className="form-group">
+            <label>Room Name *</label>
+            <input className="form-input" defaultValue={name} onChange={(e) => (name = e.target.value)} />
+          </div>
+          <div className="form-group">
+            <label>Type</label>
+            <select className="form-select" defaultValue={type} onChange={(e) => (type = e.target.value)}>
+              {ROOM_TYPES.map((t) => (
+                <option key={t}>{t}</option>
+              ))}
+            </select>
+          </div>
+        </div>
+        <div className="form-row cols2">
+          <div className="form-group">
+            <label>Capacity</label>
+            <input
+              className="form-input"
+              type="number"
+              min={1}
+              defaultValue={capacity}
+              onChange={(e) => (capacity = Number(e.target.value))}
+            />
+          </div>
+          <div className="form-group">
+            <label>Notes</label>
+            <input className="form-input" defaultValue={notes} onChange={(e) => (notes = e.target.value)} />
+          </div>
+        </div>
+        <div style={{ display: "flex", gap: 8, marginTop: 12 }}>
+          <button
+            className="btn btn-primary"
+            onClick={async () => {
+              if (!name.trim()) {
+                toast("Room name is required", "error");
+                return;
+              }
+              const { error } = await supabase
+                .from("rooms")
+                .update({ name: name.trim(), type, capacity, notes: notes || null })
+                .eq("id", room.id);
+              if (error) {
+                toast(error.message, "error");
+              } else {
+                toast("Room updated!", "success");
+                closeModal();
+                reloadDb();
+              }
+            }}
+          >
+            Save Changes
+          </button>
+          <button
+            className="btn btn-outline"
+            style={{ color: "var(--danger)" }}
+            onClick={async () => {
+              if (!confirm(`Delete "${room.name}"? Timetable entries using this room will lose their room assignment.`))
+                return;
+              const { error } = await supabase.from("rooms").delete().eq("id", room.id);
+              if (error) {
+                toast(error.message, "error");
+              } else {
+                toast("Room deleted", "success");
+                closeModal();
+                reloadDb();
+              }
+            }}
+          >
+            Delete
+          </button>
+        </div>
+      </div>,
+    );
+  };
+
+  const typeIcon: Record<string, string> = {
+    Kitchen: "fa-fire-burner",
+    Classroom: "fa-chalkboard",
+    Lab: "fa-flask",
+    Auditorium: "fa-building-columns",
+    Office: "fa-briefcase",
+    Other: "fa-door-open",
+  };
+
+  return (
+    <div className="card">
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 12 }}>
+        <div className="card-title" style={{ margin: 0 }}>
+          <i className="fa-solid fa-door-open" /> Rooms &amp; Venues
+        </div>
+        <button className="btn btn-primary btn-sm" onClick={handleAdd}>
+          <i className="fa-solid fa-plus" /> Add Room
+        </button>
+      </div>
+      {(db.rooms || []).length === 0 ? (
+        <div style={{ textAlign: "center", padding: 40, color: "var(--text2)" }}>
+          <div style={{ fontSize: 36, marginBottom: 10 }}>🚪</div>
+          <div style={{ fontWeight: 600, marginBottom: 6 }}>No rooms configured</div>
+          <div style={{ fontSize: 12 }}>Add rooms to link them to timetable slots.</div>
+        </div>
+      ) : (
+        <div className="table-wrap">
+          <table>
+            <thead>
+              <tr>
+                <th>Room Name</th>
+                <th>Type</th>
+                <th>Capacity</th>
+                <th>Notes</th>
+                <th>Timetable Uses</th>
+                <th>Actions</th>
+              </tr>
+            </thead>
+            <tbody>
+              {(db.rooms || []).map((r: any) => {
+                const uses = (db.timetable || []).filter((t: any) => t.room === r.name).length;
+                return (
+                  <tr key={r.id}>
+                    <td className="td-name">
+                      <i
+                        className={`fa-solid ${typeIcon[r.type] || "fa-door-open"}`}
+                        style={{ marginRight: 6, color: "var(--accent)" }}
+                      />
+                      {r.name}
+                    </td>
+                    <td>
+                      <span className="badge badge-pending">{r.type}</span>
+                    </td>
+                    <td>{r.capacity > 0 ? r.capacity : "—"}</td>
+                    <td style={{ fontSize: 11, color: "var(--text2)" }}>{r.notes || "—"}</td>
+                    <td>
+                      {uses > 0 ? (
+                        <span className="badge badge-pass">
+                          {uses} slot{uses !== 1 ? "s" : ""}
+                        </span>
+                      ) : (
+                        <span style={{ color: "var(--text2)", fontSize: 11 }}>Unused</span>
+                      )}
+                    </td>
+                    <td>
+                      <button className="btn btn-outline btn-sm" onClick={() => handleEdit(r)}>
+                        <i className="fa-solid fa-pen" />
+                      </button>
+                    </td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        </div>
+      )}
+    </div>
+  );
+}
 function ProgrammeModuleMapper({ prog, db, toast, closeModal, reloadDb }: any) {
   // Build slot keys
   const slots: { year: number; sem: number }[] = [];
