@@ -342,8 +342,8 @@ function RegistrationForm({
       });
 
       // 5 — Set role as applicant
-      await supabase.from("user_roles").insert({ user_id: userId, role: "applicant" });
-      await supabase.from("profiles").insert({ user_id: userId, name: name.trim(), email: email.trim() });
+      await supabase.from("user_roles").insert([{ user_id: userId, role: "applicant" as any }]);
+      await supabase.from("profiles").insert([{ user_id: userId, name: name.trim(), email: email.trim() }]);
 
       onSuccess();
     } catch (e: any) {
