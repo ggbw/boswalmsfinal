@@ -13,92 +13,63 @@ export default function TimetablePage() {
   if (filterCls) slots = slots.filter((t) => t.classId === filterCls);
   if (filterDay) slots = slots.filter((t) => t.day === filterDay);
 
+  // Check if a room is already booked at the given day+time (excluding a specific slot id)
+  const checkRoomConflict = (roomName: string, day: string, time: string, excludeId?: string): string | null => {
+    if (!roomName) return null;
+    const conflict = db.timetable.find(
+      (t) => t.room === roomName && t.day === day && t.time === time && t.id !== excludeId,
+    );
+    if (conflict) {
+      const conflictCls = db.classes.find((c) => c.id === conflict.classId);
+      return `"${roomName}" is already booked on ${day} at ${time} for ${conflictCls?.name || "another class"}.`;
+    }
+    return null;
+  };
+
   const handleAddSlot = () => {
     let classId = db.classes[0]?.id || "";
     let day = "Monday",
-      time = "08:00 - 09:00";
+      time = "08:00-10:00";
     let moduleId = db.modules[0]?.id || "";
-    let room = "";
+    let roomName = "";
 
     showModal(
       "Add Timetable Slot",
-      <div>
-        <div className="form-row cols2">
-          <div className="form-group">
-            <label>Class *</label>
-            <select className="form-select" defaultValue={classId} onChange={(e) => (classId = e.target.value)}>
-              {db.classes.map((c) => (
-                <option key={c.id} value={c.id}>
-                  {c.name}
-                </option>
-              ))}
-            </select>
-          </div>
-          <div className="form-group">
-            <label>Day *</label>
-            <select className="form-select" defaultValue={day} onChange={(e) => (day = e.target.value)}>
-              {days.map((d) => (
-                <option key={d} value={d}>
-                  {d}
-                </option>
-              ))}
-            </select>
-          </div>
-        </div>
-        <div className="form-row cols2">
-          <div className="form-group">
-            <label>Time *</label>
-            <input
-              className="form-input"
-              defaultValue={time}
-              placeholder="e.g. 08:00 - 09:00"
-              onChange={(e) => (time = e.target.value)}
-            />
-          </div>
-          <div className="form-group">
-            <label>Room</label>
-            <input
-              className="form-input"
-              defaultValue={room}
-              placeholder="Room / Lab"
-              onChange={(e) => (room = e.target.value)}
-            />
-          </div>
-        </div>
-        <div className="form-group">
-          <label>Module *</label>
-          <select className="form-select" defaultValue={moduleId} onChange={(e) => (moduleId = e.target.value)}>
-            {db.modules.map((m) => (
-              <option key={m.id} value={m.id}>
-                {m.name}
-              </option>
-            ))}
-          </select>
-        </div>
-        <button
-          className="btn btn-primary"
-          style={{ marginTop: 12 }}
-          onClick={async () => {
-            if (!classId || !day || !time || !moduleId) {
-              toast("All required fields must be filled", "error");
-              return;
-            }
-            const id = "tt_" + Date.now();
-            const { error } = await supabase
-              .from("timetable")
-              .insert({ id, class_id: classId, day, time, module_id: moduleId, room: room || "" });
-            if (error) {
-              toast(error.message, "error");
-            } else {
-              toast("Slot added!", "success");
-              closeModal();
-              reloadDb();
-            }
-          }}
-        >
-          Add Slot
-        </button>
-      </div>,
+      <TimetableForm
+        db={db}
+        days={days}
+        initialValues={{ classId, day, time, moduleId, roomName }}
+        onChange={(v) => {
+          classId = v.classId;
+          day = v.day;
+          time = v.time;
+          moduleId = v.moduleId;
+          roomName = v.roomName;
+        }}
+        onSubmit={async () => {
+          if (!classId || !day || !time || !moduleId) {
+            toast("All required fields must be filled", "error");
+            return;
+          }
+          const conflict = checkRoomConflict(roomName, day, time);
+          if (conflict) {
+            toast(`⚠️ Double booking: ${conflict}`, "error");
+            return;
+          }
+          const id = "tt_" + Date.now();
+          const { error } = await supabase
+            .from("timetable")
+            .insert({ id, class_id: classId, day, time, module_id: moduleId, room: roomName || "" });
+          if (error) {
+            toast(error.message, "error");
+          } else {
+            toast("Slot added!", "success");
+            closeModal();
+            reloadDb();
+          }
+        }}
+        submitLabel="Add Slot"
+      />,
     );
   };
 
@@ -107,90 +78,52 @@ export default function TimetablePage() {
       day = slot.day,
       time = slot.time,
       moduleId = slot.moduleId,
-      room = slot.room;
+      roomName = slot.room;
+
     showModal(
       "Edit Timetable Slot",
-      <div>
-        <div className="form-row cols2">
-          <div className="form-group">
-            <label>Class *</label>
-            <select className="form-select" defaultValue={classId} onChange={(e) => (classId = e.target.value)}>
-              {db.classes.map((c) => (
-                <option key={c.id} value={c.id}>
-                  {c.name}
-                </option>
-              ))}
-            </select>
-          </div>
-          <div className="form-group">
-            <label>Day *</label>
-            <select className="form-select" defaultValue={day} onChange={(e) => (day = e.target.value)}>
-              {days.map((d) => (
-                <option key={d} value={d}>
-                  {d}
-                </option>
-              ))}
-            </select>
-          </div>
-        </div>
-        <div className="form-row cols2">
-          <div className="form-group">
-            <label>Time *</label>
-            <input className="form-input" defaultValue={time} onChange={(e) => (time = e.target.value)} />
-          </div>
-          <div className="form-group">
-            <label>Room</label>
-            <input className="form-input" defaultValue={room} onChange={(e) => (room = e.target.value)} />
-          </div>
-        </div>
-        <div className="form-group">
-          <label>Module *</label>
-          <select className="form-select" defaultValue={moduleId} onChange={(e) => (moduleId = e.target.value)}>
-            {db.modules.map((m) => (
-              <option key={m.id} value={m.id}>
-                {m.name}
-              </option>
-            ))}
-          </select>
-        </div>
-        <div style={{ display: "flex", gap: 8, marginTop: 12 }}>
-          <button
-            className="btn btn-primary"
-            onClick={async () => {
-              const { error } = await supabase
-                .from("timetable")
-                .update({ class_id: classId, day, time, module_id: moduleId, room })
-                .eq("id", slot.id);
-              if (error) {
-                toast(error.message, "error");
-              } else {
-                toast("Slot updated!", "success");
-                closeModal();
-                reloadDb();
-              }
-            }}
-          >
-            Save Changes
-          </button>
-          <button
-            className="btn btn-outline"
-            style={{ color: "var(--danger)" }}
-            onClick={async () => {
-              if (!confirm("Delete this timetable slot?")) return;
-              const { error } = await supabase.from("timetable").delete().eq("id", slot.id);
-              if (error) {
-                toast(error.message, "error");
-              } else {
-                toast("Slot deleted", "success");
-                closeModal();
-                reloadDb();
-              }
-            }}
-          >
-            Delete Slot
-          </button>
-        </div>
-      </div>,
+      <TimetableForm
+        db={db}
+        days={days}
+        initialValues={{ classId, day, time, moduleId, roomName }}
+        onChange={(v) => {
+          classId = v.classId;
+          day = v.day;
+          time = v.time;
+          moduleId = v.moduleId;
+          roomName = v.roomName;
+        }}
+        onSubmit={async () => {
+          const conflict = checkRoomConflict(roomName, day, time, slot.id);
+          if (conflict) {
+            toast(`⚠️ Double booking: ${conflict}`, "error");
+            return;
+          }
+          const { error } = await supabase
+            .from("timetable")
+            .update({ class_id: classId, day, time, module_id: moduleId, room: roomName })
+            .eq("id", slot.id);
+          if (error) {
+            toast(error.message, "error");
+          } else {
+            toast("Slot updated!", "success");
+            closeModal();
+            reloadDb();
+          }
+        }}
+        submitLabel="Save Changes"
+        onDelete={async () => {
+          if (!confirm("Delete this timetable slot?")) return;
+          const { error } = await supabase.from("timetable").delete().eq("id", slot.id);
+          if (error) {
+            toast(error.message, "error");
+          } else {
+            toast("Slot deleted", "success");
+            closeModal();
+            reloadDb();
+          }
+        }}
+      />,
     );
   };
 
@@ -210,6 +143,7 @@ export default function TimetablePage() {
           </button>
         )}
       </div>
+
       <div className="card" style={{ marginBottom: 14, padding: "12px 16px" }}>
         <div style={{ display: "flex", gap: 12, flexWrap: "wrap", alignItems: "flex-end" }}>
           <div className="form-group" style={{ marginBottom: 0, minWidth: 160 }}>
@@ -236,6 +170,7 @@ export default function TimetablePage() {
           </div>
         </div>
       </div>
+
       <div className="card" style={{ padding: 0, overflow: "hidden" }}>
         <div className="table-wrap">
           <table>
@@ -268,11 +203,19 @@ export default function TimetablePage() {
                       <td>{mod?.name}</td>
                       <td style={{ fontSize: 11, color: "var(--text2)" }}>{cls?.lecturer || "—"}</td>
                       <td>
-                        <span
-                          style={{ background: "var(--surface2)", borderRadius: 4, padding: "2px 8px", fontSize: 11 }}
-                        >
-                          {t.room}
-                        </span>
+                        {t.room ? (
+                          <span
+                            style={{ background: "var(--surface2)", borderRadius: 4, padding: "2px 8px", fontSize: 11 }}
+                          >
+                            <i
+                              className="fa-solid fa-door-open"
+                              style={{ marginRight: 4, fontSize: 9, opacity: 0.7 }}
+                            />
+                            {t.room}
+                          </span>
+                        ) : (
+                          <span style={{ color: "var(--text2)", fontSize: 11 }}>—</span>
+                        )}
                       </td>
                       {role === "admin" && (
                         <td>
@@ -290,5 +233,159 @@ export default function TimetablePage() {
         </div>
       </div>
     </>
+  );
+}
+
+// ── Shared form component (used for both Add and Edit) ───────────────────────
+function TimetableForm({
+  db,
+  days,
+  initialValues,
+  onChange,
+  onSubmit,
+  submitLabel,
+  onDelete,
+}: {
+  db: any;
+  days: string[];
+  initialValues: { classId: string; day: string; time: string; moduleId: string; roomName: string };
+  onChange: (v: { classId: string; day: string; time: string; moduleId: string; roomName: string }) => void;
+  onSubmit: () => void;
+  submitLabel: string;
+  onDelete?: () => void;
+}) {
+  const [vals, setVals] = useState(initialValues);
+  const [roomConflict, setRoomConflict] = useState<string | null>(null);
+
+  const update = (patch: Partial<typeof vals>) => {
+    const next = { ...vals, ...patch };
+    setVals(next);
+    onChange(next);
+
+    // Live conflict check
+    if (next.roomName && next.day && next.time) {
+      const conflict = db.timetable.find(
+        (t: any) =>
+          t.room === next.roomName && t.day === next.day && t.time === next.time && t.id !== (initialValues as any).id,
+      );
+      if (conflict) {
+        const cls = db.classes.find((c: any) => c.id === conflict.classId);
+        setRoomConflict(`"${next.roomName}" is already booked at this time for ${cls?.name || "another class"}.`);
+      } else {
+        setRoomConflict(null);
+      }
+    } else {
+      setRoomConflict(null);
+    }
+  };
+
+  const rooms: any[] = db.rooms || [];
+
+  return (
+    <div>
+      <div className="form-row cols2">
+        <div className="form-group">
+          <label>Class *</label>
+          <select className="form-select" value={vals.classId} onChange={(e) => update({ classId: e.target.value })}>
+            {db.classes.map((c: any) => (
+              <option key={c.id} value={c.id}>
+                {c.name}
+              </option>
+            ))}
+          </select>
+        </div>
+        <div className="form-group">
+          <label>Day *</label>
+          <select className="form-select" value={vals.day} onChange={(e) => update({ day: e.target.value })}>
+            {days.map((d) => (
+              <option key={d} value={d}>
+                {d}
+              </option>
+            ))}
+          </select>
+        </div>
+      </div>
+      <div className="form-row cols2">
+        <div className="form-group">
+          <label>Time *</label>
+          <input
+            className="form-input"
+            value={vals.time}
+            placeholder="e.g. 08:00-10:00"
+            onChange={(e) => update({ time: e.target.value })}
+          />
+        </div>
+        <div className="form-group">
+          <label>Room</label>
+          {rooms.length > 0 ? (
+            <select
+              className="form-select"
+              value={vals.roomName}
+              onChange={(e) => update({ roomName: e.target.value })}
+            >
+              <option value="">— No Room —</option>
+              {rooms.map((r: any) => (
+                <option key={r.id} value={r.name}>
+                  {r.name} ({r.type}
+                  {r.capacity > 0 ? `, cap. ${r.capacity}` : ""})
+                </option>
+              ))}
+            </select>
+          ) : (
+            <input
+              className="form-input"
+              value={vals.roomName}
+              placeholder="Room / Lab"
+              onChange={(e) => update({ roomName: e.target.value })}
+            />
+          )}
+        </div>
+      </div>
+
+      {/* Double-booking warning */}
+      {roomConflict && (
+        <div
+          style={{
+            background: "rgba(220,38,38,0.12)",
+            border: "1px solid rgba(220,38,38,0.4)",
+            borderRadius: 6,
+            padding: "8px 12px",
+            marginBottom: 10,
+            fontSize: 12,
+            color: "#f87171",
+            display: "flex",
+            alignItems: "center",
+            gap: 8,
+          }}
+        >
+          <i className="fa-solid fa-triangle-exclamation" />
+          <span>
+            <strong>Double booking:</strong> {roomConflict}
+          </span>
+        </div>
+      )}
+
+      <div className="form-group">
+        <label>Module *</label>
+        <select className="form-select" value={vals.moduleId} onChange={(e) => update({ moduleId: e.target.value })}>
+          {db.modules.map((m: any) => (
+            <option key={m.id} value={m.id}>
+              {m.name}
+            </option>
+          ))}
+        </select>
+      </div>
+
+      <div style={{ display: "flex", gap: 8, marginTop: 12 }}>
+        <button className="btn btn-primary" onClick={onSubmit} disabled={!!roomConflict}>
+          {submitLabel}
+        </button>
+        {onDelete && (
+          <button className="btn btn-outline" style={{ color: "var(--danger)" }} onClick={onDelete}>
+            Delete Slot
+          </button>
+        )}
+      </div>
+    </div>
   );
 }
