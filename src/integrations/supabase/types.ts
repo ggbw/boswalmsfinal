@@ -673,6 +673,7 @@ export type Database = {
           mobile: string | null
           name: string
           national_id: string | null
+          nationality: string | null
           programme: string | null
           progression_status: string | null
           semester: number
@@ -692,6 +693,7 @@ export type Database = {
           mobile?: string | null
           name: string
           national_id?: string | null
+          nationality?: string | null
           programme?: string | null
           progression_status?: string | null
           semester?: number
@@ -711,6 +713,7 @@ export type Database = {
           mobile?: string | null
           name?: string
           national_id?: string | null
+          nationality?: string | null
           programme?: string | null
           progression_status?: string | null
           semester?: number
