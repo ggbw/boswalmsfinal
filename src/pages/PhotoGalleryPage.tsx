@@ -8,19 +8,24 @@ type ViewMode = "folders" | "student";
 export default function PhotoGalleryPage() {
   const { db, currentUser, toast } = useApp();
   const role = currentUser?.role;
-  const canUpload = role === "admin" || role === "lecturer";
+  const isStudent = role === "student";
+  const canUploadToOthers = role === "admin" || role === "lecturer";
+
+  // For students: their own student record ID (from studentRef on profile)
+  const myStudentId = isStudent ? currentUser?.studentRef || null : null;
 
   const [search, setSearch] = useState("");
   const [classFilter, setClassFilter] = useState("");
   const [photoMap, setPhotoMap] = useState<Record<string, string[]>>({});
   const [thumbMap, setThumbMap] = useState<Record<string, string>>({});
   const [loading, setLoading] = useState(true);
-  const [viewMode, setViewMode] = useState<ViewMode>("folders");
-  const [selectedStudentId, setSelectedStudentId] = useState<string | null>(null);
+  const [viewMode, setViewMode] = useState<ViewMode>(isStudent ? "student" : "folders");
+  const [selectedStudentId, setSelectedStudentId] = useState<string | null>(isStudent ? myStudentId : null);
   const [lightboxUrl, setLightboxUrl] = useState<string | null>(null);
   const [uploading, setUploading] = useState(false);
   const [deleteConfirm, setDeleteConfirm] = useState<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const profileInputRef = useRef<HTMLInputElement>(null);
 
   const loadPhotos = async () => {
     setLoading(true);
@@ -38,19 +43,41 @@ export default function PhotoGalleryPage() {
       const { data: inner } = await supabase.storage.from("student-photos").list(folder.name, { limit: 200 });
       if (!inner) continue;
 
-      const photoFiles = inner.filter((f) => f.name.endsWith(".webp") && !f.name.startsWith("thumb_"));
+      const photoFiles = inner.filter(
+        (f) => f.name.endsWith(".webp") && !f.name.startsWith("thumb_") && !f.name.startsWith("profile_"),
+      );
       const thumbFiles = inner.filter((f) => f.name.startsWith("thumb_"));
+      const profileFile = inner.find((f) => f.name.startsWith("profile_"));
 
-      if (photoFiles.length > 0) {
+      if (photoFiles.length > 0 || profileFile) {
         allPhotos[folder.name] = photoFiles.map((f) => {
           const { data } = supabase.storage.from("student-photos").getPublicUrl(`${folder.name}/${f.name}`);
           return data.publicUrl;
         });
-        if (thumbFiles.length > 0) {
+
+        // Thumbnail priority: profile photo > thumb_ > first photo
+        if (profileFile) {
+          const { data } = supabase.storage.from("student-photos").getPublicUrl(`${folder.name}/${profileFile.name}`);
+          thumbs[folder.name] = data.publicUrl;
+        } else if (thumbFiles.length > 0) {
           const { data } = supabase.storage.from("student-photos").getPublicUrl(`${folder.name}/${thumbFiles[0].name}`);
           thumbs[folder.name] = data.publicUrl;
-        } else {
+        } else if (allPhotos[folder.name].length > 0) {
           thumbs[folder.name] = allPhotos[folder.name][0];
+        }
+      }
+    }
+
+    // Also load profile photo for students with no gallery photos
+    for (const folder of folders) {
+      if (!thumbs[folder.name]) {
+        const { data: inner } = await supabase.storage.from("student-photos").list(folder.name, { limit: 10 });
+        if (!inner) continue;
+        const profileFile = inner.find((f) => f.name.startsWith("profile_"));
+        if (profileFile) {
+          const { data } = supabase.storage.from("student-photos").getPublicUrl(`${folder.name}/${profileFile.name}`);
+          thumbs[folder.name] = data.publicUrl;
+          if (!allPhotos[folder.name]) allPhotos[folder.name] = [];
         }
       }
     }
@@ -64,6 +91,15 @@ export default function PhotoGalleryPage() {
     loadPhotos();
   }, []);
 
+  // If student, auto-open their own folder
+  useEffect(() => {
+    if (isStudent && myStudentId && !loading) {
+      setSelectedStudentId(myStudentId);
+      setViewMode("student");
+    }
+  }, [isStudent, myStudentId, loading]);
+
+  // Lecturer scope
   const allowedClassIds = useMemo(() => {
     if (role !== "lecturer") return null;
     return db.classes.filter((c) => c.lecturer === currentUser?.name).map((c) => c.id);
@@ -87,7 +123,12 @@ export default function PhotoGalleryPage() {
 
   const selectedStudent = selectedStudentId ? db.students.find((s) => s.id === selectedStudentId) : null;
   const selectedPhotos = selectedStudentId ? photoMap[selectedStudentId] || [] : [];
+  const profilePhotoUrl = selectedStudentId ? thumbMap[selectedStudentId] : null;
 
+  // Check if profile photo exists for selected student
+  const hasProfilePhoto = !!profilePhotoUrl;
+
+  // Upload gallery photos (admin/lecturer only)
   const handleUpload = async (files: FileList) => {
     if (!selectedStudentId || !selectedStudent) return;
     setUploading(true);
@@ -120,30 +161,68 @@ export default function PhotoGalleryPage() {
     }
 
     if (success > 0) {
-      toast(`Uploaded ${success} photo(s) successfully`, "success");
+      toast(`Uploaded ${success} photo(s)`, "success");
       await loadPhotos();
     }
     setUploading(false);
     if (fileInputRef.current) fileInputRef.current.value = "";
   };
 
+  // Upload profile photo (student only — replaces existing)
+  const handleProfileUpload = async (files: FileList) => {
+    if (!myStudentId) return;
+    const file = files[0];
+    if (!file) return;
+    setUploading(true);
+
+    try {
+      // Remove old profile photo first
+      const { data: existing } = await supabase.storage.from("student-photos").list(myStudentId, { limit: 20 });
+      if (existing) {
+        const oldProfile = existing.filter((f) => f.name.startsWith("profile_"));
+        if (oldProfile.length > 0) {
+          await supabase.storage.from("student-photos").remove(oldProfile.map((f) => `${myStudentId}/${f.name}`));
+        }
+      }
+
+      const compressed = await compressImage(file);
+      const profilePath = `${myStudentId}/profile_photo.webp`;
+      const { error } = await supabase.storage
+        .from("student-photos")
+        .upload(profilePath, compressed, { contentType: "image/webp", upsert: true });
+
+      if (error) {
+        toast("Failed to upload profile photo", "error");
+      } else {
+        toast("Profile photo updated!", "success");
+        await loadPhotos();
+      }
+    } catch {
+      toast("Error processing image", "error");
+    }
+
+    setUploading(false);
+    if (profileInputRef.current) profileInputRef.current.value = "";
+  };
+
   const handleDelete = async (url: string) => {
     if (!selectedStudentId) return;
-    const urlObj = new URL(url);
-    const pathParts = urlObj.pathname.split(`/student-photos/`);
-    if (pathParts.length < 2) return;
-    const filePath = pathParts[1].split("?")[0];
-    const filename = filePath.split("/").pop() || "";
-    const folder = selectedStudentId;
-    const thumbPath = `${folder}/thumb_${filename}`;
-
-    const toDelete = [filePath];
-    // also try to delete thumbnail
-    if (!filename.startsWith("thumb_")) toDelete.push(thumbPath);
-
-    await supabase.storage.from("student-photos").remove(toDelete);
-    toast("Photo deleted", "success");
-    await loadPhotos();
+    try {
+      const urlObj = new URL(url);
+      const pathParts = urlObj.pathname.split(`/student-photos/`);
+      if (pathParts.length < 2) return;
+      const filePath = decodeURIComponent(pathParts[1].split("?")[0]);
+      const filename = filePath.split("/").pop() || "";
+      const toDelete = [filePath];
+      if (!filename.startsWith("thumb_") && !filename.startsWith("profile_")) {
+        toDelete.push(`${selectedStudentId}/thumb_${filename}`);
+      }
+      await supabase.storage.from("student-photos").remove(toDelete);
+      toast("Photo deleted", "success");
+      await loadPhotos();
+    } catch {
+      toast("Failed to delete photo", "error");
+    }
     setDeleteConfirm(null);
   };
 
@@ -159,14 +238,12 @@ export default function PhotoGalleryPage() {
       document.body.removeChild(link);
       URL.revokeObjectURL(link.href);
     } catch {
-      toast("Failed to download photo", "error");
+      toast("Failed to download", "error");
     }
   };
 
   const handleDownloadAll = async (photos: string[], studentName: string) => {
-    for (let i = 0; i < photos.length; i++) {
-      await handleDownloadPhoto(photos[i], studentName, i);
-    }
+    for (let i = 0; i < photos.length; i++) await handleDownloadPhoto(photos[i], studentName, i);
     toast(`Downloaded ${photos.length} photo(s)`, "success");
   };
 
@@ -185,11 +262,12 @@ export default function PhotoGalleryPage() {
   // ── STUDENT FOLDER VIEW ─────────────────────────────────────────────────────
   if (viewMode === "student" && selectedStudent) {
     const cls = db.classes.find((c) => c.id === selectedStudent.classId);
+    const isOwnFolder = isStudent && myStudentId === selectedStudentId;
+
     return (
       <>
         <style>{`
           .photo-card:hover .photo-overlay { opacity: 1 !important; }
-          .folder-card:hover { transform: translateY(-3px); box-shadow: 0 6px 20px rgba(0,0,0,0.35); }
         `}</style>
 
         {/* Lightbox */}
@@ -200,7 +278,7 @@ export default function PhotoGalleryPage() {
               position: "fixed",
               inset: 0,
               zIndex: 1000,
-              background: "rgba(0,0,0,0.92)",
+              background: "rgba(0,0,0,0.93)",
               display: "flex",
               alignItems: "center",
               justifyContent: "center",
@@ -267,19 +345,90 @@ export default function PhotoGalleryPage() {
         )}
 
         <div className="page-header" style={{ display: "flex", alignItems: "center", gap: 12, flexWrap: "wrap" }}>
-          <button className="btn btn-outline btn-sm" onClick={backToFolders}>
-            <i className="fa-solid fa-arrow-left" /> Back to Gallery
-          </button>
+          {!isStudent && (
+            <button className="btn btn-outline btn-sm" onClick={backToFolders}>
+              <i className="fa-solid fa-arrow-left" /> Back to Gallery
+            </button>
+          )}
           <div>
             <div className="page-title" style={{ margin: 0 }}>
-              {selectedStudent.name}
+              {isOwnFolder ? "My Photo Gallery" : selectedStudent.name}
             </div>
             <div style={{ fontSize: 12, color: "var(--text2)" }}>
-              {selectedStudent.studentId} {cls ? `• ${cls.name}` : ""}
+              {selectedStudent.studentId}
+              {cls ? ` • ${cls.name}` : ""}
             </div>
           </div>
         </div>
 
+        {/* ── Profile Photo Section (student only) ── */}
+        {isOwnFolder && (
+          <div
+            className="card"
+            style={{ marginBottom: 16, display: "flex", alignItems: "center", gap: 20, flexWrap: "wrap" }}
+          >
+            <div style={{ position: "relative" }}>
+              <div
+                style={{
+                  width: 90,
+                  height: 90,
+                  borderRadius: "50%",
+                  overflow: "hidden",
+                  background: "var(--bg3)",
+                  border: "3px solid var(--accent)",
+                  display: "flex",
+                  alignItems: "center",
+                  justifyContent: "center",
+                }}
+              >
+                {hasProfilePhoto ? (
+                  <img
+                    src={profilePhotoUrl!}
+                    alt="Profile"
+                    style={{ width: "100%", height: "100%", objectFit: "cover" }}
+                  />
+                ) : (
+                  <span style={{ fontSize: 32, fontWeight: 700, color: "var(--text2)" }}>
+                    {selectedStudent.name[0]}
+                  </span>
+                )}
+              </div>
+            </div>
+            <div style={{ flex: 1 }}>
+              <div style={{ fontWeight: 700, fontSize: 15, color: "var(--text1)", marginBottom: 4 }}>Profile Photo</div>
+              <div style={{ fontSize: 12, color: "var(--text2)", marginBottom: 10 }}>
+                {hasProfilePhoto
+                  ? "Your current profile photo. Upload a new one to replace it."
+                  : "No profile photo set. Upload one below."}
+              </div>
+              <input
+                ref={profileInputRef}
+                type="file"
+                accept="image/*"
+                style={{ display: "none" }}
+                onChange={(e) => e.target.files && handleProfileUpload(e.target.files)}
+              />
+              <button
+                className="btn btn-primary btn-sm"
+                onClick={() => profileInputRef.current?.click()}
+                disabled={uploading}
+              >
+                {uploading ? (
+                  <>
+                    <i className="fa-solid fa-spinner fa-spin" /> Uploading...
+                  </>
+                ) : (
+                  <>
+                    <i className="fa-solid fa-camera" />{" "}
+                    {hasProfilePhoto ? "Change Profile Photo" : "Upload Profile Photo"}
+                  </>
+                )}
+              </button>
+            </div>
+          </div>
+        )}
+
+        {/* ── Gallery Section ── */}
         <div
           className="card"
           style={{
@@ -293,8 +442,9 @@ export default function PhotoGalleryPage() {
         >
           <div style={{ color: "var(--text2)", fontSize: 13 }}>
             <i className="fa-solid fa-images" style={{ marginRight: 6, color: "var(--accent)" }} />
-            <strong style={{ color: "var(--text1)" }}>{selectedPhotos.length}</strong> photo
+            <strong style={{ color: "var(--text1)" }}>{selectedPhotos.length}</strong> gallery photo
             {selectedPhotos.length !== 1 ? "s" : ""}
+            {isOwnFolder && <span style={{ marginLeft: 8, fontSize: 11 }}>(uploaded by staff)</span>}
           </div>
           <div style={{ display: "flex", gap: 8 }}>
             {selectedPhotos.length > 0 && (
@@ -305,7 +455,7 @@ export default function PhotoGalleryPage() {
                 <i className="fa-solid fa-download" /> Download All
               </button>
             )}
-            {canUpload && (
+            {canUploadToOthers && (
               <>
                 <input
                   ref={fileInputRef}
@@ -338,13 +488,17 @@ export default function PhotoGalleryPage() {
         {selectedPhotos.length === 0 ? (
           <div className="card" style={{ textAlign: "center", padding: 60, color: "var(--text2)" }}>
             <div style={{ fontSize: 52, marginBottom: 12 }}>📷</div>
-            <div style={{ fontSize: 15, fontWeight: 600, marginBottom: 6, color: "var(--text1)" }}>No photos yet</div>
-            {canUpload ? (
-              <div style={{ fontSize: 13 }}>
-                Click <strong>Upload Photos</strong> to add photos for this student.
-              </div>
+            <div style={{ fontSize: 15, fontWeight: 600, marginBottom: 6, color: "var(--text1)" }}>
+              No gallery photos yet
+            </div>
+            {isOwnFolder ? (
+              <div style={{ fontSize: 13 }}>Photos uploaded by your lecturer or admin will appear here.</div>
             ) : (
-              <div style={{ fontSize: 13 }}>No photos have been uploaded for this student.</div>
+              canUploadToOthers && (
+                <div style={{ fontSize: 13 }}>
+                  Click <strong>Upload Photos</strong> to add photos for this student.
+                </div>
+              )
             )}
           </div>
         ) : (
@@ -361,7 +515,6 @@ export default function PhotoGalleryPage() {
                   position: "relative",
                   cursor: "pointer",
                   boxShadow: "0 2px 8px rgba(0,0,0,0.25)",
-                  transition: "transform 0.15s",
                 }}
               >
                 <img
@@ -422,7 +575,7 @@ export default function PhotoGalleryPage() {
                   >
                     <i className="fa-solid fa-download" />
                   </button>
-                  {canUpload && (
+                  {canUploadToOthers && (
                     <button
                       onClick={(e) => {
                         e.stopPropagation();
@@ -446,7 +599,7 @@ export default function PhotoGalleryPage() {
               </div>
             ))}
 
-            {canUpload && (
+            {canUploadToOthers && (
               <div
                 onClick={() => fileInputRef.current?.click()}
                 style={{
@@ -476,13 +629,10 @@ export default function PhotoGalleryPage() {
     );
   }
 
-  // ── FOLDERS GRID VIEW ───────────────────────────────────────────────────────
+  // ── FOLDERS GRID (admin / lecturer) ─────────────────────────────────────────
   return (
     <>
-      <style>{`
-        .folder-card { transition: transform 0.15s, box-shadow 0.15s; }
-        .folder-card:hover { transform: translateY(-3px) !important; box-shadow: 0 8px 24px rgba(0,0,0,0.4) !important; }
-      `}</style>
+      <style>{`.folder-card { transition: transform 0.15s, box-shadow 0.15s; } .folder-card:hover { transform: translateY(-3px) !important; box-shadow: 0 8px 24px rgba(0,0,0,0.4) !important; }`}</style>
 
       <div className="page-header">
         <div className="page-title">Student Photo Gallery</div>
@@ -513,7 +663,6 @@ export default function PhotoGalleryPage() {
         </div>
       </div>
 
-      {/* Stats */}
       <div style={{ display: "flex", gap: 12, marginBottom: 16, flexWrap: "wrap" }}>
         {[
           { icon: "fa-users", color: "var(--accent)", label: "Students", value: filteredStudents.length },
@@ -521,7 +670,7 @@ export default function PhotoGalleryPage() {
             icon: "fa-folder-open",
             color: "#f0b429",
             label: "With Photos",
-            value: filteredStudents.filter((s) => (photoMap[s.id]?.length || 0) > 0).length,
+            value: filteredStudents.filter((s) => (photoMap[s.id]?.length || 0) > 0 || thumbMap[s.id]).length,
           },
           {
             icon: "fa-images",
@@ -562,7 +711,6 @@ export default function PhotoGalleryPage() {
                 onClick={() => openStudent(s.id)}
                 style={{ padding: 0, cursor: "pointer", overflow: "hidden", border: "1px solid var(--border)" }}
               >
-                {/* Thumbnail area */}
                 <div
                   style={{
                     height: 130,
@@ -591,24 +739,26 @@ export default function PhotoGalleryPage() {
                           background: "linear-gradient(90deg, var(--accent), #818cf8)",
                         }}
                       />
-                      <div
-                        style={{
-                          position: "absolute",
-                          bottom: 6,
-                          right: 6,
-                          background: "rgba(0,0,0,0.75)",
-                          color: "#fff",
-                          fontSize: 10,
-                          fontWeight: 700,
-                          padding: "2px 7px",
-                          borderRadius: 10,
-                          display: "flex",
-                          alignItems: "center",
-                          gap: 4,
-                        }}
-                      >
-                        <i className="fa-solid fa-images" style={{ fontSize: 8 }} /> {photoCount}
-                      </div>
+                      {photoCount > 0 && (
+                        <div
+                          style={{
+                            position: "absolute",
+                            bottom: 6,
+                            right: 6,
+                            background: "rgba(0,0,0,0.75)",
+                            color: "#fff",
+                            fontSize: 10,
+                            fontWeight: 700,
+                            padding: "2px 7px",
+                            borderRadius: 10,
+                            display: "flex",
+                            alignItems: "center",
+                            gap: 4,
+                          }}
+                        >
+                          <i className="fa-solid fa-images" style={{ fontSize: 8 }} /> {photoCount}
+                        </div>
+                      )}
                     </>
                   ) : (
                     <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 6 }}>
@@ -632,8 +782,6 @@ export default function PhotoGalleryPage() {
                     </div>
                   )}
                 </div>
-
-                {/* Info */}
                 <div style={{ padding: "10px 12px 12px", textAlign: "center" }}>
                   <div
                     style={{
@@ -664,22 +812,19 @@ export default function PhotoGalleryPage() {
                       {cls.name}
                     </div>
                   )}
-                  {canUpload && (
-                    <div
-                      style={{
-                        marginTop: 8,
-                        fontSize: 10,
-                        color: "var(--text2)",
-                        display: "flex",
-                        alignItems: "center",
-                        justifyContent: "center",
-                        gap: 4,
-                      }}
-                    >
-                      <i className="fa-solid fa-folder-open" style={{ color: "var(--accent)" }} />
-                      Click to open & upload
-                    </div>
-                  )}
+                  <div
+                    style={{
+                      marginTop: 8,
+                      fontSize: 10,
+                      color: "var(--text2)",
+                      display: "flex",
+                      alignItems: "center",
+                      justifyContent: "center",
+                      gap: 4,
+                    }}
+                  >
+                    <i className="fa-solid fa-folder-open" style={{ color: "var(--accent)" }} /> Click to open
+                  </div>
                 </div>
               </div>
             );
