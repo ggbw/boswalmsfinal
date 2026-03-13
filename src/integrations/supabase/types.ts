@@ -157,6 +157,39 @@ export type Database = {
           },
         ]
       }
+      assessment_marks: {
+        Row: {
+          assessment_id: string
+          assessment_type: string
+          class_id: string | null
+          created_at: string | null
+          id: string
+          module_id: string | null
+          score: number
+          student_id: string
+        }
+        Insert: {
+          assessment_id: string
+          assessment_type: string
+          class_id?: string | null
+          created_at?: string | null
+          id: string
+          module_id?: string | null
+          score?: number
+          student_id: string
+        }
+        Update: {
+          assessment_id?: string
+          assessment_type?: string
+          class_id?: string | null
+          created_at?: string | null
+          id?: string
+          module_id?: string | null
+          score?: number
+          student_id?: string
+        }
+        Relationships: []
+      }
       assignments: {
         Row: {
           attachment_data: string | null
