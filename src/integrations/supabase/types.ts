@@ -723,8 +723,10 @@ export type Database = {
       students: {
         Row: {
           class_id: string | null
+          completion_date: string | null
           dob: string | null
           email: string | null
+          enrolment_date: string | null
           gender: string | null
           guardian: string | null
           guardian_email: string | null
@@ -743,8 +745,10 @@ export type Database = {
         }
         Insert: {
           class_id?: string | null
+          completion_date?: string | null
           dob?: string | null
           email?: string | null
+          enrolment_date?: string | null
           gender?: string | null
           guardian?: string | null
           guardian_email?: string | null
@@ -763,8 +767,10 @@ export type Database = {
         }
         Update: {
           class_id?: string | null
+          completion_date?: string | null
           dob?: string | null
           email?: string | null
+          enrolment_date?: string | null
           gender?: string | null
           guardian?: string | null
           guardian_email?: string | null
