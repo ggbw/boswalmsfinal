@@ -217,7 +217,7 @@ ${sheets.map((_, i) => `<Override PartName="/xl/worksheets/sheet${i + 1}.xml" Co
   );
 
   const final = concat(...localHeaders, centralDirData, eocd);
-  return new Blob([final.buffer.slice(final.byteOffset, final.byteOffset + final.byteLength)], {
+  return new Blob([final.buffer.slice(final.byteOffset, final.byteOffset + final.byteLength) as ArrayBuffer], {
     type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
   });
 }
