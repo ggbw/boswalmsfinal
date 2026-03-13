@@ -47,6 +47,116 @@ export type Database = {
         }
         Relationships: []
       }
+      applicants: {
+        Row: {
+          created_at: string | null
+          dob: string | null
+          email: string | null
+          gender: string | null
+          guardian_email: string | null
+          guardian_mobile: string | null
+          guardian_name: string | null
+          id: string
+          id_document_url: string | null
+          mobile: string | null
+          name: string | null
+          national_id: string | null
+          nationality: string | null
+          qualification_url: string | null
+          user_id: string | null
+        }
+        Insert: {
+          created_at?: string | null
+          dob?: string | null
+          email?: string | null
+          gender?: string | null
+          guardian_email?: string | null
+          guardian_mobile?: string | null
+          guardian_name?: string | null
+          id: string
+          id_document_url?: string | null
+          mobile?: string | null
+          name?: string | null
+          national_id?: string | null
+          nationality?: string | null
+          qualification_url?: string | null
+          user_id?: string | null
+        }
+        Update: {
+          created_at?: string | null
+          dob?: string | null
+          email?: string | null
+          gender?: string | null
+          guardian_email?: string | null
+          guardian_mobile?: string | null
+          guardian_name?: string | null
+          id?: string
+          id_document_url?: string | null
+          mobile?: string | null
+          name?: string | null
+          national_id?: string | null
+          nationality?: string | null
+          qualification_url?: string | null
+          user_id?: string | null
+        }
+        Relationships: []
+      }
+      applications: {
+        Row: {
+          applicant_id: string | null
+          decided_at: string | null
+          enrolled_at: string | null
+          first_choice_programme: string | null
+          id: string
+          rejection_reason: string | null
+          reviewed_at: string | null
+          second_choice_programme: string | null
+          sponsor_doc_url: string | null
+          sponsor_name: string | null
+          sponsor_type: string | null
+          status: string | null
+          submitted_at: string | null
+        }
+        Insert: {
+          applicant_id?: string | null
+          decided_at?: string | null
+          enrolled_at?: string | null
+          first_choice_programme?: string | null
+          id: string
+          rejection_reason?: string | null
+          reviewed_at?: string | null
+          second_choice_programme?: string | null
+          sponsor_doc_url?: string | null
+          sponsor_name?: string | null
+          sponsor_type?: string | null
+          status?: string | null
+          submitted_at?: string | null
+        }
+        Update: {
+          applicant_id?: string | null
+          decided_at?: string | null
+          enrolled_at?: string | null
+          first_choice_programme?: string | null
+          id?: string
+          rejection_reason?: string | null
+          reviewed_at?: string | null
+          second_choice_programme?: string | null
+          sponsor_doc_url?: string | null
+          sponsor_name?: string | null
+          sponsor_type?: string | null
+          status?: string | null
+          submitted_at?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "applications_applicant_id_fkey"
+            columns: ["applicant_id"]
+            isOneToOne: false
+            referencedRelation: "applicants"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       assignments: {
         Row: {
           attachment_data: string | null
