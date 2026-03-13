@@ -163,6 +163,14 @@ export interface AdmissionEnquiry {
   guardianEmail?: string;
   message?: string;
 }
+export interface Room {
+  id: string;
+  name: string;
+  type: string;
+  capacity: number;
+  notes: string;
+}
+
 export interface StudentModuleOverride {
   studentId: string;
   moduleId: string;
@@ -191,6 +199,7 @@ export interface DB {
   timetable: TimetableSlot[];
   notifications: Notification[];
   admissionEnquiries: AdmissionEnquiry[];
+  rooms: Room[];
 }
 
 export function createInitialDB(): DB {
@@ -1541,6 +1550,13 @@ export function createInitialDB(): DB {
         status: "pending",
         date: "2026-02-28",
       },
+    ],
+    rooms: [
+      { id: "room001", name: "Kitchen 1", type: "Kitchen", capacity: 20, notes: "" },
+      { id: "room002", name: "Kitchen 2", type: "Kitchen", capacity: 20, notes: "" },
+      { id: "room003", name: "Kitchen 3", type: "Kitchen", capacity: 20, notes: "" },
+      { id: "room004", name: "Lecture Room A", type: "Classroom", capacity: 30, notes: "" },
+      { id: "room005", name: "Lecture Room B", type: "Classroom", capacity: 30, notes: "" },
     ],
   };
 
