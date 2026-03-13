@@ -117,6 +117,8 @@ export function useDbData() {
           nationality: (s as any).nationality || "",
           guardianEmail: (s as any).guardian_email || "",
           guardianMobile: (s as any).guardian_mobile || "",
+          enrolmentDate: (s as any).enrolment_date || "",
+          completionDate: (s as any).completion_date || "",
         })),
         marks: (marksRes.data || []).map((m: any) => ({
           studentId: m.student_id,
