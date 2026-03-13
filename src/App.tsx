@@ -3,6 +3,7 @@ import { AppProvider } from "@/context/AppContext";
 import LoginScreen from "@/components/LoginScreen";
 import AppLayout from "@/components/AppLayout";
 import PublicApplyPage from "@/pages/PublicApplyPage";
+import ApplicantPortal from "@/pages/ApplicantPortal";
 import type { User } from "@/data/db";
 
 function AuthGate() {
@@ -27,6 +28,11 @@ function AuthGate() {
 
   if (!user || !profile) return <LoginScreen />;
 
+  // Applicants get their own portal — not the full SMS
+  if (role === "applicant") {
+    return <ApplicantPortal userId={user.id} onSignOut={signOut} />;
+  }
+
   const authUser: User = {
     id: profile.user_id,
     username: profile.email || "",
@@ -49,7 +55,6 @@ function AuthGate() {
 }
 
 const App = () => {
-  // Public application form — no auth needed
   if (window.location.pathname === "/apply") {
     return <PublicApplyPage />;
   }
