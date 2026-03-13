@@ -216,7 +216,8 @@ ${sheets.map((_, i) => `<Override PartName="/xl/worksheets/sheet${i + 1}.xml" Co
     u16(0),
   );
 
-  return new Blob([concat(...localHeaders, centralDirData, eocd)], {
+  const final = concat(...localHeaders, centralDirData, eocd);
+  return new Blob([final.buffer.slice(final.byteOffset, final.byteOffset + final.byteLength)], {
     type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
   });
 }
