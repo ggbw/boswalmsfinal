@@ -17,6 +17,8 @@ export interface Student {
   nationality?: string;
   guardianEmail?: string;
   guardianMobile?: string;
+  enrolmentDate?: string;
+  completionDate?: string;
 }
 export interface User {
   id: string;
