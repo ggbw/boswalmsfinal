@@ -630,6 +630,33 @@ export type Database = {
         }
         Relationships: []
       }
+      rooms: {
+        Row: {
+          capacity: number
+          created_at: string | null
+          id: string
+          name: string
+          notes: string | null
+          type: string
+        }
+        Insert: {
+          capacity?: number
+          created_at?: string | null
+          id: string
+          name: string
+          notes?: string | null
+          type?: string
+        }
+        Update: {
+          capacity?: number
+          created_at?: string | null
+          id?: string
+          name?: string
+          notes?: string | null
+          type?: string
+        }
+        Relationships: []
+      }
       school_config: {
         Row: {
           current_semester: number
