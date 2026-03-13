@@ -112,6 +112,7 @@ export function useDbData() {
           email: (s as any).email || "",
           progressionStatus: (s as any).progression_status || "pending",
           nationalId: (s as any).national_id || "",
+          nationality: (s as any).nationality || "",
           guardianEmail: (s as any).guardian_email || "",
           guardianMobile: (s as any).guardian_mobile || "",
         })),
@@ -206,7 +207,14 @@ export function useDbData() {
           date: a.date || "",
           dob: a.dob || "",
           gender: a.gender || "",
+          nationality: a.nationality || "",
+          nationalId: a.national_id || "",
           mobile: a.mobile || "",
+          email: a.email || "",
+          guardianName: a.guardian_name || "",
+          guardianMobile: a.guardian_mobile || "",
+          guardianEmail: a.guardian_email || "",
+          message: a.message || "",
         })),
       };
 
