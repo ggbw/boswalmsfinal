@@ -28,6 +28,7 @@ export function useDbData() {
         timetableRes,
         notificationsRes,
         admissionRes,
+        roomsRes,
       ] = await Promise.all([
         supabase.from("school_config").select("*").single(),
         supabase.from("terms").select("*"),
@@ -46,6 +47,7 @@ export function useDbData() {
         supabase.from("timetable").select("*"),
         supabase.from("notifications").select("*"),
         supabase.from("admission_enquiries").select("*"),
+        supabase.from("rooms").select("*"),
       ]);
 
       // Build module classes mapping
@@ -215,6 +217,13 @@ export function useDbData() {
           guardianMobile: a.guardian_mobile || "",
           guardianEmail: a.guardian_email || "",
           message: a.message || "",
+        })),
+        rooms: (roomsRes.data || []).map((r: any) => ({
+          id: r.id,
+          name: r.name,
+          type: r.type || "Classroom",
+          capacity: r.capacity || 0,
+          notes: r.notes || "",
         })),
       };
 
