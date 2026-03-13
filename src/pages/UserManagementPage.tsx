@@ -24,6 +24,7 @@ export default function UserManagementPage() {
   const [users, setUsers] = useState<UserRow[]>([]);
   const [loading, setLoading] = useState(true);
   const [filter, setFilter] = useState<'all' | 'staff' | 'student'>('all');
+  const [search, setSearch] = useState('');
 
   const loadUsers = useCallback(async () => {
     setLoading(true);
@@ -58,9 +59,9 @@ export default function UserManagementPage() {
   useEffect(() => { loadUsers(); }, [loadUsers]);
 
   const filtered = users.filter(u => {
-    if (filter === 'staff') return u.source === 'auth' && u.role !== 'student';
-    if (filter === 'student') return u.role === 'student';
-    return true;
+    const matchFilter = filter === 'all' || (filter === 'staff' && u.source === 'auth' && u.role !== 'student') || (filter === 'student' && u.role === 'student');
+    const matchSearch = !search || u.name.toLowerCase().includes(search.toLowerCase()) || u.email.toLowerCase().includes(search.toLowerCase()) || (u.student_id || '').toLowerCase().includes(search.toLowerCase());
+    return matchFilter && matchSearch;
   });
 
   const handleDelete = async (u: UserRow) => {
@@ -108,8 +109,9 @@ export default function UserManagementPage() {
       const { data: stu } = await supabase.from('students').select('*').eq('id', u.user_id).single();
       if (!stu) { toast('Student not found', 'error'); return; }
       let studentId = stu.student_id || '', gender = stu.gender || '', dob = stu.dob || '';
-      let mobile = stu.mobile || '', guardian = stu.guardian || '', programme = stu.programme || '';
-      let classId = stu.class_id || '', nationalId = stu.national_id || '', status = stu.status || 'active';
+      let mobile = stu.mobile || '', email = stu.email || '', guardian = stu.guardian || '', programme = stu.programme || '';
+      let classId = stu.class_id || '', nationalId = stu.national_id || '', nationality = stu.nationality || '', status = stu.status || 'active';
+      let guardianMobile = stu.guardian_mobile || '', guardianEmail = stu.guardian_email || '';
       const programmes = db?.config?.programmes || [];
       const classes = db?.classes || [];
       showModal('Edit Student: ' + u.name, (
@@ -122,6 +124,11 @@ export default function UserManagementPage() {
             <div className="form-group"><label>Email</label><input className="form-input" type="email" defaultValue={email} onChange={e => email = e.target.value} /></div>
             <div className="form-group"><label>National ID</label><input className="form-input" defaultValue={nationalId} onChange={e => nationalId = e.target.value} /></div>
           </div>
+          <div className="form-row cols2">
+            <div className="form-group"><label>Nationality</label><input className="form-input" defaultValue={nationality} onChange={e => nationality = e.target.value} /></div>
+          </div>
+          <div className="form-group"><label>Guardian Mobile</label><input className="form-input" defaultValue={guardianMobile} onChange={e => guardianMobile = e.target.value} /></div>
+          <div className="form-group"><label>Guardian Email</label><input className="form-input" type="email" defaultValue={guardianEmail} onChange={e => guardianEmail = e.target.value} /></div>
           <div className="form-row cols2">
             <div className="form-group"><label>Gender</label>
               <select className="form-select" defaultValue={gender} onChange={e => gender = e.target.value}>
@@ -162,9 +169,10 @@ export default function UserManagementPage() {
           </div>
           <button className="btn btn-primary" style={{ marginTop: 12 }} onClick={async () => {
             const { error } = await supabase.from('students').update({
-              name, email, student_id: studentId, national_id: nationalId,
-              gender, dob: dob || null, mobile, guardian, programme: programme || null,
-              class_id: classId || null, status,
+              name, email, student_id: studentId, national_id: nationalId, nationality,
+              gender, dob: dob || null, mobile, guardian,
+              guardian_mobile: guardianMobile, guardian_email: guardianEmail,
+              programme: programme || null, class_id: classId || null, status,
             }).eq('id', u.user_id);
             if (error) { toast(error.message, 'error'); } else {
               toast('Student updated!', 'success'); closeModal(); loadUsers(); reloadDb();
@@ -294,6 +302,7 @@ export default function UserManagementPage() {
       <div className="page-header">
         <div><div className="page-title">User Management</div><div className="page-sub">{filtered.length} of {users.length} users</div></div>
         <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+          <input className="search-input" placeholder="Search by name, email or ID…" value={search} onChange={e => setSearch(e.target.value)} style={{ width: 220 }} />
           <select className="form-select" value={filter} onChange={e => setFilter(e.target.value as any)} style={{ width: 'auto', fontSize: 11 }}>
             <option value="all">All Users ({users.length})</option>
             <option value="staff">Staff Only ({users.filter(u => u.source === 'auth' && u.role !== 'student').length})</option>
