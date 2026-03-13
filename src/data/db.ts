@@ -14,6 +14,7 @@ export interface Student {
   email?: string;
   progressionStatus?: string;
   nationalId?: string;
+  nationality?: string;
   guardianEmail?: string;
   guardianMobile?: string;
 }
@@ -153,7 +154,14 @@ export interface AdmissionEnquiry {
   date: string;
   dob?: string;
   gender?: string;
+  nationality?: string;
+  nationalId?: string;
   mobile?: string;
+  email?: string;
+  guardianName?: string;
+  guardianMobile?: string;
+  guardianEmail?: string;
+  message?: string;
 }
 export interface StudentModuleOverride {
   studentId: string;
