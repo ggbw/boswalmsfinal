@@ -504,7 +504,7 @@ export default function AdmissionsPage() {
                       {prog?.name || a.programme || "—"}
                     </div>
                     <div style={{ fontSize: 11, color: "var(--text2)", marginTop: 2 }}>
-                      {a.mobile || "—"} {a.email ? `· ${a.email}` : ""}
+                      {a.mobile || "—"}
                     </div>
                   </div>
                   <div style={{ display: "flex", flexDirection: "column", alignItems: "flex-end", gap: 4 }}>
