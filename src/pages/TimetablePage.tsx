@@ -275,6 +275,18 @@ export default function TimetablePage() {
   if (filterDay) slots = slots.filter((t) => t.day === filterDay);
 
   // Check if a room is already booked at the given day+time (excluding a specific slot id)
+  // ── Double booking notification ────────────────────────────────────────────
+  const sendDoubleBookingNotification = async (conflict: string, action: string) => {
+    await supabase.from("notifications").insert({
+      id: "notif_dbl_" + Date.now(),
+      title: "⚠️ Double Booking Detected",
+      body: `A timetable ${action} was blocked: ${conflict}`,
+      date: new Date().toISOString().split("T")[0],
+      priority: "high",
+      author: "Timetable System",
+    });
+  };
+
   const checkRoomConflict = (roomName: string, day: string, time: string, excludeId?: string): string | null => {
     if (!roomName) return null;
     const conflict = db.timetable.find(
@@ -315,6 +327,7 @@ export default function TimetablePage() {
           const conflict = checkRoomConflict(roomName, day, time);
           if (conflict) {
             toast(`⚠️ Double booking: ${conflict}`, "error");
+            await sendDoubleBookingNotification(conflict, "addition");
             return;
           }
           const id = "tt_" + Date.now();
@@ -358,6 +371,7 @@ export default function TimetablePage() {
           const conflict = checkRoomConflict(roomName, day, time, slot.id);
           if (conflict) {
             toast(`⚠️ Double booking: ${conflict}`, "error");
+            await sendDoubleBookingNotification(conflict, "edit");
             return;
           }
           const { error } = await supabase
@@ -407,6 +421,71 @@ export default function TimetablePage() {
           <i className="fa-solid fa-file-excel" /> Export Excel
         </button>
       </div>
+
+      {/* Existing double-booking conflicts banner */}
+      {(() => {
+        const conflicts: { room: string; day: string; time: string; classes: string[] }[] = [];
+        const seen = new Set<string>();
+        db.timetable.forEach((slot) => {
+          if (!slot.room) return;
+          const key = `${slot.room}|${slot.day}|${slot.time}`;
+          if (seen.has(key)) return;
+          const clashing = db.timetable.filter(
+            (t) => t.room === slot.room && t.day === slot.day && t.time === slot.time,
+          );
+          if (clashing.length > 1) {
+            seen.add(key);
+            conflicts.push({
+              room: slot.room,
+              day: slot.day,
+              time: slot.time,
+              classes: clashing.map((t) => db.classes.find((c) => c.id === t.classId)?.name || t.classId),
+            });
+          }
+        });
+        if (!conflicts.length) return null;
+        return (
+          <div
+            style={{
+              background: "rgba(239,68,68,0.08)",
+              border: "1px solid rgba(239,68,68,0.35)",
+              borderRadius: 8,
+              padding: "12px 16px",
+              marginBottom: 14,
+            }}
+          >
+            <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 8 }}>
+              <i className="fa-solid fa-circle-exclamation" style={{ color: "#ef4444", fontSize: 15 }} />
+              <strong style={{ fontSize: 13, color: "#ef4444" }}>
+                {conflicts.length} Double Booking Conflict{conflicts.length > 1 ? "s" : ""} Detected
+              </strong>
+            </div>
+            <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+              {conflicts.map((c, i) => (
+                <div
+                  key={i}
+                  style={{ fontSize: 12, color: "var(--text1)", display: "flex", alignItems: "center", gap: 8 }}
+                >
+                  <span
+                    style={{
+                      background: "#ef4444",
+                      color: "#fff",
+                      borderRadius: 4,
+                      padding: "1px 7px",
+                      fontWeight: 700,
+                      fontSize: 11,
+                    }}
+                  >
+                    CONFLICT
+                  </span>
+                  <strong>{c.room}</strong> on <strong>{c.day}</strong> at <strong>{c.time}</strong>
+                  {" — "}booked for: {c.classes.join(" & ")}
+                </div>
+              ))}
+            </div>
+          </div>
+        );
+      })()}
 
       <div className="card" style={{ marginBottom: 14, padding: "12px 16px" }}>
         <div style={{ display: "flex", gap: 12, flexWrap: "wrap", alignItems: "flex-end" }}>
