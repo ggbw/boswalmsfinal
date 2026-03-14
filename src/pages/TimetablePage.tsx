@@ -287,15 +287,59 @@ export default function TimetablePage() {
     });
   };
 
-  const checkRoomConflict = (roomName: string, day: string, time: string, excludeId?: string): string | null => {
-    if (!roomName) return null;
-    const conflict = db.timetable.find(
-      (t) => t.room === roomName && t.day === day && t.time === time && t.id !== excludeId,
-    );
-    if (conflict) {
-      const conflictCls = db.classes.find((c) => c.id === conflict.classId);
-      return `"${roomName}" is already booked on ${day} at ${time} for ${conflictCls?.name || "another class"}.`;
+  // ── Conflict detection (overlap-aware) ────────────────────────────────────
+  // Parse "HH:MM-HH:MM" → [startMins, endMins]
+  const parseTimeRange = (t: string): [number, number] | null => {
+    const m = t.match(/^(\d{1,2}):(\d{2})\s*[-–]\s*(\d{1,2}):(\d{2})$/);
+    if (!m) return null;
+    const start = parseInt(m[1]) * 60 + parseInt(m[2]);
+    const end = parseInt(m[3]) * 60 + parseInt(m[4]);
+    return [start, end];
+  };
+
+  const timesOverlap = (a: string, b: string): boolean => {
+    const ra = parseTimeRange(a);
+    const rb = parseTimeRange(b);
+    if (!ra || !rb) return a === b; // fallback: exact match
+    return ra[0] < rb[1] && rb[0] < ra[1];
+  };
+
+  interface ConflictResult {
+    type: "room" | "class";
+    message: string;
+  }
+
+  const checkConflicts = (
+    classId: string,
+    roomName: string,
+    day: string,
+    time: string,
+    excludeId?: string,
+  ): ConflictResult | null => {
+    const others = db.timetable.filter((t) => t.day === day && t.id !== excludeId);
+
+    // 1. Room double-booking (any overlap)
+    if (roomName) {
+      const roomConflict = others.find((t) => t.room === roomName && timesOverlap(t.time, time));
+      if (roomConflict) {
+        const cls = db.classes.find((c) => c.id === roomConflict.classId);
+        return {
+          type: "room",
+          message: `Room "${roomName}" is already booked on ${day} at ${roomConflict.time} for ${cls?.name || "another class"}.`,
+        };
+      }
     }
+
+    // 2. Class double-booking (same class, same day, overlapping time)
+    const classConflict = others.find((t) => t.classId === classId && timesOverlap(t.time, time));
+    if (classConflict) {
+      const mod = db.modules.find((m) => m.id === classConflict.moduleId);
+      return {
+        type: "class",
+        message: `This class already has a slot on ${day} at ${classConflict.time}${mod ? ` (${mod.name})` : ""}. Times overlap.`,
+      };
+    }
+
     return null;
   };
 
@@ -324,10 +368,10 @@ export default function TimetablePage() {
             toast("All required fields must be filled", "error");
             return;
           }
-          const conflict = checkRoomConflict(roomName, day, time);
+          const conflict = checkConflicts(classId, roomName, day, time);
           if (conflict) {
-            toast(`⚠️ Double booking: ${conflict}`, "error");
-            await sendDoubleBookingNotification(conflict, "addition");
+            toast(`⚠️ ${conflict.type === "class" ? "Class" : "Room"} double booking: ${conflict.message}`, "error");
+            await sendDoubleBookingNotification(conflict.message, "addition");
             return;
           }
           const id = "tt_" + Date.now();
@@ -368,10 +412,10 @@ export default function TimetablePage() {
           roomName = v.roomName;
         }}
         onSubmit={async () => {
-          const conflict = checkRoomConflict(roomName, day, time, slot.id);
+          const conflict = checkConflicts(classId, roomName, day, time, slot.id);
           if (conflict) {
-            toast(`⚠️ Double booking: ${conflict}`, "error");
-            await sendDoubleBookingNotification(conflict, "edit");
+            toast(`⚠️ ${conflict.type === "class" ? "Class" : "Room"} double booking: ${conflict.message}`, "error");
+            await sendDoubleBookingNotification(conflict.message, "edit");
             return;
           }
           const { error } = await supabase
@@ -424,25 +468,53 @@ export default function TimetablePage() {
 
       {/* Existing double-booking conflicts banner */}
       {(() => {
-        const conflicts: { room: string; day: string; time: string; classes: string[] }[] = [];
-        const seen = new Set<string>();
-        db.timetable.forEach((slot) => {
-          if (!slot.room) return;
-          const key = `${slot.room}|${slot.day}|${slot.time}`;
-          if (seen.has(key)) return;
-          const clashing = db.timetable.filter(
-            (t) => t.room === slot.room && t.day === slot.day && t.time === slot.time,
-          );
-          if (clashing.length > 1) {
-            seen.add(key);
-            conflicts.push({
-              room: slot.room,
-              day: slot.day,
-              time: slot.time,
-              classes: clashing.map((t) => db.classes.find((c) => c.id === t.classId)?.name || t.classId),
-            });
-          }
+        const parseT = (t: string): [number, number] | null => {
+          const m = t.match(/^(\d{1,2}):(\d{2})\s*[-–]\s*(\d{1,2}):(\d{2})$/);
+          if (!m) return null;
+          return [parseInt(m[1]) * 60 + parseInt(m[2]), parseInt(m[3]) * 60 + parseInt(m[4])];
+        };
+        const ov = (a: string, b: string) => {
+          const ra = parseT(a),
+            rb = parseT(b);
+          if (!ra || !rb) return a === b;
+          return ra[0] < rb[1] && rb[0] < ra[1];
+        };
+
+        const conflicts: { label: string; detail: string }[] = [];
+        const seenPairs = new Set<string>();
+
+        db.timetable.forEach((a) => {
+          db.timetable.forEach((b) => {
+            if (a.id >= b.id) return;
+            if (a.day !== b.day) return;
+            if (!ov(a.time, b.time)) return;
+            const clsA = db.classes.find((c) => c.id === a.classId)?.name || a.classId;
+            const clsB = db.classes.find((c) => c.id === b.classId)?.name || b.classId;
+            // Room conflict
+            if (a.room && a.room === b.room) {
+              const k = `room|${a.room}|${a.day}|${a.id}|${b.id}`;
+              if (!seenPairs.has(k)) {
+                seenPairs.add(k);
+                conflicts.push({
+                  label: "Room conflict",
+                  detail: `"${a.room}" on ${a.day}: ${clsA} (${a.time}) vs ${clsB} (${b.time})`,
+                });
+              }
+            }
+            // Class conflict
+            if (a.classId === b.classId) {
+              const k = `class|${a.classId}|${a.day}|${a.id}|${b.id}`;
+              if (!seenPairs.has(k)) {
+                seenPairs.add(k);
+                conflicts.push({
+                  label: "Class conflict",
+                  detail: `${clsA} double-booked on ${a.day}: ${a.time} vs ${b.time}`,
+                });
+              }
+            }
+          });
         });
+
         if (!conflicts.length) return null;
         return (
           <div
@@ -457,7 +529,7 @@ export default function TimetablePage() {
             <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 8 }}>
               <i className="fa-solid fa-circle-exclamation" style={{ color: "#ef4444", fontSize: 15 }} />
               <strong style={{ fontSize: 13, color: "#ef4444" }}>
-                {conflicts.length} Double Booking Conflict{conflicts.length > 1 ? "s" : ""} Detected
+                {conflicts.length} Scheduling Conflict{conflicts.length > 1 ? "s" : ""} Detected
               </strong>
             </div>
             <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
@@ -474,12 +546,12 @@ export default function TimetablePage() {
                       padding: "1px 7px",
                       fontWeight: 700,
                       fontSize: 11,
+                      whiteSpace: "nowrap",
                     }}
                   >
-                    CONFLICT
+                    {c.label.toUpperCase()}
                   </span>
-                  <strong>{c.room}</strong> on <strong>{c.day}</strong> at <strong>{c.time}</strong>
-                  {" — "}booked for: {c.classes.join(" & ")}
+                  {c.detail}
                 </div>
               ))}
             </div>
@@ -600,26 +672,48 @@ function TimetableForm({
   const [vals, setVals] = useState(initialValues);
   const [roomConflict, setRoomConflict] = useState<string | null>(null);
 
+  // Parse "HH:MM-HH:MM" → [startMins, endMins]
+  const parseTime = (t: string): [number, number] | null => {
+    const m = t.match(/^(\d{1,2}):(\d{2})\s*[-–]\s*(\d{1,2}):(\d{2})$/);
+    if (!m) return null;
+    return [parseInt(m[1]) * 60 + parseInt(m[2]), parseInt(m[3]) * 60 + parseInt(m[4])];
+  };
+  const overlaps = (a: string, b: string) => {
+    const ra = parseTime(a),
+      rb = parseTime(b);
+    if (!ra || !rb) return a === b;
+    return ra[0] < rb[1] && rb[0] < ra[1];
+  };
+
   const update = (patch: Partial<typeof vals>) => {
     const next = { ...vals, ...patch };
     setVals(next);
     onChange(next);
 
-    // Live conflict check
-    if (next.roomName && next.day && next.time) {
-      const conflict = db.timetable.find(
-        (t: any) =>
-          t.room === next.roomName && t.day === next.day && t.time === next.time && t.id !== (initialValues as any).id,
-      );
-      if (conflict) {
-        const cls = db.classes.find((c: any) => c.id === conflict.classId);
-        setRoomConflict(`"${next.roomName}" is already booked at this time for ${cls?.name || "another class"}.`);
-      } else {
-        setRoomConflict(null);
+    const excludeId = (initialValues as any).id;
+    const others = db.timetable.filter((t: any) => t.day === next.day && t.id !== excludeId);
+
+    // Room conflict
+    if (next.roomName) {
+      const rc = others.find((t: any) => t.room === next.roomName && next.time && overlaps(t.time, next.time));
+      if (rc) {
+        const cls = db.classes.find((c: any) => c.id === rc.classId);
+        setRoomConflict(`Room "${next.roomName}" already booked at ${rc.time} for ${cls?.name || "another class"}.`);
+        return;
       }
-    } else {
-      setRoomConflict(null);
     }
+
+    // Class conflict
+    if (next.classId && next.time) {
+      const cc = others.find((t: any) => t.classId === next.classId && overlaps(t.time, next.time));
+      if (cc) {
+        const mod = db.modules.find((m: any) => m.id === cc.moduleId);
+        setRoomConflict(`This class already has a slot at ${cc.time}${mod ? ` (${mod.name})` : ""}. Times overlap.`);
+        return;
+      }
+    }
+
+    setRoomConflict(null);
   };
 
   const rooms: any[] = db.rooms || [];
