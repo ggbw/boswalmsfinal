@@ -270,7 +270,143 @@ export default function TimetablePage() {
     toast("Timetable downloaded!", "success");
   };
 
-  let slots = db.timetable;
+  const [showExams, setShowExams] = useState(true);
+
+  const printTimetable = () => {
+    const logoUrl = window.location.origin + "/transcript_logo.png";
+    const allDays = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday"];
+
+    // Build combined slots + exams per day
+    const examsByDay: Record<string, typeof db.exams> = {};
+    if (showExams) {
+      db.exams.forEach((e) => {
+        if (!e.date) return;
+        const d = new Date(e.date);
+        if (isNaN(d.getTime())) return;
+        const dayName = d.toLocaleDateString("en-GB", { weekday: "long" });
+        if (!examsByDay[dayName]) examsByDay[dayName] = [];
+        examsByDay[dayName].push(e);
+      });
+    }
+
+    const filteredSlots = db.timetable.filter((t) => {
+      if (filterCls && t.classId !== filterCls) return false;
+      if (filterDay && t.day !== filterDay) return false;
+      return true;
+    });
+
+    const daysToShow = filterDay ? [filterDay] : allDays;
+
+    const daySections = daysToShow
+      .map((day) => {
+        const daySlots = filteredSlots.filter((t) => t.day === day).sort((a, b) => a.time.localeCompare(b.time));
+        const dayExams = examsByDay[day] || [];
+        if (!daySlots.length && !dayExams.length) return "";
+
+        const slotRows = daySlots
+          .map((t, i) => {
+            const cls = db.classes.find((c) => c.id === t.classId);
+            const mod = db.modules.find((m) => m.id === t.moduleId);
+            const bg = i % 2 === 0 ? "#f9fafb" : "#ffffff";
+            return `<tr style="background:${bg}">
+          <td style="padding:6px 10px;font-weight:600;color:#4f46e5">${t.time}</td>
+          <td style="padding:6px 10px;font-weight:600">${cls?.name || "—"}</td>
+          <td style="padding:6px 10px">${mod?.name || "—"}</td>
+          <td style="padding:6px 10px;color:#6b7280">${cls?.lecturer || "—"}</td>
+          <td style="padding:6px 10px">${t.room ? `<span style="background:#e0e7ff;border-radius:4px;padding:2px 8px;font-size:11px">${t.room}</span>` : "—"}</td>
+          <td style="padding:6px 10px"><span style="background:#dcfce7;color:#166534;border-radius:4px;padding:2px 8px;font-size:11px;font-weight:600">Class</span></td>
+        </tr>`;
+          })
+          .join("");
+
+        const examRows = dayExams
+          .map((e, i) => {
+            const cls = db.classes.find((c) => c.id === e.classId);
+            const mod = db.modules.find((m) => m.id === e.moduleId);
+            const dateStr = e.date ? new Date(e.date).toLocaleDateString("en-GB") : "—";
+            const bg = (daySlots.length + i) % 2 === 0 ? "#f9fafb" : "#ffffff";
+            return `<tr style="background:${bg}">
+          <td style="padding:6px 10px;font-weight:600;color:#dc2626">${dateStr}</td>
+          <td style="padding:6px 10px;font-weight:600">${cls?.name || "—"}</td>
+          <td style="padding:6px 10px">${mod?.name || "—"} — ${e.name}</td>
+          <td style="padding:6px 10px;color:#6b7280">—</td>
+          <td style="padding:6px 10px">—</td>
+          <td style="padding:6px 10px"><span style="background:#fee2e2;color:#dc2626;border-radius:4px;padding:2px 8px;font-size:11px;font-weight:600">EXAM</span></td>
+        </tr>`;
+          })
+          .join("");
+
+        return `
+        <div style="margin-bottom:20px">
+          <div style="background:#002060;color:#fff;padding:7px 14px;font-weight:700;font-size:13px;border-radius:4px 4px 0 0;border-left:4px solid #C9A227">
+            ${day}
+          </div>
+          <table style="width:100%;border-collapse:collapse;font-size:12px;border:1px solid #e5e7eb;border-top:none">
+            <thead>
+              <tr style="background:#f3f4f6">
+                <th style="padding:6px 10px;text-align:left;font-size:11px;color:#6b7280">Time / Date</th>
+                <th style="padding:6px 10px;text-align:left;font-size:11px;color:#6b7280">Class</th>
+                <th style="padding:6px 10px;text-align:left;font-size:11px;color:#6b7280">Module</th>
+                <th style="padding:6px 10px;text-align:left;font-size:11px;color:#6b7280">Lecturer</th>
+                <th style="padding:6px 10px;text-align:left;font-size:11px;color:#6b7280">Room</th>
+                <th style="padding:6px 10px;text-align:left;font-size:11px;color:#6b7280">Type</th>
+              </tr>
+            </thead>
+            <tbody>${slotRows}${examRows}</tbody>
+          </table>
+        </div>`;
+      })
+      .join("");
+
+    const clsName = filterCls ? db.classes.find((c) => c.id === filterCls)?.name || "" : "All Classes";
+    const html = `<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="UTF-8"/>
+  <title>Timetable — ${clsName}</title>
+  <style>
+    * { margin:0; padding:0; box-sizing:border-box; }
+    body { font-family: Arial, sans-serif; color:#000; background:#fff; padding:20px 30px; }
+    @page { size: A4 landscape; margin: 12mm 14mm; }
+    @media print { body { padding:0; } .no-print { display:none !important; } }
+    table { border-collapse: collapse; }
+  </style>
+</head>
+<body>
+  <div style="text-align:center;margin-bottom:12px">
+    <img src="${logoUrl}" style="height:60px;object-fit:contain" onerror="this.style.display='none'"/>
+  </div>
+  <div style="background:#002060;color:#fff;padding:12px 20px;text-align:center;border-bottom:3px solid #C9A227;margin-bottom:16px;border-radius:6px">
+    <div style="font-size:15px;font-weight:800;letter-spacing:0.5px">BOSSWA CULINARY INSTITUTE OF BOTSWANA</div>
+    <div style="font-size:12px;color:#C9A227;margin-top:4px">
+      Class Timetable — ${clsName} &nbsp;·&nbsp; ${db.config.currentYear} &nbsp;·&nbsp; Semester ${db.config.currentSemester}
+    </div>
+  </div>
+  ${dayEmpty(dayHasContent(daysToShow, filteredSlots, examsByDay)) ? `<div style="text-align:center;padding:40px;color:#999">No timetable entries found.</div>` : daySections}
+  <div class="no-print" style="text-align:center;margin-top:24px">
+    <button onclick="window.print()" style="background:#002060;color:#fff;border:none;padding:10px 28px;font-size:14px;border-radius:6px;cursor:pointer">🖨️ Print / Save as PDF</button>
+  </div>
+  <script>window.onload = function(){ window.print(); }</script>
+</body>
+</html>`;
+
+    const win = window.open("", "_blank", "width=1100,height=750");
+    if (!win) {
+      alert("Pop-ups blocked. Please allow pop-ups to print.");
+      return;
+    }
+    win.document.write(html);
+    win.document.close();
+  };
+
+  // helpers for print
+  const dayHasContent = (
+    daysToShow: string[],
+    filteredSlots: typeof db.timetable,
+    examsByDay: Record<string, typeof db.exams>,
+  ) => daysToShow.some((d) => filteredSlots.some((t) => t.day === d) || (examsByDay[d] || []).length > 0);
+  const dayEmpty = (v: boolean) => !v;
+
   if (filterCls) slots = slots.filter((t) => t.classId === filterCls);
   if (filterDay) slots = slots.filter((t) => t.day === filterDay);
 
@@ -464,6 +600,9 @@ export default function TimetablePage() {
         <button className="btn btn-outline btn-sm" onClick={exportToExcel} title="Download as Excel">
           <i className="fa-solid fa-file-excel" /> Export Excel
         </button>
+        <button className="btn btn-outline btn-sm" onClick={printTimetable} title="Print as PDF">
+          <i className="fa-solid fa-print" /> Print PDF
+        </button>
       </div>
 
       {/* Existing double-booking conflicts banner */}
@@ -583,6 +722,27 @@ export default function TimetablePage() {
               ))}
             </select>
           </div>
+          <div className="form-group" style={{ marginBottom: 0 }}>
+            <label style={{ fontSize: 11 }}>Show Exams</label>
+            <div style={{ display: "flex", alignItems: "center", gap: 6, height: 34 }}>
+              <button
+                onClick={() => setShowExams(!showExams)}
+                style={{
+                  padding: "4px 12px",
+                  fontSize: 12,
+                  borderRadius: 6,
+                  cursor: "pointer",
+                  fontWeight: 600,
+                  background: showExams ? "#dc2626" : "var(--bg3)",
+                  color: showExams ? "#fff" : "var(--text2)",
+                  border: `1px solid ${showExams ? "#dc2626" : "var(--border)"}`,
+                }}
+              >
+                <i className={`fa-solid fa-${showExams ? "eye" : "eye-slash"}`} style={{ marginRight: 5 }} />
+                {showExams ? "Exams On" : "Exams Off"}
+              </button>
+            </div>
+          </div>
         </div>
       </div>
 
@@ -592,11 +752,12 @@ export default function TimetablePage() {
             <thead>
               <tr>
                 <th>Day</th>
-                <th>Time</th>
+                <th>Time / Date</th>
                 <th>Class</th>
                 <th>Module</th>
                 <th>Lecturer</th>
                 <th>Room</th>
+                <th>Type</th>
                 {role === "admin" && <th>Edit</th>}
               </tr>
             </thead>
@@ -604,44 +765,132 @@ export default function TimetablePage() {
               {days.map((day) => {
                 if (filterDay && filterDay !== day) return null;
                 const daySlots = slots.filter((t) => t.day === day).sort((a, b) => a.time.localeCompare(b.time));
-                if (!daySlots.length) return null;
-                return daySlots.map((t, i) => {
-                  const cls = db.classes.find((c) => c.id === t.classId);
-                  const mod = db.modules.find((m) => m.id === t.moduleId);
-                  return (
-                    <tr key={t.id}>
-                      <td style={{ fontWeight: 600, color: "var(--accent)" }}>{i === 0 ? day : ""}</td>
-                      <td style={{ fontFamily: "'JetBrains Mono',monospace", fontSize: 11, whiteSpace: "nowrap" }}>
-                        {t.time}
-                      </td>
-                      <td style={{ fontWeight: 600 }}>{cls?.name}</td>
-                      <td>{mod?.name}</td>
-                      <td style={{ fontSize: 11, color: "var(--text2)" }}>{cls?.lecturer || "—"}</td>
-                      <td>
-                        {t.room ? (
-                          <span
-                            style={{ background: "var(--surface2)", borderRadius: 4, padding: "2px 8px", fontSize: 11 }}
-                          >
-                            <i
-                              className="fa-solid fa-door-open"
-                              style={{ marginRight: 4, fontSize: 9, opacity: 0.7 }}
-                            />
-                            {t.room}
-                          </span>
-                        ) : (
-                          <span style={{ color: "var(--text2)", fontSize: 11 }}>—</span>
-                        )}
-                      </td>
-                      {role === "admin" && (
-                        <td>
-                          <button className="btn btn-outline btn-sm" onClick={() => handleEditSlot(t)}>
-                            <i className="fa-solid fa-pen" />
-                          </button>
+
+                // Exams scheduled on this weekday
+                const dayExams = showExams
+                  ? db.exams.filter((e) => {
+                      if (!e.date) return false;
+                      if (filterCls && e.classId !== filterCls) return false;
+                      const d = new Date(e.date);
+                      if (isNaN(d.getTime())) return false;
+                      return d.toLocaleDateString("en-GB", { weekday: "long" }) === day;
+                    })
+                  : [];
+
+                if (!daySlots.length && !dayExams.length) return null;
+                const totalRows = daySlots.length + dayExams.length;
+
+                return [
+                  ...daySlots.map((t, i) => {
+                    const cls = db.classes.find((c) => c.id === t.classId);
+                    const mod = db.modules.find((m) => m.id === t.moduleId);
+                    return (
+                      <tr key={t.id}>
+                        <td style={{ fontWeight: 600, color: "var(--accent)" }}>
+                          {i === 0 && !dayExams.length ? day : i === 0 ? day : ""}
                         </td>
-                      )}
-                    </tr>
-                  );
-                });
+                        <td style={{ fontFamily: "'JetBrains Mono',monospace", fontSize: 11, whiteSpace: "nowrap" }}>
+                          {t.time}
+                        </td>
+                        <td style={{ fontWeight: 600 }}>{cls?.name}</td>
+                        <td>{mod?.name}</td>
+                        <td style={{ fontSize: 11, color: "var(--text2)" }}>{cls?.lecturer || "—"}</td>
+                        <td>
+                          {t.room ? (
+                            <span
+                              style={{
+                                background: "var(--surface2)",
+                                borderRadius: 4,
+                                padding: "2px 8px",
+                                fontSize: 11,
+                              }}
+                            >
+                              <i
+                                className="fa-solid fa-door-open"
+                                style={{ marginRight: 4, fontSize: 9, opacity: 0.7 }}
+                              />
+                              {t.room}
+                            </span>
+                          ) : (
+                            <span style={{ color: "var(--text2)", fontSize: 11 }}>—</span>
+                          )}
+                        </td>
+                        <td>
+                          <span
+                            style={{
+                              background: "rgba(99,102,241,0.12)",
+                              color: "var(--accent)",
+                              borderRadius: 4,
+                              padding: "2px 8px",
+                              fontSize: 11,
+                              fontWeight: 600,
+                            }}
+                          >
+                            Class
+                          </span>
+                        </td>
+                        {role === "admin" && (
+                          <td>
+                            <button className="btn btn-outline btn-sm" onClick={() => handleEditSlot(t)}>
+                              <i className="fa-solid fa-pen" />
+                            </button>
+                          </td>
+                        )}
+                      </tr>
+                    );
+                  }),
+                  ...dayExams.map((e, ei) => {
+                    const cls = db.classes.find((c) => c.id === e.classId);
+                    const mod = db.modules.find((m) => m.id === e.moduleId);
+                    const dateStr = e.date
+                      ? new Date(e.date).toLocaleDateString("en-GB", { day: "numeric", month: "short" })
+                      : "—";
+                    return (
+                      <tr key={`exam-${e.id}`} style={{ background: "rgba(220,38,38,0.04)" }}>
+                        <td style={{ fontWeight: 600, color: "#dc2626" }}>
+                          {daySlots.length === 0 && ei === 0 ? day : ""}
+                        </td>
+                        <td
+                          style={{
+                            fontFamily: "'JetBrains Mono',monospace",
+                            fontSize: 11,
+                            whiteSpace: "nowrap",
+                            color: "#dc2626",
+                          }}
+                        >
+                          {dateStr}
+                        </td>
+                        <td style={{ fontWeight: 600 }}>{cls?.name || "—"}</td>
+                        <td>
+                          <span>{mod?.name || "—"}</span>
+                          <span style={{ marginLeft: 6, fontSize: 11, color: "#dc2626", fontWeight: 600 }}>
+                            — {e.name}
+                          </span>
+                        </td>
+                        <td style={{ fontSize: 11, color: "var(--text2)" }}>—</td>
+                        <td>
+                          <span style={{ color: "var(--text2)", fontSize: 11 }}>—</span>
+                        </td>
+                        <td>
+                          <span
+                            style={{
+                              background: "rgba(220,38,38,0.12)",
+                              color: "#dc2626",
+                              borderRadius: 4,
+                              padding: "2px 8px",
+                              fontSize: 11,
+                              fontWeight: 600,
+                            }}
+                          >
+                            <i className="fa-solid fa-pen-to-square" style={{ marginRight: 4, fontSize: 9 }} />
+                            EXAM
+                          </span>
+                        </td>
+                        {role === "admin" && <td />}
+                      </tr>
+                    );
+                  }),
+                ];
               })}
             </tbody>
           </table>
