@@ -9,7 +9,9 @@ export default function PhotoGalleryPage() {
   const { db, currentUser, toast } = useApp();
   const role = currentUser?.role;
   const isStudent = role === "student";
-  const canUploadToOthers = role === "admin" || role === "lecturer";
+  const canManage = role === "admin" || role === "lecturer"; // upload + delete
+  const canView = canManage || role === "hod" || role === "hoy"; // view folders
+  const canUploadToOthers = canManage; // keep alias for existing JSX
 
   // For students: their own student record ID (from studentRef on profile)
   const myStudentId = isStudent ? currentUser?.studentRef || null : null;
@@ -19,7 +21,7 @@ export default function PhotoGalleryPage() {
   const [photoMap, setPhotoMap] = useState<Record<string, string[]>>({});
   const [thumbMap, setThumbMap] = useState<Record<string, string>>({});
   const [loading, setLoading] = useState(true);
-  const [viewMode, setViewMode] = useState<ViewMode>(isStudent ? "student" : "folders");
+  const [viewMode, setViewMode] = useState<ViewMode>(isStudent ? "student" : canView ? "folders" : "folders");
   const [selectedStudentId, setSelectedStudentId] = useState<string | null>(isStudent ? myStudentId : null);
   const [lightboxUrl, setLightboxUrl] = useState<string | null>(null);
   const [uploading, setUploading] = useState(false);
@@ -35,52 +37,42 @@ export default function PhotoGalleryPage() {
       return;
     }
 
-    const folders = files.filter((f) => f.id && !f.name.includes("."));
+    // Folders have no file extension and metadata.size is 0 or null
+    // In Supabase storage, folders appear as items with no "." in the name
+    const folders = files.filter((f) => !f.name.includes("."));
     const allPhotos: Record<string, string[]> = {};
     const thumbs: Record<string, string> = {};
 
-    for (const folder of folders) {
-      const { data: inner } = await supabase.storage.from("student-photos").list(folder.name, { limit: 200 });
-      if (!inner) continue;
+    await Promise.all(
+      folders.map(async (folder) => {
+        const { data: inner } = await supabase.storage.from("student-photos").list(folder.name, { limit: 200 });
+        if (!inner || inner.length === 0) return;
 
-      const photoFiles = inner.filter(
-        (f) => f.name.endsWith(".webp") && !f.name.startsWith("thumb_") && !f.name.startsWith("profile_"),
-      );
-      const thumbFiles = inner.filter((f) => f.name.startsWith("thumb_"));
-      const profileFile = inner.find((f) => f.name.startsWith("profile_"));
+        const photoFiles = inner.filter(
+          (f) => f.name.endsWith(".webp") && !f.name.startsWith("thumb_") && !f.name.startsWith("profile_"),
+        );
+        const thumbFiles = inner.filter((f) => f.name.startsWith("thumb_"));
+        const profileFile = inner.find((f) => f.name.startsWith("profile_"));
 
-      if (photoFiles.length > 0 || profileFile) {
-        allPhotos[folder.name] = photoFiles.map((f) => {
+        const galleryUrls = photoFiles.map((f) => {
           const { data } = supabase.storage.from("student-photos").getPublicUrl(`${folder.name}/${f.name}`);
           return data.publicUrl;
         });
 
-        // Thumbnail priority: profile photo > thumb_ > first photo
+        allPhotos[folder.name] = galleryUrls;
+
+        // Thumbnail priority: profile photo > thumb_ > first gallery photo
         if (profileFile) {
           const { data } = supabase.storage.from("student-photos").getPublicUrl(`${folder.name}/${profileFile.name}`);
           thumbs[folder.name] = data.publicUrl;
         } else if (thumbFiles.length > 0) {
           const { data } = supabase.storage.from("student-photos").getPublicUrl(`${folder.name}/${thumbFiles[0].name}`);
           thumbs[folder.name] = data.publicUrl;
-        } else if (allPhotos[folder.name].length > 0) {
-          thumbs[folder.name] = allPhotos[folder.name][0];
+        } else if (galleryUrls.length > 0) {
+          thumbs[folder.name] = galleryUrls[0];
         }
-      }
-    }
-
-    // Also load profile photo for students with no gallery photos
-    for (const folder of folders) {
-      if (!thumbs[folder.name]) {
-        const { data: inner } = await supabase.storage.from("student-photos").list(folder.name, { limit: 10 });
-        if (!inner) continue;
-        const profileFile = inner.find((f) => f.name.startsWith("profile_"));
-        if (profileFile) {
-          const { data } = supabase.storage.from("student-photos").getPublicUrl(`${folder.name}/${profileFile.name}`);
-          thumbs[folder.name] = data.publicUrl;
-          if (!allPhotos[folder.name]) allPhotos[folder.name] = [];
-        }
-      }
-    }
+      }),
+    );
 
     setPhotoMap(allPhotos);
     setThumbMap(thumbs);
@@ -99,7 +91,7 @@ export default function PhotoGalleryPage() {
     }
   }, [isStudent, myStudentId, loading]);
 
-  // Lecturer scope
+  // Scope: lecturers see only their own classes; admin/hod/hoy see all
   const allowedClassIds = useMemo(() => {
     if (role !== "lecturer") return null;
     return db.classes.filter((c) => c.lecturer === currentUser?.name).map((c) => c.id);
@@ -258,6 +250,17 @@ export default function PhotoGalleryPage() {
     setLightboxUrl(null);
     setDeleteConfirm(null);
   };
+
+  // Access guard — applicants / unknown roles see nothing
+  if (!isStudent && !canView) {
+    return (
+      <div className="card" style={{ textAlign: "center", padding: 60, color: "var(--text2)" }}>
+        <i className="fa-solid fa-lock" style={{ fontSize: 40, marginBottom: 12, display: "block" }} />
+        <div style={{ fontSize: 15, fontWeight: 600, color: "var(--text1)" }}>Access Restricted</div>
+        <div style={{ fontSize: 13, marginTop: 6 }}>You don't have permission to view the photo gallery.</div>
+      </div>
+    );
+  }
 
   // ── STUDENT FOLDER VIEW ─────────────────────────────────────────────────────
   if (viewMode === "student" && selectedStudent) {
