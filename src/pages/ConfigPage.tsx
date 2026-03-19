@@ -248,7 +248,22 @@ export default function ConfigPage() {
   };
 
   // ---- DEPARTMENTS ----
-  const handleAddDept = () => {
+  const loadLecturers = async () => {
+    const [{ data: profiles }, { data: roles }] = await Promise.all([
+      supabase.from("profiles").select("*"),
+      supabase.from("user_roles").select("*"),
+    ]);
+    const roleMap: Record<string, string> = {};
+    (roles || []).forEach((r: any) => {
+      roleMap[r.user_id] = r.role;
+    });
+    return (profiles || [])
+      .filter((p: any) => ["lecturer", "hod", "hoy"].includes(roleMap[p.user_id]))
+      .map((p: any) => ({ user_id: p.user_id, name: p.name }));
+  };
+
+  const handleAddDept = async () => {
+    const lecturers = await loadLecturers();
     let name = "",
       hod = "";
     showModal(
@@ -260,7 +275,14 @@ export default function ConfigPage() {
         </div>
         <div className="form-group">
           <label>Head of Department</label>
-          <input className="form-input" onChange={(e) => (hod = e.target.value)} />
+          <select className="form-select" defaultValue="" onChange={(e) => (hod = e.target.value)}>
+            <option value="">— Select Lecturer —</option>
+            {lecturers.map((l) => (
+              <option key={l.user_id} value={l.name}>
+                {l.name}
+              </option>
+            ))}
+          </select>
         </div>
         <button
           className="btn btn-primary"
@@ -287,7 +309,8 @@ export default function ConfigPage() {
     );
   };
 
-  const handleEditDept = (dept: any) => {
+  const handleEditDept = async (dept: any) => {
+    const lecturers = await loadLecturers();
     let name = dept.name,
       hod = dept.hod || "";
     showModal(
@@ -299,7 +322,14 @@ export default function ConfigPage() {
         </div>
         <div className="form-group">
           <label>Head of Department</label>
-          <input className="form-input" defaultValue={hod} onChange={(e) => (hod = e.target.value)} />
+          <select className="form-select" defaultValue={hod} onChange={(e) => (hod = e.target.value)}>
+            <option value="">— Select Lecturer —</option>
+            {lecturers.map((l) => (
+              <option key={l.user_id} value={l.name}>
+                {l.name}
+              </option>
+            ))}
+          </select>
         </div>
         <div style={{ display: "flex", gap: 8, marginTop: 12 }}>
           <button
