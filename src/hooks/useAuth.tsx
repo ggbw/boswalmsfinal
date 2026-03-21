@@ -39,6 +39,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     ]);
     if (profileRes.data) setProfile(profileRes.data as Profile);
     if (roleRes.data) setRole(roleRes.data.role);
+    setLoading(false);
   };
 
   useEffect(() => {
@@ -51,8 +52,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       } else {
         setProfile(null);
         setRole(null);
+        setLoading(false);
       }
-      setLoading(false);
     });
 
     supabase.auth.getSession().then(({ data: { session } }) => {
@@ -60,8 +61,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       setUser(session?.user ?? null);
       if (session?.user) {
         fetchProfileAndRole(session.user.id);
+      } else {
+        setLoading(false);
       }
-      setLoading(false);
     });
 
     return () => subscription.unsubscribe();
