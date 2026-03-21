@@ -23,6 +23,7 @@ import MyModulesPage from '@/pages/MyModulesPage';
 import MappingPage from '@/pages/MappingPage';
 import UserManagementPage from '@/pages/UserManagementPage';
 import PhotoGalleryPage from '@/pages/PhotoGalleryPage';
+import NotesPage from '@/pages/NotesPage';
 
 const pageComponents: Record<string, React.ComponentType> = {
   dashboard: Dashboard, students: StudentsPage, lecturers: LecturersPage,
@@ -32,7 +33,7 @@ const pageComponents: Record<string, React.ComponentType> = {
   admissions: AdmissionsPage, progression: ProgressionPage, config: ConfigPage,
   notifications: NotificationsPage, profile: ProfilePage, grades: GradesPage,
   mystudents: MyStudentsPage, mymodules: MyModulesPage, mapping: MappingPage,
-  usermanagement: UserManagementPage, photogallery: PhotoGalleryPage,
+  usermanagement: UserManagementPage, photogallery: PhotoGalleryPage, notes: NotesPage,
 };
 
 export default function AppLayout() {

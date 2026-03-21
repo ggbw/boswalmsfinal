@@ -37,6 +37,7 @@ function getNavConfig(role: string, db: any): NavSection[] {
           { id: "attendance", label: "Attendance", icon: "fa-solid fa-clipboard-check" },
           { id: "exams", label: "Exams", icon: "fa-solid fa-file-pen" },
           { id: "assignments", label: "Assignments", icon: "fa-solid fa-list-check" },
+          { id: "notes", label: "Notes", icon: "fa-solid fa-folder-open" },
           { id: "reports", label: "Reports", icon: "fa-solid fa-file-lines" },
           { id: "transcripts", label: "Transcripts", icon: "fa-solid fa-scroll" },
         ],
@@ -105,6 +106,7 @@ function getNavConfig(role: string, db: any): NavSection[] {
         items: [
           { id: "exams", label: "Exams", icon: "fa-solid fa-file-pen" },
           { id: "assignments", label: "Assignments", icon: "fa-solid fa-list-check" },
+          { id: "notes", label: "Notes", icon: "fa-solid fa-folder-open" },
           { id: "photogallery", label: "Photo Gallery", icon: "fa-solid fa-images" },
         ],
       },
@@ -122,6 +124,7 @@ function getNavConfig(role: string, db: any): NavSection[] {
         items: [
           { id: "mymodules", label: "My Modules", icon: "fa-solid fa-book-open" },
           { id: "mystudents", label: "My Timetable", icon: "fa-solid fa-calendar-days" },
+          { id: "notes", label: "Notes", icon: "fa-solid fa-folder-open" },
           { id: "assignments", label: "Assignments", icon: "fa-solid fa-list-check" },
           { id: "results", label: "My Results", icon: "fa-solid fa-chart-line" },
           { id: "transcripts", label: "My Transcript", icon: "fa-solid fa-scroll" },
