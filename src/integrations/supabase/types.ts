@@ -505,6 +505,36 @@ export type Database = {
           },
         ]
       }
+      module_notes: {
+        Row: {
+          file_name: string
+          file_path: string
+          id: string
+          module_id: string
+          title: string
+          uploaded_at: string | null
+          uploaded_by: string
+        }
+        Insert: {
+          file_name: string
+          file_path: string
+          id: string
+          module_id: string
+          title: string
+          uploaded_at?: string | null
+          uploaded_by: string
+        }
+        Update: {
+          file_name?: string
+          file_path?: string
+          id?: string
+          module_id?: string
+          title?: string
+          uploaded_at?: string | null
+          uploaded_by?: string
+        }
+        Relationships: []
+      }
       modules: {
         Row: {
           code: string
