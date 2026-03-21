@@ -65,8 +65,9 @@ export default function UserManagementPage() {
       if (error) { toast(error.message, 'error'); } else { toast('Student deleted', 'success'); loadUsers(); reloadDb(); }
       return;
     }
-    const { data, error } = await supabase.functions.invoke('delete-user', { body: { user_id: u.user_id } });
-    if (error || data?.error) { toast(data?.error || error?.message || 'Delete failed', 'error'); }
+    const { error: roleErr } = await supabase.from('user_roles').delete().eq('user_id', u.user_id);
+    const { error: profErr } = await supabase.from('profiles').delete().eq('user_id', u.user_id);
+    if (roleErr || profErr) { toast(roleErr?.message || profErr?.message || 'Delete failed', 'error'); }
     else { toast('User deleted', 'success'); loadUsers(); }
   };
 
