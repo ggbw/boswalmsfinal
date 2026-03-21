@@ -66,7 +66,7 @@ export default function NotesPage() {
       .select("*")
       .eq("module_id", moduleId)
       .order("uploaded_at", { ascending: false });
-    setNotes((prev) => ({ ...prev, [moduleId]: (data || []) as Note[] }));
+    setNotes((prev) => ({ ...prev, [moduleId]: (data || []) as unknown as Note[] }));
     setLoadingId(null);
   };
 
