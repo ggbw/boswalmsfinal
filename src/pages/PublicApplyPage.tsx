@@ -346,7 +346,6 @@ function RegistrationForm({
       await supabase.from("profiles").insert([{ user_id: userId, name: name.trim(), email: email.trim() }]);
 
       onSuccess();
-      alert("Application submitted successfully! You can now log in to track your application status.");
     } catch (e: any) {
       setError(e.message || "An unexpected error occurred.");
     }
