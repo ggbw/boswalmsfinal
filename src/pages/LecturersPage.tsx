@@ -182,6 +182,105 @@ export default function LecturersPage() {
     );
   };
 
+  const handleDelete = (f: FacultyRow) => {
+    showModal(
+      "Delete Lecturer",
+      <div>
+        <p style={{ marginBottom: 16 }}>
+          Are you sure you want to delete <strong>{f.name}</strong>? This cannot be undone.
+        </p>
+        <div style={{ display: "flex", gap: 8 }}>
+          <button
+            className="btn btn-danger"
+            style={{ flex: 1 }}
+            onClick={async () => {
+              await supabase.from("user_roles").delete().eq("user_id", f.user_id);
+              await supabase.from("profiles").delete().eq("user_id", f.user_id);
+              toast(`${f.name} deleted`, "success");
+              closeModal();
+              setFaculty((prev) => prev.filter((x) => x.user_id !== f.user_id));
+              if (selected?.user_id === f.user_id) setSelected(null);
+            }}
+          >
+            Delete
+          </button>
+          <button className="btn btn-outline" style={{ flex: 1 }} onClick={closeModal}>
+            Cancel
+          </button>
+        </div>
+      </div>,
+    );
+  };
+
+  const handleCreate = () => {
+    let name = "", email = "", role = "lecturer", dept = "", code = "";
+    showModal(
+      "Add New Lecturer",
+      <div>
+        <div className="form-row cols2">
+          <div className="form-group">
+            <label>Full Name *</label>
+            <input className="form-input" onChange={(e) => (name = e.target.value)} />
+          </div>
+          <div className="form-group">
+            <label>Email *</label>
+            <input className="form-input" type="email" onChange={(e) => (email = e.target.value)} />
+          </div>
+        </div>
+        <div className="form-row cols2">
+          <div className="form-group">
+            <label>Role</label>
+            <select className="form-select" defaultValue="lecturer" onChange={(e) => (role = e.target.value)}>
+              <option value="lecturer">Lecturer</option>
+              <option value="hod">HOD</option>
+              <option value="hoy">HOY</option>
+            </select>
+          </div>
+          <div className="form-group">
+            <label>Staff Code</label>
+            <input className="form-input" placeholder="e.g. LEC001" onChange={(e) => (code = e.target.value)} />
+          </div>
+        </div>
+        <div className="form-group">
+          <label>Department</label>
+          <select className="form-select" defaultValue="" onChange={(e) => (dept = e.target.value)}>
+            <option value="">— Select —</option>
+            {DEPARTMENTS.map((d) => (
+              <option key={d} value={d}>{d}</option>
+            ))}
+          </select>
+        </div>
+        <button
+          className="btn btn-primary"
+          style={{ width: "100%", marginTop: 8 }}
+          onClick={async () => {
+            if (!name.trim() || !email.trim()) {
+              toast("Name and email are required", "error");
+              return;
+            }
+            const { data: authData, error: authErr } = await supabase.auth.admin.createUser({
+              email: email.trim(),
+              password: "Boswa@2024",
+              email_confirm: true,
+            });
+            if (authErr || !authData?.user) {
+              toast(authErr?.message || "Failed to create account", "error");
+              return;
+            }
+            const user_id = authData.user.id;
+            await supabase.from("profiles").insert({ user_id, name: name.trim(), email: email.trim(), dept, code });
+            await supabase.from("user_roles").insert({ user_id, role: role as any });
+            toast("Lecturer created!", "success");
+            closeModal();
+            load();
+          }}
+        >
+          Create Lecturer
+        </button>
+      </div>,
+    );
+  };
+
   const roleBadge = (r: string) => {
     const colors: Record<string, string> = { hod: "badge-fail", hoy: "badge-pass", lecturer: "badge-active" };
     return <span className={`badge ${colors[r] || "badge-pass"}`}>{r.toUpperCase()}</span>;
@@ -204,6 +303,11 @@ export default function LecturersPage() {
             <div className="page-title">Faculty / Lecturers</div>
             <div className="page-sub">{filtered.length} staff members</div>
           </div>
+          {isAdmin && (
+            <button className="btn btn-primary btn-sm" onClick={handleCreate}>
+              <i className="fa-solid fa-plus" /> Add Lecturer
+            </button>
+          )}
         </div>
 
         <div style={{ flex: 1, overflowY: "auto" }}>
@@ -252,9 +356,14 @@ export default function LecturersPage() {
                               View
                             </button>
                             {isAdmin && (
-                              <button className="btn btn-outline btn-sm" onClick={() => handleEdit(f)}>
-                                Edit
-                              </button>
+                              <>
+                                <button className="btn btn-outline btn-sm" onClick={() => handleEdit(f)}>
+                                  Edit
+                                </button>
+                                <button className="btn btn-danger btn-sm" onClick={() => handleDelete(f)}>
+                                  Delete
+                                </button>
+                              </>
                             )}
                           </div>
                         </td>
