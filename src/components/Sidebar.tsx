@@ -37,7 +37,6 @@ function getNavConfig(role: string, db: any): NavSection[] {
           { id: "attendance", label: "Attendance", icon: "fa-solid fa-clipboard-check" },
           { id: "exams", label: "Exams", icon: "fa-solid fa-file-pen" },
           { id: "assignments", label: "Assignments", icon: "fa-solid fa-list-check" },
-          { id: "results", label: "Results", icon: "fa-solid fa-chart-line" },
           { id: "reports", label: "Reports", icon: "fa-solid fa-file-lines" },
           { id: "transcripts", label: "Transcripts", icon: "fa-solid fa-scroll" },
         ],
@@ -67,7 +66,6 @@ function getNavConfig(role: string, db: any): NavSection[] {
         section: "Reports",
         items: [
           { id: "exams", label: "Exams", icon: "fa-solid fa-file-pen" },
-          { id: "results", label: "Results", icon: "fa-solid fa-chart-line" },
           { id: "reports", label: "HOD Reports", icon: "fa-solid fa-file-lines" },
           { id: "transcripts", label: "Transcripts", icon: "fa-solid fa-scroll" },
         ],
