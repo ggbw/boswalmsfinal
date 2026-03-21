@@ -147,7 +147,7 @@ function printTranscript(student: any, prog: any, passedModules: PassedModule[])
   <!-- Modules -->
   ${
     passedModules.length === 0
-      ? `<div style="text-align:center;padding:20px;color:#666">No passed modules on record yet.</div>`
+      ? `<div style="text-align:center;padding:20px;color:#666">No modules on record yet.</div>`
       : semSections
   }
 
@@ -282,7 +282,7 @@ export default function TranscriptsPage() {
                               const mark = calcModuleMark(m);
                               return { mark, module: mod, markRecord: m };
                             })
-                            .filter((x: any) => x.mark >= 50 && x.module)
+                            .filter((x: any) => x.module)
                             .map((x: any) => ({
                               name: x.module.name,
                               code: x.module.code,
@@ -322,7 +322,7 @@ export function TranscriptView({ stu }: { stu: any }) {
       const mark = calcModuleMark(m);
       return { mark, module: mod, markRecord: m };
     })
-    .filter((x) => x.mark >= 50 && x.module)
+    .filter((x) => x.module)
     .map((x) => ({
       name: x.module.name as string,
       code: x.module.code as string,
@@ -417,7 +417,7 @@ export function TranscriptView({ stu }: { stu: any }) {
       {/* Modules by semester */}
       {passedModules.length === 0 ? (
         <div style={{ textAlign: "center", padding: 20, color: "var(--text2)", fontSize: 12 }}>
-          No passed modules on record yet.
+          No modules on record yet.
         </div>
       ) : (
         Object.keys(semGroups)
