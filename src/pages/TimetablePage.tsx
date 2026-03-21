@@ -407,6 +407,7 @@ export default function TimetablePage() {
   ) => daysToShow.some((d) => filteredSlots.some((t) => t.day === d) || (examsByDay[d] || []).length > 0);
   const dayEmpty = (v: boolean) => !v;
 
+  let slots = [...db.timetable];
   if (filterCls) slots = slots.filter((t) => t.classId === filterCls);
   if (filterDay) slots = slots.filter((t) => t.day === filterDay);
 
