@@ -189,7 +189,7 @@ export default function UserManagementPage() {
               <select className="form-select" defaultValue={role} onChange={e => role = e.target.value}>
                 <option value="admin">Admin</option>
                 <option value="hod">HOD</option>
-                <option value="hoy">HOY</option>
+                <option value="hoy">HOA - Head of Academics</option>
                 <option value="lecturer">Lecturer</option>
                 <option value="student">Student</option>
               </select>
@@ -234,7 +234,7 @@ export default function UserManagementPage() {
             <select className="form-select" defaultValue={role} onChange={e => role = e.target.value}>
               <option value="admin">Admin</option>
               <option value="hod">HOD</option>
-              <option value="hoy">HOY</option>
+              <option value="hoy">HOA - Head of Academics</option>
               <option value="lecturer">Lecturer</option>
               <option value="student">Student</option>
             </select>
@@ -284,6 +284,7 @@ export default function UserManagementPage() {
     loadUsers(); reloadDb();
   };
 
+  const roleLabel = (role: string) => ({ hoy: 'HOA' } as Record<string, string>)[role] || role.toUpperCase();
   const roleBadgeClass = (role: string) => {
     if (role === 'admin') return 'badge-fail';
     if (role === 'hod' || role === 'hoy') return 'badge-pass';
@@ -319,7 +320,7 @@ export default function UserManagementPage() {
                     <td style={{ fontFamily: "'JetBrains Mono',monospace", fontSize: 11 }}>
                       {u.source === 'student' ? u.student_id || u.email || '—' : u.email}
                     </td>
-                    <td><span className={`badge ${roleBadgeClass(u.role)}`}>{u.role.toUpperCase()}</span></td>
+                    <td><span className={`badge ${roleBadgeClass(u.role)}`}>{roleLabel(u.role)}</span></td>
                     <td>{u.dept || '—'}</td>
                     <td>
                       <div style={{ display: 'flex', gap: 4 }}>

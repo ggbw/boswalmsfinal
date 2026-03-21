@@ -87,7 +87,7 @@ export default function ProgressionPage() {
       <div className="page-header">
         <div><div className="page-title">Student Progression / Promotion</div><div className="page-sub">Approve or reject student progression individually or in bulk</div></div>
       </div>
-      <div className="notif-banner"><span style={{ fontSize: 16 }}>ℹ️</span><div>HOD and HOY must approve student progression from Semester 1 → Semester 2 and from one academic year to the next.</div></div>
+      <div className="notif-banner"><span style={{ fontSize: 16 }}>ℹ️</span><div>HOD and HOA must approve student progression from Semester 1 → Semester 2 and from one academic year to the next.</div></div>
 
       {db.classes.map(cls => {
         const students = db.students.filter(s => s.classId === cls.id);

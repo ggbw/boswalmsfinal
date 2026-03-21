@@ -89,7 +89,7 @@ export default function LecturersPage() {
               <select className="form-select" defaultValue={role} onChange={(e) => (role = e.target.value)}>
                 <option value="lecturer">Lecturer</option>
                 <option value="hod">HOD</option>
-                <option value="hoy">HOY</option>
+                <option value="hoy">HOA - Head of Academics</option>
               </select>
             </div>
             <div className="form-group">
@@ -220,7 +220,7 @@ export default function LecturersPage() {
             <select className="form-select" defaultValue="lecturer" onChange={(e) => (role = e.target.value)}>
               <option value="lecturer">Lecturer</option>
               <option value="hod">HOD</option>
-              <option value="hoy">HOY</option>
+              <option value="hoy">HOA - Head of Academics</option>
             </select>
           </div>
           <div className="form-group">
@@ -270,7 +270,8 @@ export default function LecturersPage() {
 
   const roleBadge = (r: string) => {
     const colors: Record<string, string> = { hod: "badge-fail", hoy: "badge-pass", lecturer: "badge-active" };
-    return <span className={`badge ${colors[r] || "badge-pass"}`}>{r.toUpperCase()}</span>;
+    const labels: Record<string, string> = { hod: "HOD", hoy: "HOA", lecturer: "LECTURER" };
+    return <span className={`badge ${colors[r] || "badge-pass"}`}>{labels[r] || r.toUpperCase()}</span>;
   };
 
   return (
