@@ -78,6 +78,80 @@ export default function ExamsPage() {
     ));
   };
 
+  const handleEditExam = (exam: typeof exams[0]) => {
+    const isAdmin = role === 'admin';
+    const availableModules = isAdmin ? db.modules : getLecturerModules();
+    let name = exam.name, moduleId = exam.moduleId, classId = exam.classId || '', date = exam.date || '', type = exam.type || 'Written Exam';
+
+    const getClassesForModule = (mid: string) => {
+      const mod = db.modules.find(m => m.id === mid);
+      if (!mod) return [];
+      if (isAdmin) return db.classes.filter(c => mod.classes.includes(c.id));
+      const lecClassIds = db.classes.filter(c => c.lecturer === currentUser?.name).map(c => c.id);
+      return db.classes.filter(c => mod.classes.includes(c.id) && lecClassIds.includes(c.id));
+    };
+
+    showModal('Edit Exam', (
+      <div>
+        <div className="form-group"><label>Exam Name *</label><input className="form-input" defaultValue={name} onChange={e => name = e.target.value} /></div>
+        <div className="form-row cols2">
+          <div className="form-group"><label>Module *</label>
+            <select className="form-select" defaultValue={moduleId} onChange={e => { moduleId = e.target.value; }}>
+              {availableModules.map(m => <option key={m.id} value={m.id}>{m.name}</option>)}
+            </select>
+          </div>
+          <div className="form-group"><label>Class *</label>
+            <select className="form-select" defaultValue={classId} onChange={e => classId = e.target.value}>
+              <option value="">— Select class —</option>
+              {getClassesForModule(moduleId).map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
+            </select>
+          </div>
+        </div>
+        <div className="form-row cols2">
+          <div className="form-group"><label>Date</label><input className="form-input" type="date" defaultValue={date} onChange={e => date = e.target.value} /></div>
+          <div className="form-group"><label>Type</label>
+            <select className="form-select" defaultValue={type} onChange={e => type = e.target.value}>
+              <option>Written Exam</option>
+              <option>Practical Exam</option>
+              <option>Final Practical Exam</option>
+              <option>Final Theory Exam</option>
+              <option>Final Practical Theory Exam</option>
+              <option>Recipe</option>
+              <option>Oral Exam</option>
+            </select>
+          </div>
+        </div>
+        <button className="btn btn-primary" style={{ marginTop: 12, width: '100%' }} onClick={async () => {
+          if (!name || !moduleId) { toast('Name and module are required', 'error'); return; }
+          const { error } = await supabase.from('exams').update({
+            name, module_id: moduleId, class_id: classId || null,
+            date: date || null, type,
+          }).eq('id', exam.id);
+          if (error) { toast(error.message, 'error'); } else {
+            toast('Exam updated!', 'success'); closeModal(); reloadDb();
+          }
+        }}>Save Changes</button>
+      </div>
+    ));
+  };
+
+  const handleDeleteExam = (exam: typeof exams[0]) => {
+    showModal('Delete Exam', (
+      <div>
+        <p style={{ marginBottom: 16 }}>Are you sure you want to delete <strong>{exam.name}</strong>? This cannot be undone.</p>
+        <div style={{ display: 'flex', gap: 8 }}>
+          <button className="btn btn-danger" style={{ flex: 1 }} onClick={async () => {
+            const { error } = await supabase.from('exams').delete().eq('id', exam.id);
+            if (error) { toast(error.message, 'error'); } else {
+              toast('Exam deleted', 'success'); closeModal(); reloadDb();
+            }
+          }}>Delete</button>
+          <button className="btn btn-outline" style={{ flex: 1 }} onClick={closeModal}>Cancel</button>
+        </div>
+      </div>
+    ));
+  };
+
   const handleEnterMarks = async (exam: typeof exams[0]) => {
     const cls = db.classes.find(c => c.id === exam.classId);
     const students = db.students.filter(s => s.classId === exam.classId);
@@ -163,9 +237,17 @@ export default function ExamsPage() {
             <td><span className={`badge ${e.status==='done'?'badge-credit':e.status==='confirmed'?'badge-pass':'badge-pending'}`}>{e.status}</span></td>
             {(role === 'lecturer' || role === 'admin') && (
               <td>
-                <button className="btn btn-primary btn-sm" onClick={() => handleEnterMarks(e)}>
-                  <i className="fa-solid fa-pen-to-square" /> Enter Marks
-                </button>
+                <div style={{ display: 'flex', gap: 4 }}>
+                  <button className="btn btn-primary btn-sm" onClick={() => handleEnterMarks(e)}>
+                    <i className="fa-solid fa-pen-to-square" /> Enter Marks
+                  </button>
+                  <button className="btn btn-outline btn-sm" onClick={() => handleEditExam(e)}>
+                    <i className="fa-solid fa-pen" /> Edit
+                  </button>
+                  <button className="btn btn-danger btn-sm" onClick={() => handleDeleteExam(e)}>
+                    <i className="fa-solid fa-trash" /> Delete
+                  </button>
+                </div>
               </td>
             )}
           </tr>
