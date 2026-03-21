@@ -84,7 +84,12 @@ export default function ProfilePage() {
         {u.role !== "student" && (
           <div className="form-group">
             <label>Department</label>
-            <input className="form-input" defaultValue={dept} onChange={(e) => (dept = e.target.value)} />
+            <select className="form-select" defaultValue={dept} onChange={(e) => (dept = e.target.value)}>
+              <option value="">— Select —</option>
+              {db.departments.map((d) => (
+                <option key={d.id} value={d.name}>{d.name}</option>
+              ))}
+            </select>
           </div>
         )}
         <button

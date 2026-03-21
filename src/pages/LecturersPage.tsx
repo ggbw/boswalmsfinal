@@ -2,19 +2,6 @@ import { useState, useEffect, useCallback } from "react";
 import { useApp } from "@/context/AppContext";
 import { supabase } from "@/integrations/supabase/client";
 
-const DEPARTMENTS = [
-  "Academics",
-  "Admin & Operations",
-  "Administration",
-  "Compliance",
-  "Compliance & Monitoring",
-  "Culinary & Hospitality",
-  "Culinary & Hospitality Practicals",
-  "Culinary Practicals",
-  "Marketing",
-  "Operations",
-];
-
 interface FacultyRow {
   user_id: string;
   name: string;
@@ -25,7 +12,7 @@ interface FacultyRow {
 }
 
 export default function LecturersPage() {
-  const { toast, showModal, closeModal, currentUser } = useApp();
+  const { db, toast, showModal, closeModal, currentUser } = useApp();
   const [faculty, setFaculty] = useState<FacultyRow[]>([]);
   const [loading, setLoading] = useState(true);
   const [selected, setSelected] = useState<FacultyRow | null>(null);
@@ -133,9 +120,9 @@ export default function LecturersPage() {
             <label>Department</label>
             <select className="form-select" defaultValue={dept} onChange={(e) => (dept = e.target.value)}>
               <option value="">— Select —</option>
-              {DEPARTMENTS.map((d) => (
-                <option key={d} value={d}>
-                  {d}
+              {db.departments.map((d) => (
+                <option key={d.id} value={d.name}>
+                  {d.name}
                 </option>
               ))}
             </select>
@@ -245,8 +232,8 @@ export default function LecturersPage() {
           <label>Department</label>
           <select className="form-select" defaultValue="" onChange={(e) => (dept = e.target.value)}>
             <option value="">— Select —</option>
-            {DEPARTMENTS.map((d) => (
-              <option key={d} value={d}>{d}</option>
+            {db.departments.map((d) => (
+              <option key={d.id} value={d.name}>{d.name}</option>
             ))}
           </select>
         </div>

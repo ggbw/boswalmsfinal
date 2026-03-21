@@ -2,12 +2,6 @@ import { useState, useEffect, useCallback } from 'react';
 import { useApp } from '@/context/AppContext';
 import { supabase } from '@/integrations/supabase/client';
 
-const DEPARTMENTS = [
-  'Academics', 'Admin & Operations', 'Administration', 'Compliance',
-  'Compliance & Monitoring', 'Culinary & Hospitality',
-  'Culinary & Hospitality Practicals', 'Culinary Practicals',
-  'Marketing', 'Operations',
-];
 
 interface UserRow {
   user_id: string;
@@ -203,7 +197,7 @@ export default function UserManagementPage() {
             <div className="form-group"><label>Department</label>
               <select className="form-select" defaultValue={dept} onChange={e => dept = e.target.value}>
                 <option value="">— Select —</option>
-                {DEPARTMENTS.map(d => <option key={d} value={d}>{d}</option>)}
+                {db.departments.map(d => <option key={d.id} value={d.name}>{d.name}</option>)}
               </select>
             </div>
           </div>
@@ -250,7 +244,7 @@ export default function UserManagementPage() {
           <div className="form-group"><label>Department</label>
             <select className="form-select" defaultValue="" onChange={e => dept = e.target.value}>
               <option value="">— Select —</option>
-              {DEPARTMENTS.map(d => <option key={d} value={d}>{d}</option>)}
+              {db.departments.map(d => <option key={d.id} value={d.name}>{d.name}</option>)}
             </select>
           </div>
         </div>
