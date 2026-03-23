@@ -38,7 +38,17 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       supabase.from('user_roles').select('role').eq('user_id', userId).single(),
     ]);
     if (profileRes.data) setProfile(profileRes.data as Profile);
-    if (roleRes.data) setRole(roleRes.data.role);
+    if (roleRes.data) {
+      setRole(roleRes.data.role);
+    } else {
+      // No role found — check if this user is an applicant
+      const { data: applicant } = await supabase
+        .from('applicants')
+        .select('id')
+        .eq('user_id', userId)
+        .single();
+      setRole(applicant ? 'applicant' : null);
+    }
     setLoading(false);
   };
 
