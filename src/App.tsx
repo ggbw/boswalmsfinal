@@ -28,8 +28,10 @@ function AuthGate() {
 
   if (!user || !profile) return <LoginScreen />;
 
+  const staffRoles = ["admin", "hod", "hoy", "lecturer", "student"];
+
   // Applicants get their own portal — not the full SMS
-  if (role === "applicant") {
+  if (role === "applicant" || !role || !staffRoles.includes(role)) {
     return <ApplicantPortal userId={user.id} onSignOut={signOut} />;
   }
 
@@ -37,7 +39,7 @@ function AuthGate() {
     id: profile.user_id,
     username: profile.email || "",
     password: "",
-    role: role || "admin",
+    role: role,
     name: profile.name,
     changed: false,
     email: profile.email || "",
