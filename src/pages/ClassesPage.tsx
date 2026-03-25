@@ -99,6 +99,13 @@ export default function ClassesPage() {
               toast(error.message, "error");
               return;
             }
+            // If programme changed, update all students in this class
+            if (programme !== cls.programme) {
+              await supabase
+                .from("students")
+                .update({ programme })
+                .eq("class_id", clsId);
+            }
             toast("Class updated successfully!", "success");
             closeModal();
             reloadDb();

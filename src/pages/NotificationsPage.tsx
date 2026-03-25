@@ -1,8 +1,14 @@
 import { useApp } from '@/context/AppContext';
+import { supabase } from '@/integrations/supabase/client';
 export default function NotificationsPage() {
   const { db, currentUser, setDb, toast, showModal, closeModal } = useApp();
   const isAdmin = currentUser?.role === 'admin';
-  const deleteNotif = (id: string) => { setDb(prev => ({ ...prev, notifications: prev.notifications.filter(n => n.id !== id) })); toast('Notification deleted', 'info'); };
+  const deleteNotif = async (id: string) => {
+    const { error } = await supabase.from('notifications').delete().eq('id', id);
+    if (error) { toast(error.message, 'error'); return; }
+    setDb(prev => ({ ...prev, notifications: prev.notifications.filter(n => n.id !== id) }));
+    toast('Notification deleted', 'info');
+  };
   const showAddNotif = () => {
     let title = '', body = '', priority = 'normal';
     showModal('Post Announcement', <div>
