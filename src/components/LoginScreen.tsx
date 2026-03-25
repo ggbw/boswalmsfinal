@@ -110,9 +110,7 @@ export default function LoginScreen() {
             </a>
           </div>
 
-          <div style={{ fontSize: 10, color: "#484f58", marginTop: 14 }}>
-            Admin: admin@boswa.ac.bw / BoswaAdmin2026!
-          </div>
+          <div style={{ fontSize: 10, color: "#484f58", marginTop: 14 }}>Developed by Automate Africa</div>
         </div>
       </div>
     </div>
