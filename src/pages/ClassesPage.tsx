@@ -283,9 +283,18 @@ export default function ClassesPage() {
                     </td>
                     {isAdmin && (
                       <td>
-                        <button className="btn btn-outline btn-sm" onClick={() => showEditClass(cls.id)}>
-                          <i className="fa-solid fa-pen" /> Edit
-                        </button>
+                        <div style={{ display: "flex", gap: 4 }}>
+                          <button className="btn btn-outline btn-sm" onClick={() => showEditClass(cls.id)}>
+                            <i className="fa-solid fa-pen" /> Edit
+                          </button>
+                          <button className="btn btn-danger btn-sm" onClick={async () => {
+                            if (!confirm(`Delete class "${cls.name}"? This cannot be undone.`)) return;
+                            const { error } = await supabase.from("classes").delete().eq("id", cls.id);
+                            if (error) { toast(error.message, "error"); } else { toast("Class deleted", "success"); reloadDb(); }
+                          }}>
+                            <i className="fa-solid fa-trash" />
+                          </button>
+                        </div>
                       </td>
                     )}
                   </tr>
