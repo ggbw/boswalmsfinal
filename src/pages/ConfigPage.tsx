@@ -1048,7 +1048,8 @@ function ProgrammeModuleMapper({ prog, db, toast, closeModal, reloadDb }: any) {
       const slotClassIds = slotClasses.map((c: any) => c.id);
 
       // Delete all existing mappings for these classes
-      await supabase.from("module_classes").delete().in("class_id", slotClassIds);
+      const { error: delErr } = await supabase.from("module_classes").delete().in("class_id", slotClassIds);
+      if (delErr) { toast("Delete failed: " + delErr.message, "error"); return; }
 
       // Insert the newly selected ones
       if (selectedMods.length > 0) {
@@ -1058,7 +1059,8 @@ function ProgrammeModuleMapper({ prog, db, toast, closeModal, reloadDb }: any) {
             rows.push({ module_id: modId, class_id: cls.id });
           }
         }
-        await supabase.from("module_classes").insert(rows);
+        const { error: insErr } = await supabase.from("module_classes").insert(rows);
+        if (insErr) { toast("Insert failed: " + insErr.message, "error"); return; }
       }
     }
     toast("Mapping saved!", "success");
