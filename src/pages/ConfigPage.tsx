@@ -1010,8 +1010,18 @@ function ProgrammeModuleMapper({ prog, db, toast, closeModal, reloadDb }: any) {
   const [selectedSlot, setSelectedSlot] = useState<{ year: number; sem: number }>(slots[0]);
   const [moduleSelections, setModuleSelections] = useState<Record<string, Set<string>>>(() => {
     const init: Record<string, Set<string>> = {};
+    // Pre-populate from existing module_classes via db.modules
+    const progClasses = db.classes.filter((c: any) => c.programme === prog.id);
     slots.forEach((sl) => {
-      init[`${sl.year}_${sl.sem}`] = new Set();
+      const slotClassIds = progClasses
+        .filter((c: any) => c.year === sl.year && c.semester === sl.sem)
+        .map((c: any) => c.id);
+      const alreadyMapped = new Set<string>(
+        db.modules
+          .filter((m: any) => m.classes.some((cid: string) => slotClassIds.includes(cid)))
+          .map((m: any) => m.id)
+      );
+      init[`${sl.year}_${sl.sem}`] = alreadyMapped;
     });
     return init;
   });
