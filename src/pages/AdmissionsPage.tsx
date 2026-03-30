@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, type ReactNode } from "react";
 import { useApp } from "@/context/AppContext";
 import { supabase } from "@/integrations/supabase/client";
 
@@ -600,7 +600,7 @@ async function doEnroll(
     guardian_email: a.applicant_guardian_email || "",
     guardian_mobile: a.applicant_guardian_mobile || "",
     class_id: null,
-    programme: a.first_choice_programme || "",
+    programme: a.first_choice_programme || null,
     year: 1,
     semester: 1,
     status: "active",
@@ -654,7 +654,7 @@ function StatusBadge({ status }: { status: string }) {
   );
 }
 
-function DS({ title, children }: { title: string; children: React.ReactNode }) {
+function DS({ title, children }: { title: string; children: ReactNode }) {
   return (
     <div style={{ marginBottom: 18 }}>
       <div
