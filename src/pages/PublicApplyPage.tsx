@@ -14,6 +14,8 @@ interface Module {
   id: string;
   name: string;
 }
+type SlotMap = Record<string, Module[]>; // key = "Year X · Semester Y"
+type ProgModMap = Record<string, SlotMap>; // key = programme id
 
 // ─────────────────────────────────────────────────────────────────────────────
 // MAIN
@@ -21,7 +23,7 @@ interface Module {
 export default function PublicApplyPage() {
   const [step, setStep] = useState<"list" | "form" | "success">("list");
   const [programmes, setProgrammes] = useState<Programme[]>([]);
-  const [modMap, setModMap] = useState<Record<string, Module[]>>({});
+  const [modMap, setModMap] = useState<ProgModMap>({});
   const [expandedId, setExpandedId] = useState<string | null>(null);
   const [firstChoice, setFirstChoice] = useState<Programme | null>(null);
   const [loading, setLoading] = useState(true);
@@ -30,31 +32,34 @@ export default function PublicApplyPage() {
     (async () => {
       const [{ data: progs }, { data: classes }, { data: mcs }, { data: mods }] = await Promise.all([
         supabase.from("programmes").select("*"),
-        supabase.from("classes").select("id,programme"),
+        supabase.from("classes").select("id,programme,year,semester"),
         supabase.from("module_classes").select("module_id,class_id"),
         supabase.from("modules").select("id,name"),
       ]);
       setProgrammes(progs || []);
-      const clsProg: Record<string, string> = {};
+
+      // Build lookup maps
+      const clsInfo: Record<string, { programme: string; year: number; semester: number }> = {};
       (classes || []).forEach((c: any) => {
-        clsProg[c.id] = c.programme;
+        clsInfo[c.id] = { programme: c.programme, year: c.year, semester: c.semester };
       });
       const modName: Record<string, string> = {};
-      (mods || []).forEach((m: any) => {
-        modName[m.id] = m.name;
-      });
-      const pm: Record<string, Module[]> = {};
-      const seen: Record<string, Set<string>> = {};
+      (mods || []).forEach((m: any) => { modName[m.id] = m.name; });
+
+      // Group modules by programme → "Year X · Semester Y"
+      const pm: ProgModMap = {};
+      const seen: Record<string, Set<string>> = {}; // key = "progId_slotKey"
       (mcs || []).forEach((mc: any) => {
-        const pid = clsProg[mc.class_id];
-        if (!pid) return;
-        if (!pm[pid]) {
-          pm[pid] = [];
-          seen[pid] = new Set();
-        }
-        if (!seen[pid].has(mc.module_id) && modName[mc.module_id]) {
-          seen[pid].add(mc.module_id);
-          pm[pid].push({ id: mc.module_id, name: modName[mc.module_id] });
+        const cls = clsInfo[mc.class_id];
+        if (!cls || !modName[mc.module_id]) return;
+        const pid = cls.programme;
+        const slot = `Year ${cls.year} · Semester ${cls.semester}`;
+        const seenKey = `${pid}_${slot}_${mc.module_id}`;
+        if (!pm[pid]) pm[pid] = {};
+        if (!pm[pid][slot]) pm[pid][slot] = [];
+        if (!seen[seenKey]) {
+          seen[seenKey] = new Set();
+          pm[pid][slot].push({ id: mc.module_id, name: modName[mc.module_id] });
         }
       });
       setModMap(pm);
@@ -87,7 +92,8 @@ export default function PublicApplyPage() {
         ) : (
           programmes.map((p) => {
             const isOpen = expandedId === p.id;
-            const mods = modMap[p.id] || [];
+            const slots = modMap[p.id] || {};
+            const totalMods = Object.values(slots).reduce((sum, arr) => sum + arr.length, 0);
             return (
               <div
                 key={p.id}
@@ -118,7 +124,7 @@ export default function PublicApplyPage() {
                       <Chip col="#4b5563">
                         {p.years} {p.years === 1 ? "Year" : "Years"}
                       </Chip>
-                      <Chip col="#4b5563">{mods.length} Modules</Chip>
+                      <Chip col="#4b5563">{totalMods} Modules</Chip>
                     </div>
                   </div>
                   <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
@@ -138,53 +144,74 @@ export default function PublicApplyPage() {
                 </div>
                 {isOpen && (
                   <div style={{ borderTop: "1px solid #e2e8f0", padding: "16px 22px", background: "#f8fafc" }}>
-                    <div
-                      style={{
-                        fontWeight: 600,
-                        fontSize: 12,
-                        color: "#002060",
-                        marginBottom: 10,
-                        textTransform: "uppercase",
-                        letterSpacing: 0.5,
-                      }}
-                    >
-                      Modules
-                    </div>
-                    {mods.length === 0 ? (
-                      <div style={{ color: "#888", fontSize: 13 }}>No modules listed yet.</div>
+                    {!modMap[p.id] || Object.keys(modMap[p.id]).length === 0 ? (
+                      <div style={{ color: "#888", fontSize: 13, marginBottom: 12 }}>No modules listed yet.</div>
                     ) : (
-                      <div
-                        style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill,minmax(240px,1fr))", gap: 8 }}
-                      >
-                        {mods.map((m, i) => (
-                          <div
-                            key={m.id}
-                            style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 13, color: "#374151" }}
-                          >
-                            <span
+                      <div style={{ display: "flex", flexDirection: "column", gap: 12, marginBottom: 16 }}>
+                        {Object.keys(modMap[p.id])
+                          .sort()
+                          .map((slot) => (
+                            <div
+                              key={slot}
                               style={{
-                                background: "#002060",
-                                color: "#fff",
-                                borderRadius: "50%",
-                                width: 20,
-                                height: 20,
-                                display: "flex",
-                                alignItems: "center",
-                                justifyContent: "center",
-                                fontSize: 10,
-                                flexShrink: 0,
+                                background: "#fff",
+                                border: "1px solid #e2e8f0",
+                                borderRadius: 8,
+                                overflow: "hidden",
                               }}
                             >
-                              {i + 1}
-                            </span>
-                            {m.name}
-                          </div>
-                        ))}
+                              <div
+                                style={{
+                                  background: "#002060",
+                                  color: "#fff",
+                                  padding: "7px 14px",
+                                  fontWeight: 700,
+                                  fontSize: 12,
+                                  letterSpacing: 0.4,
+                                }}
+                              >
+                                {slot}
+                              </div>
+                              <div
+                                style={{
+                                  display: "grid",
+                                  gridTemplateColumns: "repeat(auto-fill,minmax(220px,1fr))",
+                                  gap: 6,
+                                  padding: "10px 14px",
+                                }}
+                              >
+                                {modMap[p.id][slot].map((m, i) => (
+                                  <div
+                                    key={m.id}
+                                    style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 13, color: "#374151" }}
+                                  >
+                                    <span
+                                      style={{
+                                        background: "#002060",
+                                        color: "#fff",
+                                        borderRadius: "50%",
+                                        width: 20,
+                                        height: 20,
+                                        display: "flex",
+                                        alignItems: "center",
+                                        justifyContent: "center",
+                                        fontSize: 10,
+                                        flexShrink: 0,
+                                      }}
+                                    >
+                                      {i + 1}
+                                    </span>
+                                    {m.name}
+                                  </div>
+                                ))}
+                              </div>
+                            </div>
+                          ))}
                       </div>
                     )}
                     <button
                       className="btn btn-primary"
-                      style={{ marginTop: 16, fontSize: 13 }}
+                      style={{ fontSize: 13 }}
                       onClick={() => {
                         setFirstChoice(p);
                         setStep("form");
