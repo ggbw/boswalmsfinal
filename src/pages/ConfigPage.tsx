@@ -1039,24 +1039,29 @@ function ProgrammeModuleMapper({ prog, db, toast, closeModal, reloadDb }: any) {
   };
 
   const handleSave = async () => {
-    // For each slot, upsert module_classes entries
-    // We use a convention: map to any class in that programme/year/semester
-    const classes = db.classes.filter((c: any) => c.programme === prog.id);
-    let saved = 0;
+    const progClasses = db.classes.filter((c: any) => c.programme === prog.id);
     for (const sl of slots) {
       const key = `${sl.year}_${sl.sem}`;
-      const mods = Array.from(moduleSelections[key] as Set<string>);
-      const slotClasses = classes.filter((c: any) => c.year === sl.year && c.semester === sl.sem);
-      for (const modId of mods) {
-        for (const cls of slotClasses) {
-          const { error } = await supabase
-            .from("module_classes")
-            .upsert({ module_id: modId, class_id: cls.id }, { onConflict: "module_id,class_id" });
-          if (!error) saved++;
+      const selectedMods = Array.from(moduleSelections[key] as Set<string>);
+      const slotClasses = progClasses.filter((c: any) => c.year === sl.year && c.semester === sl.sem);
+      if (slotClasses.length === 0) continue;
+      const slotClassIds = slotClasses.map((c: any) => c.id);
+
+      // Delete all existing mappings for these classes
+      await supabase.from("module_classes").delete().in("class_id", slotClassIds);
+
+      // Insert the newly selected ones
+      if (selectedMods.length > 0) {
+        const rows: { module_id: string; class_id: string }[] = [];
+        for (const modId of selectedMods) {
+          for (const cls of slotClasses) {
+            rows.push({ module_id: modId, class_id: cls.id });
+          }
         }
+        await supabase.from("module_classes").insert(rows);
       }
     }
-    toast(`Mapping saved! ${saved} association(s) created.`, "success");
+    toast("Mapping saved!", "success");
     closeModal();
     reloadDb();
   };
