@@ -122,7 +122,7 @@ Deno.serve(async (req) => {
 
         results.push({ student_id: student.student_id, name: student.name, email, status: "created" });
       } catch (e) {
-        results.push({ student_id: student.student_id, name: student.name, email, status: "error", error: e.message });
+        results.push({ student_id: student.student_id, name: student.name, email, status: "error", error: e instanceof Error ? e.message : "Unknown error" });
       }
     }
 
