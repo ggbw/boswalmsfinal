@@ -245,18 +245,13 @@ export default function LecturersPage() {
               toast("Name and email are required", "error");
               return;
             }
-            const { data: authData, error: authErr } = await supabase.auth.admin.createUser({
-              email: email.trim(),
-              password: "Boswa@2024",
-              email_confirm: true,
+            const { data, error: fnErr } = await supabase.functions.invoke("create-user", {
+              body: { email: email.trim(), password: "Boswa@2024", name: name.trim(), role, dept, code },
             });
-            if (authErr || !authData?.user) {
-              toast(authErr?.message || "Failed to create account", "error");
+            if (fnErr || data?.error) {
+              toast(data?.error || fnErr?.message || "Failed to create account", "error");
               return;
             }
-            const user_id = authData.user.id;
-            await supabase.from("profiles").insert({ user_id, name: name.trim(), email: email.trim(), dept, code });
-            await supabase.from("user_roles").insert({ user_id, role: role as any });
             toast("Lecturer created!", "success");
             closeModal();
             load();

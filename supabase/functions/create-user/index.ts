@@ -71,16 +71,18 @@ Deno.serve(async (req) => {
       });
     }
 
-    // Update profile with additional info
-    await adminClient.from("profiles").update({
-      name, dept, code, student_ref, student_id,
-    }).eq("user_id", newUser.user.id);
+    // Upsert profile (in case trigger already created it)
+    await adminClient.from("profiles").upsert({
+      user_id: newUser.user.id,
+      name, dept: dept || null, code: code || null,
+      email, student_ref: student_ref || null, student_id: student_id || null,
+    }, { onConflict: "user_id" });
 
-    // Assign role
-    await adminClient.from("user_roles").insert({
+    // Upsert role (avoid duplicate key error)
+    await adminClient.from("user_roles").upsert({
       user_id: newUser.user.id,
       role,
-    });
+    }, { onConflict: "user_id" });
 
     return new Response(JSON.stringify({ user: newUser.user }), {
       status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" },
