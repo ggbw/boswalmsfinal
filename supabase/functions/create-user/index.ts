@@ -57,7 +57,7 @@ Deno.serve(async (req) => {
       });
     }
 
-    // Create the user with service role
+    // Try to create the user with service role
     const { data: newUser, error: createError } = await adminClient.auth.admin.createUser({
       email,
       password,
@@ -65,30 +65,47 @@ Deno.serve(async (req) => {
       user_metadata: { name },
     });
 
+    let userId: string;
+
     if (createError) {
-      return new Response(JSON.stringify({ error: createError.message }), {
-        status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" },
-      });
+      // If user already exists, find them and update instead
+      if (createError.message.includes("already been registered")) {
+        const { data: listData } = await adminClient.auth.admin.listUsers();
+        const existing = listData?.users?.find((u: any) => u.email === email);
+        if (!existing) {
+          return new Response(JSON.stringify({ error: "User exists but could not be found" }), {
+            status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" },
+          });
+        }
+        userId = existing.id;
+      } else {
+        return new Response(JSON.stringify({ error: createError.message }), {
+          status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" },
+        });
+      }
+    } else {
+      userId = newUser.user.id;
     }
 
     // Upsert profile (in case trigger already created it)
     await adminClient.from("profiles").upsert({
-      user_id: newUser.user.id,
+      user_id: userId,
       name, dept: dept || null, code: code || null,
       email, student_ref: student_ref || null, student_id: student_id || null,
     }, { onConflict: "user_id" });
 
     // Upsert role (avoid duplicate key error)
     await adminClient.from("user_roles").upsert({
-      user_id: newUser.user.id,
+      user_id: userId,
       role,
     }, { onConflict: "user_id" });
 
-    return new Response(JSON.stringify({ user: newUser.user }), {
+    return new Response(JSON.stringify({ user: { id: userId, email } }), {
       status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" },
     });
-  } catch (error) {
-    return new Response(JSON.stringify({ error: error.message }), {
+  } catch (error: unknown) {
+    const msg = error instanceof Error ? error.message : "Unknown error";
+    return new Response(JSON.stringify({ error: msg }), {
       status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" },
     });
   }
