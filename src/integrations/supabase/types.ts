@@ -630,6 +630,30 @@ export type Database = {
         }
         Relationships: []
       }
+      programme_modules: {
+        Row: {
+          id: string
+          module_id: string
+          programme_id: string
+          semester: number
+          year: number
+        }
+        Insert: {
+          id?: string
+          module_id: string
+          programme_id: string
+          semester: number
+          year: number
+        }
+        Update: {
+          id?: string
+          module_id?: string
+          programme_id?: string
+          semester?: number
+          year?: number
+        }
+        Relationships: []
+      }
       programmes: {
         Row: {
           id: string
