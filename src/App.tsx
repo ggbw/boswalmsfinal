@@ -56,7 +56,7 @@ function AuthGate() {
   );
 }
 
-const App = () => {
+const App: React.FC = () => {
   if (window.location.pathname === "/apply") {
     return <PublicApplyPage />;
   }
