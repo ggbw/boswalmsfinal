@@ -177,7 +177,7 @@ export default function Sidebar() {
         </div>
         <div>
           <div style={{ color: "#e6edf3", fontSize: 11, fontWeight: 600 }}>{currentUser?.name || "Admin"}</div>
-          <div style={{ color: "#484f58", fontSize: 9.5 }}>{role.toUpperCase()}</div>
+          <div style={{ color: "#484f58", fontSize: 9.5 }}>{role === "hoy" ? "HOA" : role.toUpperCase()}</div>
         </div>
         <i
           className="fa-solid fa-right-from-bracket"
