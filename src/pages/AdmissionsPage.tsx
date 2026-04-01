@@ -469,6 +469,23 @@ export default function AdmissionsPage() {
             <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
               <StatusBadge status={selected.status} />
               <button
+                className="btn btn-danger btn-sm"
+                onClick={async () => {
+                  if (!confirm(`Delete application for "${selected.applicant_name}"? This cannot be undone.`)) return;
+                  await supabase.from("applications").delete().eq("id", selected.id);
+                  await supabase.from("applicants").delete().eq("id", selected.applicant_id);
+                  if (selected.applicant_user_id) {
+                    await supabase.from("user_roles").delete().eq("user_id", selected.applicant_user_id);
+                    await supabase.from("profiles").delete().eq("user_id", selected.applicant_user_id);
+                  }
+                  toast("Applicant deleted", "success");
+                  setSelected(null);
+                  load();
+                }}
+              >
+                <i className="fa-solid fa-trash" /> Delete
+              </button>
+              <button
                 style={{ background: "none", border: "none", cursor: "pointer", fontSize: 18, color: "var(--text2)" }}
                 onClick={() => setSelected(null)}
               >
