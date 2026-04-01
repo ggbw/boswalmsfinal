@@ -30,37 +30,28 @@ export default function PublicApplyPage() {
 
   useEffect(() => {
     (async () => {
-      const [{ data: progs }, { data: classes }, { data: mcs }, { data: mods }] = await Promise.all([
+      const [{ data: progs }, { data: progMods }, { data: mods }] = await Promise.all([
         supabase.from("programmes").select("*"),
-        supabase.from("classes").select("id,programme,year,semester"),
-        supabase.from("module_classes").select("module_id,class_id"),
+        supabase.from("programme_modules" as any).select("programme_id,module_id,year,semester"),
         supabase.from("modules").select("id,name"),
       ]);
       setProgrammes(progs || []);
 
-      // Build lookup maps
-      const clsInfo: Record<string, { programme: string; year: number; semester: number }> = {};
-      (classes || []).forEach((c: any) => {
-        clsInfo[c.id] = { programme: c.programme, year: c.year, semester: c.semester };
-      });
       const modName: Record<string, string> = {};
       (mods || []).forEach((m: any) => { modName[m.id] = m.name; });
 
       // Group modules by programme → "Year X · Semester Y"
       const pm: ProgModMap = {};
-      const seen: Record<string, Set<string>> = {}; // key = "progId_slotKey"
-      (mcs || []).forEach((mc: any) => {
-        const cls = clsInfo[mc.class_id];
-        if (!cls || !modName[mc.module_id]) return;
-        const pid = cls.programme;
-        const slot = `Year ${cls.year} · Semester ${cls.semester}`;
-        const seenKey = `${pid}_${slot}_${mc.module_id}`;
-        if (!pm[pid]) pm[pid] = {};
-        if (!pm[pid][slot]) pm[pid][slot] = [];
-        if (!seen[seenKey]) {
-          seen[seenKey] = new Set();
-          pm[pid][slot].push({ id: mc.module_id, name: modName[mc.module_id] });
-        }
+      const seen: Record<string, boolean> = {};
+      (progMods || []).forEach((row: any) => {
+        if (!modName[row.module_id]) return;
+        const slot = `Year ${row.year} · Semester ${row.semester}`;
+        const seenKey = `${row.programme_id}_${slot}_${row.module_id}`;
+        if (seen[seenKey]) return;
+        seen[seenKey] = true;
+        if (!pm[row.programme_id]) pm[row.programme_id] = {};
+        if (!pm[row.programme_id][slot]) pm[row.programme_id][slot] = [];
+        pm[row.programme_id][slot].push({ id: row.module_id, name: modName[row.module_id] });
       });
       setModMap(pm);
       setLoading(false);

@@ -1010,21 +1010,29 @@ function ProgrammeModuleMapper({ prog, db, toast, closeModal, reloadDb }: any) {
   const [selectedSlot, setSelectedSlot] = useState<{ year: number; sem: number }>(slots[0]);
   const [moduleSelections, setModuleSelections] = useState<Record<string, Set<string>>>(() => {
     const init: Record<string, Set<string>> = {};
-    // Pre-populate from existing module_classes via db.modules
-    const progClasses = db.classes.filter((c: any) => c.programme === prog.id);
-    slots.forEach((sl) => {
-      const slotClassIds = progClasses
-        .filter((c: any) => c.year === sl.year && c.semester === sl.sem)
-        .map((c: any) => c.id);
-      const alreadyMapped = new Set<string>(
-        db.modules
-          .filter((m: any) => m.classes.some((cid: string) => slotClassIds.includes(cid)))
-          .map((m: any) => m.id)
-      );
-      init[`${sl.year}_${sl.sem}`] = alreadyMapped;
-    });
+    slots.forEach((sl) => { init[`${sl.year}_${sl.sem}`] = new Set(); });
     return init;
   });
+  const [loadingMap, setLoadingMap] = useState(true);
+
+  useEffect(() => {
+    (async () => {
+      const { data } = await supabase
+        .from("programme_modules" as any)
+        .select("module_id,year,semester")
+        .eq("programme_id", prog.id);
+      if (data && data.length > 0) {
+        const init: Record<string, Set<string>> = {};
+        slots.forEach((sl) => { init[`${sl.year}_${sl.sem}`] = new Set(); });
+        (data as any[]).forEach((row) => {
+          const key = `${row.year}_${row.semester}`;
+          if (init[key]) init[key].add(row.module_id);
+        });
+        setModuleSelections(init);
+      }
+      setLoadingMap(false);
+    })();
+  }, [prog.id]);
 
   const slotKey = `${selectedSlot.year}_${selectedSlot.sem}`;
   const selected = moduleSelections[slotKey] || new Set<string>();
@@ -1039,30 +1047,39 @@ function ProgrammeModuleMapper({ prog, db, toast, closeModal, reloadDb }: any) {
   };
 
   const handleSave = async () => {
-    const progClasses = db.classes.filter((c: any) => c.programme === prog.id);
+    // Step 1 — save to programme_modules (source of truth)
+    const { error: delErr } = await supabase
+      .from("programme_modules" as any)
+      .delete()
+      .eq("programme_id", prog.id);
+    if (delErr) { toast("Failed: " + delErr.message, "error"); return; }
+
+    const rows: { id: string; programme_id: string; module_id: string; year: number; semester: number }[] = [];
     for (const sl of slots) {
       const key = `${sl.year}_${sl.sem}`;
-      const selectedMods = Array.from(moduleSelections[key] as Set<string>);
+      Array.from(moduleSelections[key] as Set<string>).forEach((modId) => {
+        rows.push({ id: `pm_${Date.now()}_${modId}_${sl.year}_${sl.sem}`, programme_id: prog.id, module_id: modId, year: sl.year, semester: sl.sem });
+      });
+    }
+    if (rows.length > 0) {
+      const { error: insErr } = await supabase.from("programme_modules" as any).insert(rows);
+      if (insErr) { toast("Failed: " + insErr.message, "error"); return; }
+    }
+
+    // Step 2 — also sync module_classes for classes that exist
+    const progClasses = db.classes.filter((c: any) => c.programme === prog.id);
+    for (const sl of slots) {
       const slotClasses = progClasses.filter((c: any) => c.year === sl.year && c.semester === sl.sem);
       if (slotClasses.length === 0) continue;
       const slotClassIds = slotClasses.map((c: any) => c.id);
-
-      // Delete all existing mappings for these classes
-      const { error: delErr } = await supabase.from("module_classes").delete().in("class_id", slotClassIds);
-      if (delErr) { toast("Delete failed: " + delErr.message, "error"); return; }
-
-      // Insert the newly selected ones
+      await supabase.from("module_classes").delete().in("class_id", slotClassIds);
+      const selectedMods = Array.from(moduleSelections[`${sl.year}_${sl.sem}`] as Set<string>);
       if (selectedMods.length > 0) {
-        const rows: { module_id: string; class_id: string }[] = [];
-        for (const modId of selectedMods) {
-          for (const cls of slotClasses) {
-            rows.push({ module_id: modId, class_id: cls.id });
-          }
-        }
-        const { error: insErr } = await supabase.from("module_classes").insert(rows);
-        if (insErr) { toast("Insert failed: " + insErr.message, "error"); return; }
+        const mcRows = selectedMods.flatMap((modId) => slotClasses.map((cls: any) => ({ module_id: modId, class_id: cls.id })));
+        await supabase.from("module_classes").insert(mcRows);
       }
     }
+
     toast("Mapping saved!", "success");
     closeModal();
     reloadDb();
@@ -1071,7 +1088,7 @@ function ProgrammeModuleMapper({ prog, db, toast, closeModal, reloadDb }: any) {
   return (
     <div>
       <div style={{ marginBottom: 12, fontSize: 12, color: "var(--text2)" }}>
-        Select a year/semester, then tick the modules for that period.
+        {loadingMap ? "Loading existing mappings…" : "Select a year/semester, then tick the modules for that period."}
       </div>
       {/* Year/Semester selector */}
       <div style={{ display: "flex", gap: 6, flexWrap: "wrap", marginBottom: 16 }}>
