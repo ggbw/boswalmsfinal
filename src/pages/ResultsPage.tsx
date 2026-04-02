@@ -6,8 +6,8 @@ export default function ResultsPage() {
   const role = currentUser?.role;
 
   if (role === 'student') {
-    const stu = db.students.find(s => s.studentId === currentUser?.studentId || s.name.split(' ')[0].toLowerCase() === (currentUser?.name||'').split(' ')[0].toLowerCase());
-    if (!stu) return <div className="card" style={{textAlign:'center',padding:40}}>Student record not found.</div>;
+    const stu = db.students.find(s => s.studentId === currentUser?.studentId);
+    if (!stu) return <div className="card" style={{textAlign:'center',padding:40}}>Student record not found. Please contact admin.</div>;
     const myMarks = db.marks.filter(m => m.studentId === stu.studentId);
     return (<>
       <div className="page-header"><div className="page-title">My Results</div></div>
@@ -15,6 +15,10 @@ export default function ResultsPage() {
         <tbody>{myMarks.map(m=>{const mod=db.modules.find(mo=>mo.id===m.moduleId);const cw=Math.round(((m.test1+m.test2+m.practTest+m.indAss+m.grpAss)/5)*0.4);const pe=Math.round(m.practical*0.2);const fe=Math.round(m.finalExam*0.4);const mm=cw+pe+fe;const g=grade(mm);return<tr key={m.moduleId}><td className="td-name">{mod?.name}</td><td style={{fontFamily:"'JetBrains Mono',monospace",textAlign:'center'}}>{cw}%</td><td style={{fontFamily:"'JetBrains Mono',monospace",textAlign:'center'}}>{pe}%</td><td style={{fontFamily:"'JetBrains Mono',monospace",textAlign:'center'}}>{fe}%</td><td style={{fontFamily:"'JetBrains Mono',monospace",fontWeight:700,textAlign:'center'}}>{mm}%</td><td><span className={`badge ${gradeColor(g)}`}>{g}</span></td></tr>;})}</tbody>
       </table></div></div>
     </>);
+  }
+
+  if (!['admin','hod','hoy','lecturer'].includes(role || '')) {
+    return <div className="card" style={{textAlign:'center',padding:40,color:'var(--text2)'}}>You do not have permission to view this page.</div>;
   }
 
   // Lecturer: only see marks for modules in their classes

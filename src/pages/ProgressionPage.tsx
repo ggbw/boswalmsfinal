@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { useApp } from '@/context/AppContext';
 import { supabase } from '@/integrations/supabase/client';
+import { calcModuleMark } from '@/data/db';
 
 export default function ProgressionPage() {
   const { db, toast, reloadDb } = useApp();
@@ -33,6 +34,19 @@ export default function ProgressionPage() {
     if (!student) return;
 
     if (action === 'approved') {
+      // Validate: student must have marks recorded and no failing modules
+      const studentMarks = db.marks.filter(m => m.studentId === student.studentId && m.classId === classId);
+      if (studentMarks.length === 0) {
+        toast(`${student.name} has no marks recorded. Cannot approve progression.`, 'error');
+        return false;
+      }
+      const failingModules = studentMarks.filter(m => calcModuleMark(m) < 50);
+      if (failingModules.length > 0) {
+        const modNames = failingModules.map(m => db.modules.find(mo => mo.id === m.moduleId)?.name || m.moduleId).join(', ');
+        toast(`${student.name} has failing modules: ${modNames}. Cannot approve.`, 'error');
+        return false;
+      }
+
       const cls = db.classes.find(c => c.id === classId);
       const prog = db.config.programmes.find(p => p.id === cls?.programme);
       const maxSem = prog?.semesters || 2;

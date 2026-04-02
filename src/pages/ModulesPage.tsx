@@ -3,7 +3,13 @@ import { supabase } from "@/integrations/supabase/client";
 
 export default function ModulesPage() {
   const { db, currentUser, toast, showModal, closeModal, reloadDb } = useApp();
-  const isAdmin = currentUser?.role === "admin";
+  const role = currentUser?.role;
+  const isAdmin = role === "admin";
+  const isHod = role === "hod";
+  const hodDept = isHod ? db.departments.find((d) => d.hod === currentUser?.name) : null;
+  const visibleModules = isHod && hodDept
+    ? db.modules.filter((m) => m.dept === hodDept.id)
+    : db.modules;
 
   const showEditModule = (modId: string) => {
     const mod = db.modules.find((m) => m.id === modId);
@@ -185,7 +191,7 @@ export default function ModulesPage() {
               </tr>
             </thead>
             <tbody>
-              {db.modules.map((m) => {
+              {visibleModules.map((m) => {
                 const dept = db.departments.find((d) => d.id === m.dept);
                 const cls = m.classes.map((cid) => db.classes.find((c) => c.id === cid)?.name || cid).join(", ");
                 return (

@@ -32,13 +32,46 @@ const pageComponents: Record<string, React.ComponentType> = {
   results: ResultsPage, reports: ReportsPage, transcripts: TranscriptsPage,
   admissions: AdmissionsPage, progression: ProgressionPage, config: ConfigPage,
   notifications: NotificationsPage, profile: ProfilePage, grades: GradesPage,
-  mystudents: MyStudentsPage, mymodules: MyModulesPage, mapping: MappingPage,
+  mystudents: MyStudentsPage, mytimetable: MyStudentsPage,
+  mymodules: MyModulesPage, mapping: MappingPage,
   usermanagement: UserManagementPage, photogallery: PhotoGalleryPage, notes: NotesPage,
 };
 
+const ROLE_PAGES: Record<string, string[]> = {
+  dashboard:      ['admin','hod','hoy','lecturer','student'],
+  profile:        ['admin','hod','hoy','lecturer','student'],
+  notifications:  ['admin','hod','hoy','lecturer','student'],
+  students:       ['admin','hod','hoy','lecturer'],
+  lecturers:      ['admin'],
+  classes:        ['admin'],
+  modules:        ['admin','hod','lecturer'],
+  timetable:      ['admin','hod','hoy','lecturer'],
+  attendance:     ['admin','hod','hoy','lecturer'],
+  exams:          ['admin','hod','hoy','lecturer'],
+  assignments:    ['admin','hod','hoy','lecturer','student'],
+  results:        ['admin','hod','hoy','lecturer','student'],
+  reports:        ['admin','hod','hoy'],
+  transcripts:    ['admin','hod','hoy','student'],
+  admissions:     ['admin'],
+  progression:    ['admin','hod','hoy'],
+  config:         ['admin'],
+  grades:         ['admin','hod','hoy'],
+  mystudents:     ['hod','hoy','lecturer'],
+  mytimetable:    ['student'],
+  mymodules:      ['student'],
+  mapping:        ['admin','hod'],
+  usermanagement: ['admin'],
+  photogallery:   ['admin','hod','hoy','lecturer','student'],
+  notes:          ['admin','hod','hoy','lecturer','student'],
+};
+
 export default function AppLayout() {
-  const { db, activePage, toasts, modalContent, closeModal } = useApp();
-  const PageComponent = pageComponents[activePage] || Dashboard;
+  const { db, activePage, currentUser, toasts, modalContent, closeModal } = useApp();
+  const role = currentUser?.role || 'admin';
+  const allowed = ROLE_PAGES[activePage] ?? ['admin'];
+  const PageComponent = allowed.includes(role)
+    ? (pageComponents[activePage] || Dashboard)
+    : Dashboard;
   // Removed term reference - semester only
 
   return (

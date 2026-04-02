@@ -6,9 +6,12 @@ export default function ExamsPage() {
   const { db, currentUser, showModal, closeModal, toast, reloadDb } = useApp();
   const role = currentUser?.role;
 
-  // Lecturer scoping: only see exams they created
+  const isAdmin = role === 'admin';
+  const isTeacher = role === 'lecturer' || role === 'hod' || role === 'hoy';
+
+  // Non-admin teaching staff: only see exams they created
   let exams = db.exams;
-  if (role === 'lecturer') {
+  if (isTeacher) {
     exams = exams.filter(e => e.createdBy === currentUser?.id);
   }
 
@@ -18,7 +21,6 @@ export default function ExamsPage() {
   };
 
   const handleCreateExam = () => {
-    const isAdmin = role === 'admin';
     const availableModules = isAdmin ? db.modules : getLecturerModules();
     let name = '', moduleId = availableModules[0]?.id || '', classId = '', date = '', type = 'Written Exam', startTime = '', endTime = '', room = '';
 
@@ -92,7 +94,6 @@ export default function ExamsPage() {
   };
 
   const handleEditExam = (exam: typeof exams[0]) => {
-    const isAdmin = role === 'admin';
     const availableModules = isAdmin ? db.modules : getLecturerModules();
     let name = exam.name, moduleId = exam.moduleId, classId = exam.classId || '', date = exam.date || '', type = exam.type || 'Written Exam', startTime = exam.startTime || '', endTime = exam.endTime || '', room = exam.room || '';
 
@@ -236,6 +237,30 @@ export default function ExamsPage() {
               if (error) hasError = true;
             }
           }
+          // Also upsert into marks table (final_exam column) so ResultsPage / Transcripts reflect this exam
+          for (const s of students) {
+            const score = marksMap[s.studentId] ?? 0;
+            const { data: existingMark } = await supabase
+              .from('marks')
+              .select('id')
+              .eq('student_id', s.studentId)
+              .eq('module_id', exam.moduleId)
+              .eq('class_id', exam.classId)
+              .maybeSingle();
+            if (existingMark) {
+              await supabase.from('marks').update({ final_exam: score })
+                .eq('student_id', s.studentId)
+                .eq('module_id', exam.moduleId)
+                .eq('class_id', exam.classId);
+            } else {
+              await supabase.from('marks').insert({
+                student_id: s.studentId, module_id: exam.moduleId,
+                class_id: exam.classId, final_exam: score,
+                test1: 0, test2: 0, pract_test: 0, ind_ass: 0, grp_ass: 0, practical: 0,
+                year: db.config.currentYear, semester: db.config.currentSemester,
+              });
+            }
+          }
           await supabase.from('exams').update({ status: 'done' }).eq('id', exam.id);
           if (hasError) { toast('Some marks could not be saved', 'error'); }
           else { toast('Marks saved!', 'success'); closeModal(); reloadDb(); }
@@ -247,10 +272,10 @@ export default function ExamsPage() {
   return (<>
     <div className="page-header">
       <div><div className="page-title"><i className="fa-solid fa-file-pen" style={{color:'var(--accent)',marginRight:8}}/>Examinations</div><div className="page-sub">{exams.length} exam(s)</div></div>
-      {(role === 'lecturer' || role === 'admin') && <button className="btn btn-primary btn-sm" onClick={handleCreateExam}><i className="fa-solid fa-plus" /> Create Exam</button>}
+      {(isAdmin || isTeacher) && <button className="btn btn-primary btn-sm" onClick={handleCreateExam}><i className="fa-solid fa-plus" /> Create Exam</button>}
     </div>
     <div className="card"><div className="table-wrap"><table>
-      <thead><tr><th>Exam Name</th><th>Module</th><th>Class</th><th>Date</th><th>Status</th>{(role === 'lecturer' || role === 'admin') && <th>Actions</th>}</tr></thead>
+      <thead><tr><th>Exam Name</th><th>Module</th><th>Class</th><th>Date</th><th>Status</th>{(isAdmin || isTeacher) && <th>Actions</th>}</tr></thead>
       <tbody>{exams.map(e => {
         const mod = db.modules.find(m => m.id === e.moduleId);
         const cls = db.classes.find(c => c.id === e.classId);

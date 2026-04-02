@@ -7,14 +7,17 @@ export default function AssignmentsPage() {
   const role = currentUser?.role;
   const [selectedAssignment, setSelectedAssignment] = useState<string | null>(null);
 
+  const isAdmin = role === 'admin';
+  const isTeacher = role === 'lecturer' || role === 'hod' || role === 'hoy';
+
   let assignments = db.assignments;
 
-  if (role === 'lecturer') {
+  if (isTeacher) {
     assignments = assignments.filter(a => a.createdBy === currentUser?.id);
   }
 
   const currentStudent = role === 'student'
-    ? db.students.find(s => s.studentId === currentUser?.studentId || s.name.split(' ')[0].toLowerCase() === (currentUser?.name||'').split(' ')[0].toLowerCase())
+    ? db.students.find(s => s.studentId === currentUser?.studentId)
     : null;
 
   if (role === 'student' && currentStudent) {
@@ -30,7 +33,7 @@ export default function AssignmentsPage() {
   };
 
   const handleCreateAssignment = () => {
-    const lecModules = (role === 'admin') ? db.modules : getLecturerModules();
+    const lecModules = isAdmin ? db.modules : getLecturerModules();
     let title = '', description = '', moduleId = lecModules[0]?.id || '', classId = '';
     let dueDate = '', marks = 100, submissionType = 'softcopy';
     let attachmentFile: File | null = null;
@@ -285,9 +288,9 @@ export default function AssignmentsPage() {
   return (<>
     <div className="page-header">
       <div><div className="page-title"><i className="fa-solid fa-list-check" style={{color:'var(--accent)',marginRight:8}}/>Assignments</div><div className="page-sub">{assignments.length} assignment(s)</div></div>
-      {(role === 'lecturer' || role === 'admin') && <button className="btn btn-primary btn-sm" onClick={handleCreateAssignment}><i className="fa-solid fa-plus" /> Create Assignment</button>}
+      {(isAdmin || isTeacher) && <button className="btn btn-primary btn-sm" onClick={handleCreateAssignment}><i className="fa-solid fa-plus" /> Create Assignment</button>}
     </div>
-    <div className="card"><div className="table-wrap"><table><thead><tr><th>Title</th><th>Module</th><th>Class</th><th>Due Date</th><th style={{textAlign:'center'}}>Marks</th><th>Type</th><th>Status</th><th>Submissions</th>{role === 'student' && <th>Action</th>}{(role === 'lecturer' || role === 'admin') && <th>Actions</th>}</tr></thead>
+    <div className="card"><div className="table-wrap"><table><thead><tr><th>Title</th><th>Module</th><th>Class</th><th>Due Date</th><th style={{textAlign:'center'}}>Marks</th><th>Type</th><th>Status</th><th>Submissions</th>{role === 'student' && <th>Action</th>}{(isAdmin || isTeacher) && <th>Actions</th>}</tr></thead>
       <tbody>{assignments.map(a => {
         const mod = db.modules.find(m => m.id === a.moduleId);
         const cls = db.classes.find(c => c.id === a.classId);
@@ -319,7 +322,7 @@ export default function AssignmentsPage() {
                 {mySubmission && <span style={{fontSize:11,color:'var(--text2)'}}>✓ Submitted</span>}
               </td>
             )}
-            {(role === 'lecturer' || role === 'admin') && (
+            {(isAdmin || isTeacher) && (
               <td onClick={e => e.stopPropagation()}>
                 <div style={{ display: 'flex', gap: 4 }}>
                   <button className="btn btn-primary btn-sm" onClick={() => handleEnterMarks(a)}>
@@ -353,7 +356,7 @@ export default function AssignmentsPage() {
               <div style={{fontSize:12,color:'var(--text2)',marginTop:4}}>{mod?.name} • {cls?.name}</div>
             </div>
             <div style={{display:'flex',gap:8}}>
-              {(role === 'lecturer' || role === 'admin') && (
+              {(isAdmin || isTeacher) && (
                 <button className="btn btn-outline btn-sm" style={{color:'var(--danger)'}} onClick={() => handleDeleteAssignment(a.id)}>
                   <i className="fa-solid fa-trash" /> Delete
                 </button>
@@ -417,7 +420,7 @@ export default function AssignmentsPage() {
           )}
 
           {/* Lecturer/Admin: Submissions list */}
-          {(role === 'lecturer' || role === 'admin') && (
+          {(isAdmin || isTeacher) && (
             <div style={{marginTop:20}}>
               <div style={{fontSize:14,fontWeight:700,color:'var(--text1)',marginBottom:12}}>
                 Submissions ({allSubmissions.length})

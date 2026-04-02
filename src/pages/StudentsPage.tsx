@@ -29,6 +29,15 @@ export default function StudentsPage() {
     const myClasses = db.classes.filter((c) => c.lecturer === currentUser?.name).map((c) => c.id);
     students = students.filter((s) => myClasses.includes(s.classId));
   }
+  if (role === "hod") {
+    const hodDept = db.departments.find((d) => d.hod === currentUser?.name);
+    if (hodDept) {
+      const deptClassIds = [...new Set(
+        db.modules.filter((m) => m.dept === hodDept.id).flatMap((m) => m.classes)
+      )];
+      students = students.filter((s) => deptClassIds.includes(s.classId));
+    }
+  }
 
   const missingEnrolment = students.filter((s) => !s.enrolmentDate);
 

@@ -5,7 +5,7 @@ export default function MyStudentsPage() {
   const role = currentUser?.role;
 
   if (role === 'student') {
-    const stu = db.students.find(s => s.studentId === currentUser?.studentId || s.name.split(' ')[0].toLowerCase() === (currentUser?.name||'').split(' ')[0].toLowerCase());
+    const stu = db.students.find(s => s.studentId === currentUser?.studentId);
     if (!stu) return <div className="card" style={{textAlign:'center',padding:40,color:'var(--text2)'}}>No timetable found</div>;
     const slots = db.timetable.filter(t => t.classId === stu.classId);
     const days = ['Monday','Tuesday','Wednesday','Thursday','Friday'];
@@ -17,7 +17,7 @@ export default function MyStudentsPage() {
     </>);
   }
 
-  // Lecturer: only show students enrolled in modules assigned to their classes
+  // Lecturer / HOD / HOA: show students in classes they teach
   const lecClasses = db.classes.filter(c => c.lecturer === currentUser?.name);
   const lecClassIds = lecClasses.map(c => c.id);
   const lecModuleIds = db.modules.filter(m => m.classes.some(cid => lecClassIds.includes(cid))).map(m => m.id);

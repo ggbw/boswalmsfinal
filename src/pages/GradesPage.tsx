@@ -1,7 +1,11 @@
 import { useApp } from '@/context/AppContext';
 import { calcModuleMark, grade, gradeColor } from '@/data/db';
 export default function GradesPage() {
-  const { db } = useApp();
+  const { db, currentUser } = useApp();
+  const role = currentUser?.role;
+  if (!['admin','hod','hoy'].includes(role || '')) {
+    return <div className="card" style={{ textAlign: 'center', padding: 40, color: 'var(--text2)' }}>You do not have permission to view this page.</div>;
+  }
   return (<>
     <div className="page-header"><div className="page-title">Student Grades Overview</div></div>
     <div className="card"><div className="table-wrap"><table><thead><tr><th>Student</th><th>Class</th><th>Avg Mark</th><th>Overall Grade</th><th>Year</th></tr></thead>

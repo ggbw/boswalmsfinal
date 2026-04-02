@@ -12,7 +12,7 @@ interface FacultyRow {
 }
 
 export default function LecturersPage() {
-  const { db, toast, showModal, closeModal, currentUser } = useApp();
+  const { db, toast, showModal, closeModal, currentUser, reloadDb } = useApp();
   const [faculty, setFaculty] = useState<FacultyRow[]>([]);
   const [loading, setLoading] = useState(true);
   const [selected, setSelected] = useState<FacultyRow | null>(null);
@@ -156,7 +156,7 @@ export default function LecturersPage() {
             }
             toast("Lecturer updated!", "success");
             closeModal();
-            // Update local state immediately
+            reloadDb();
             setFaculty((prev) =>
               prev.map((x) => (x.user_id === f.user_id ? { ...x, name, email, dept, code, role } : x)),
             );
