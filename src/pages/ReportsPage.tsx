@@ -6,7 +6,7 @@ import { supabase } from "@/integrations/supabase/client";
 const GRADE_ORDER = ["Distinction", "Merit", "Credit", "Pass", "Fail"] as const;
 
 // Exam type → which section of the report
-const THEORY_TYPES = ["Written Exam", "Practical Exam", "Oral Exam"];
+const THEORY_TYPES = ["Written Exam", "Oral Exam"];
 const FINAL_THEORY = "Final Theory Exam";
 const RECIPE_TYPE = "Recipe";
 const FINAL_PRAC = "Final Practical Exam";
@@ -89,6 +89,10 @@ export default function ReportsPage() {
     // Categorise
     const theoryCWExams = classExams.filter((e) => THEORY_TYPES.includes(e.type || "Written Exam"));
     const finalTheoryExam = classExams.find((e) => e.type === FINAL_THEORY);
+    // All exams with "practical" in their type (case-insensitive), excluding the specific final ones
+    const practicalCWExams = classExams.filter(
+      (e) => (e.type || "").toLowerCase().includes("practical") && e.type !== FINAL_PRAC && e.type !== FINAL_PRAC_THEO,
+    );
     const recipeExams = classExams.filter((e) => e.type === RECIPE_TYPE);
     const finalPracExam = classExams.find((e) => e.type === FINAL_PRAC);
     const finalPracTheo = classExams.find((e) => e.type === FINAL_PRAC_THEO);
@@ -113,10 +117,20 @@ export default function ReportsPage() {
       const finalTheory = finalTheoryExam ? score(s.studentId, finalTheoryExam.id) : null;
       const final40 = finalTheory !== null ? r2(finalTheory * 0.4) : null;
 
+      // Practical CW (exams with "practical" in type, not finals)
+      const practicalCWScores = practicalCWExams
+        .map((e) => score(s.studentId, e.id))
+        .filter((x) => x !== null) as number[];
+      const practicalCWAvg = practicalCWScores.length ? avg(practicalCWScores) : null;
+
       // Recipes
       const recipeScores = recipeExams.map((e) => score(s.studentId, e.id)).filter((x) => x !== null) as number[];
       const recipeAvg = recipeScores.length ? avg(recipeScores) : null;
-      const recipe70 = recipeAvg !== null ? r2(recipeAvg * 0.7) : null;
+
+      // Combined practical CW (practicalCW + recipes) → 70%
+      const allPracCWScores = [...practicalCWScores, ...recipeScores];
+      const allPracCWAvg = allPracCWScores.length ? avg(allPracCWScores) : null;
+      const pracCW70 = allPracCWAvg !== null ? r2(allPracCWAvg * 0.7) : null;
 
       // Final practical
       const finalPrac = finalPracExam ? score(s.studentId, finalPracExam.id) : null;
@@ -125,7 +139,7 @@ export default function ReportsPage() {
       const finalPracT10 = finalPracT !== null ? r2(finalPracT * 0.1) : null;
 
       // Practical mark
-      const pracParts = [recipe70, finalPrac20, finalPracT10].filter((x) => x !== null) as number[];
+      const pracParts = [pracCW70, finalPrac20, finalPracT10].filter((x) => x !== null) as number[];
       const practicalMark = pracParts.length ? r2(pracParts.reduce((a, b) => a + b, 0)) : null;
       const prac20 = practicalMark !== null ? r2(practicalMark * 0.2) : null;
 
@@ -141,9 +155,12 @@ export default function ReportsPage() {
         theory40,
         finalTheory,
         final40,
+        practicalCWScores,
+        practicalCWAvg,
         recipeScores,
         recipeAvg,
-        recipe70,
+        allPracCWAvg,
+        pracCW70,
         finalPrac,
         finalPrac20,
         finalPracT,
@@ -166,7 +183,7 @@ export default function ReportsPage() {
       : 0;
 
     const hasTheory = theoryCWExams.length > 0 || classAssignments.length > 0 || finalTheoryExam;
-    const hasPractical = recipeExams.length > 0 || finalPracExam || finalPracTheo;
+    const hasPractical = practicalCWExams.length > 0 || recipeExams.length > 0 || finalPracExam || finalPracTheo;
 
     const handleExport = async () => {
       if (!document.getElementById("sheetjs")) {
@@ -183,6 +200,7 @@ export default function ReportsPage() {
 
       // Theory headers
       const thHeaders = [...theoryCWExams.map((e) => e.name), ...classAssignments.map((a) => a.title)];
+      const pracCWHeaders = practicalCWExams.map((e) => e.name);
       const recHeaders = recipeExams.map((e) => e.name);
 
       const headers = [
@@ -191,14 +209,15 @@ export default function ReportsPage() {
         "Surname",
         "Student No.",
         ...thHeaders,
-        "CW Avg",
-        "40% CW",
+        ...(thHeaders.length > 0 ? ["CW Avg", "40% CW"] : []),
         ...(finalTheoryExam ? [finalTheoryExam.name, "40% Final Exam"] : []),
         ...(hasPractical
           ? [
+              ...pracCWHeaders,
+              ...(practicalCWExams.length > 0 ? ["Practical CW Avg"] : []),
               ...recHeaders,
-              "Recipe Avg",
-              "70% Recipes",
+              ...(recipeExams.length > 0 ? ["Recipe Avg"] : []),
+              ...((practicalCWExams.length > 0 || recipeExams.length > 0) ? ["Combined Avg", "70% Practical CW"] : []),
               ...(finalPracExam ? [finalPracExam.name, "20% Final Prac"] : []),
               ...(finalPracTheo ? [finalPracTheo.name, "10% Prac Theory"] : []),
               "Practical Mark",
@@ -217,6 +236,7 @@ export default function ReportsPage() {
           ...theoryCWExams.map((e) => score(r.s.studentId, e.id) ?? ""),
           ...classAssignments.map((a) => score(r.s.studentId, a.id) ?? ""),
         ];
+        const pracCWScores = practicalCWExams.map((e) => score(r.s.studentId, e.id) ?? "");
         const recScores = recipeExams.map((e) => score(r.s.studentId, e.id) ?? "");
         return [
           i + 1,
@@ -224,14 +244,17 @@ export default function ReportsPage() {
           sn,
           r.s.studentId,
           ...thScores,
-          r.theoryCWAvg ?? "",
-          r.theory40 ?? "",
+          ...(thScores.length > 0 ? [r.theoryCWAvg ?? "", r.theory40 ?? ""] : []),
           ...(finalTheoryExam ? [r.finalTheory ?? "", r.final40 ?? ""] : []),
           ...(hasPractical
             ? [
+                ...pracCWScores,
+                ...(practicalCWExams.length > 0 ? [r.practicalCWAvg ?? ""] : []),
                 ...recScores,
-                r.recipeAvg ?? "",
-                r.recipe70 ?? "",
+                ...(recipeExams.length > 0 ? [r.recipeAvg ?? ""] : []),
+                ...((practicalCWExams.length > 0 || recipeExams.length > 0)
+                  ? [r.allPracCWAvg ?? "", r.pracCW70 ?? ""]
+                  : []),
                 ...(finalPracExam ? [r.finalPrac ?? "", r.finalPrac20 ?? ""] : []),
                 ...(finalPracTheo ? [r.finalPracT ?? "", r.finalPracT10 ?? ""] : []),
                 r.practicalMark ?? "",
@@ -510,7 +533,7 @@ export default function ReportsPage() {
                         <th style={{ width: 30 }}>No</th>
                         <th>Student</th>
                         <th>ID</th>
-                        {recipeExams.map((e) => (
+                        {practicalCWExams.map((e) => (
                           <th
                             key={e.id}
                             style={{ background: "#7f3f00", color: "#fff", textAlign: "center", whiteSpace: "nowrap" }}
@@ -518,17 +541,35 @@ export default function ReportsPage() {
                             {e.name}
                           </th>
                         ))}
+                        {practicalCWExams.length > 0 && (
+                          <th style={{ background: "#5a2d00", color: "#ffd580", textAlign: "center", fontWeight: 700 }}>
+                            Practical CW Avg
+                          </th>
+                        )}
+                        {recipeExams.map((e) => (
+                          <th
+                            key={e.id}
+                            style={{ background: "#6b3800", color: "#fff", textAlign: "center", whiteSpace: "nowrap" }}
+                          >
+                            {e.name}
+                          </th>
+                        ))}
                         {recipeExams.length > 0 && (
+                          <th style={{ background: "#5a2d00", color: "#ffd580", textAlign: "center", fontWeight: 700 }}>
+                            Recipe Avg
+                          </th>
+                        )}
+                        {(practicalCWExams.length > 0 || recipeExams.length > 0) && (
                           <>
                             <th
-                              style={{ background: "#5a2d00", color: "#ffd580", textAlign: "center", fontWeight: 700 }}
+                              style={{ background: "#3d1f00", color: "#ffd580", textAlign: "center", fontWeight: 700 }}
                             >
-                              Recipe Avg
+                              Combined Avg
                             </th>
                             <th
-                              style={{ background: "#5a2d00", color: "#ffd580", textAlign: "center", fontWeight: 700 }}
+                              style={{ background: "#3d1f00", color: "#ffd580", textAlign: "center", fontWeight: 700 }}
                             >
-                              70% Recipes
+                              70% Practical CW
                             </th>
                           </>
                         )}
@@ -584,20 +625,47 @@ export default function ReportsPage() {
                           <td style={{ textAlign: "center", color: "var(--text2)" }}>{i + 1}</td>
                           <td style={{ fontWeight: 500 }}>{r.s.name}</td>
                           <td style={{ fontFamily: "'JetBrains Mono',monospace", fontSize: 10 }}>{r.s.studentId}</td>
+                          {practicalCWExams.map((e) => (
+                            <ScoreCell key={e.id} val={score(r.s.studentId, e.id)} />
+                          ))}
+                          {practicalCWExams.length > 0 && (
+                            <td
+                              style={{
+                                textAlign: "center",
+                                fontFamily: "'JetBrains Mono',monospace",
+                                background: "#fef9e7",
+                                fontWeight: 600,
+                              }}
+                            >
+                              {r.practicalCWAvg !== null ? r.practicalCWAvg.toFixed(1) : "—"}
+                            </td>
+                          )}
                           {recipeExams.map((e) => (
                             <ScoreCell key={e.id} val={score(r.s.studentId, e.id)} />
                           ))}
                           {recipeExams.length > 0 && (
+                            <td
+                              style={{
+                                textAlign: "center",
+                                fontFamily: "'JetBrains Mono',monospace",
+                                background: "#fef3e7",
+                                fontWeight: 600,
+                              }}
+                            >
+                              {r.recipeAvg !== null ? r.recipeAvg.toFixed(1) : "—"}
+                            </td>
+                          )}
+                          {(practicalCWExams.length > 0 || recipeExams.length > 0) && (
                             <>
                               <td
                                 style={{
                                   textAlign: "center",
                                   fontFamily: "'JetBrains Mono',monospace",
-                                  background: "#fef9e7",
+                                  background: "#fdecd0",
                                   fontWeight: 600,
                                 }}
                               >
-                                {r.recipeAvg !== null ? r.recipeAvg.toFixed(1) : "—"}
+                                {r.allPracCWAvg !== null ? r.allPracCWAvg.toFixed(1) : "—"}
                               </td>
                               <td
                                 style={{
@@ -607,7 +675,7 @@ export default function ReportsPage() {
                                   fontWeight: 700,
                                 }}
                               >
-                                {r.recipe70 ?? "—"}
+                                {r.pracCW70 ?? "—"}
                               </td>
                             </>
                           )}
