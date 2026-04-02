@@ -1,6 +1,28 @@
 import { useApp } from "@/context/AppContext";
 import { supabase } from "@/integrations/supabase/client";
 
+// Sync module_classes for a class based on its programme + year + semester
+async function syncModulesForClass(classId: string, programmeId: string, year: number, semester: number) {
+  // Get modules mapped to this programme/year/semester from programme_modules
+  const { data: pmRows } = await supabase
+    .from("programme_modules" as any)
+    .select("module_id")
+    .eq("programme_id", programmeId)
+    .eq("year", year)
+    .eq("semester", semester);
+
+  // Remove old module_classes for this class
+  await supabase.from("module_classes").delete().eq("class_id", classId);
+
+  // Insert new ones
+  const moduleIds = (pmRows || []).map((r: any) => r.module_id);
+  if (moduleIds.length > 0) {
+    await supabase.from("module_classes").insert(
+      moduleIds.map((modId: string) => ({ module_id: modId, class_id: classId }))
+    );
+  }
+}
+
 export default function ClassesPage() {
   const { db, currentUser, toast, showModal, closeModal, reloadDb } = useApp();
   const isAdmin = currentUser?.role === "admin";
@@ -99,13 +121,12 @@ export default function ClassesPage() {
               toast(error.message, "error");
               return;
             }
-            // If programme changed, update all students in this class
+            // If programme/year/semester changed, update students and re-sync modules
             if (programme !== cls.programme) {
-              await supabase
-                .from("students")
-                .update({ programme })
-                .eq("class_id", clsId);
+              await supabase.from("students").update({ programme }).eq("class_id", clsId);
             }
+            // Always re-sync modules from programme_modules
+            await syncModulesForClass(clsId, programme, year, semester);
             toast("Class updated successfully!", "success");
             closeModal();
             reloadDb();
@@ -228,6 +249,8 @@ export default function ClassesPage() {
               toast(error.message, "error");
               return;
             }
+            // Auto-assign modules from programme_modules for this programme/year/semester
+            await syncModulesForClass(newId, programme, year, semester);
             toast("Class created successfully!", "success");
             closeModal();
             reloadDb();

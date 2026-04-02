@@ -27,7 +27,6 @@ function getNavConfig(role: string, db: any): NavSection[] {
           { id: "students", label: "Students", icon: "fa-solid fa-user-graduate", badge: db.students.length },
           { id: "lecturers", label: "Lecturers", icon: "fa-solid fa-chalkboard-user" },
           { id: "classes", label: "Classes", icon: "fa-solid fa-school" },
-          { id: "modules", label: "Modules", icon: "fa-solid fa-book-open" },
           { id: "timetable", label: "Timetable", icon: "fa-solid fa-calendar-days" },
         ],
       },
@@ -59,7 +58,6 @@ function getNavConfig(role: string, db: any): NavSection[] {
         section: "Academic",
         items: [
           { id: "students", label: "Students", icon: "fa-solid fa-user-graduate" },
-          { id: "modules", label: "Modules", icon: "fa-solid fa-book-open" },
           { id: "mapping", label: "Module Mapping", icon: "fa-solid fa-diagram-project" },
         ],
       },
