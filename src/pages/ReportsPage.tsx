@@ -143,10 +143,9 @@ export default function ReportsPage() {
       const practicalMark = pracParts.length ? r2(pracParts.reduce((a, b) => a + b, 0)) : null;
       const prac20 = practicalMark !== null ? r2(practicalMark * 0.2) : null;
 
-      // Module mark
-      const moduleParts = [theory40, prac20, final40].filter((x) => x !== null) as number[];
-      const moduleMark = moduleParts.length === 3 ? r2(moduleParts.reduce((a, b) => a + b, 0)) : null;
-      const decision = moduleMark !== null ? grade(moduleMark) : "—";
+      // Module mark — always calculated, missing parts treated as 0
+      const moduleMark = r2((theory40 ?? 0) + (prac20 ?? 0) + (final40 ?? 0));
+      const decision = grade(moduleMark);
 
       return {
         s,
@@ -172,11 +171,10 @@ export default function ReportsPage() {
       };
     });
 
-    const validModuleMarks = rows.filter((r) => r.moduleMark !== null).map((r) => r.moduleMark as number);
-    const classAvg = validModuleMarks.length ? Math.round(avg(validModuleMarks)) : null;
+    const classAvg = rows.length ? Math.round(avg(rows.map((r) => r.moduleMark))) : null;
     const gradeCounts: Record<string, number> = { Distinction: 0, Merit: 0, Credit: 0, Pass: 0, Fail: 0 };
     rows.forEach((r) => {
-      if (r.decision !== "—") gradeCounts[r.decision] = (gradeCounts[r.decision] || 0) + 1;
+      gradeCounts[r.decision] = (gradeCounts[r.decision] || 0) + 1;
     });
     const passPct = students.length
       ? Math.round(((students.length - (gradeCounts.Fail || 0)) / students.length) * 100)
@@ -217,7 +215,7 @@ export default function ReportsPage() {
               ...(practicalCWExams.length > 0 ? ["Practical CW Avg"] : []),
               ...recHeaders,
               ...(recipeExams.length > 0 ? ["Recipe Avg"] : []),
-              ...((practicalCWExams.length > 0 || recipeExams.length > 0) ? ["Combined Avg", "70% Practical CW"] : []),
+              ...((practicalCWExams.length > 0 || recipeExams.length > 0) ? ["70% Practical CW"] : []),
               ...(finalPracExam ? [finalPracExam.name, "20% Final Prac"] : []),
               ...(finalPracTheo ? [finalPracTheo.name, "10% Prac Theory"] : []),
               "Practical Mark",
@@ -252,9 +250,7 @@ export default function ReportsPage() {
                 ...(practicalCWExams.length > 0 ? [r.practicalCWAvg ?? ""] : []),
                 ...recScores,
                 ...(recipeExams.length > 0 ? [r.recipeAvg ?? ""] : []),
-                ...((practicalCWExams.length > 0 || recipeExams.length > 0)
-                  ? [r.allPracCWAvg ?? "", r.pracCW70 ?? ""]
-                  : []),
+                ...((practicalCWExams.length > 0 || recipeExams.length > 0) ? [r.pracCW70 ?? 0] : []),
                 ...(finalPracExam ? [r.finalPrac ?? "", r.finalPrac20 ?? ""] : []),
                 ...(finalPracTheo ? [r.finalPracT ?? "", r.finalPracT10 ?? ""] : []),
                 r.practicalMark ?? "",
@@ -492,7 +488,7 @@ export default function ReportsPage() {
                                   fontWeight: 700,
                                 }}
                               >
-                                {r.theory40 !== null ? r.theory40 : "—"}
+                                {r.theory40 ?? 0}
                               </td>
                             </>
                           )}
@@ -507,7 +503,7 @@ export default function ReportsPage() {
                                   fontWeight: 700,
                                 }}
                               >
-                                {r.final40 ?? "—"}
+                                {r.final40 ?? 0}
                               </td>
                             </>
                           )}
@@ -560,18 +556,11 @@ export default function ReportsPage() {
                           </th>
                         )}
                         {(practicalCWExams.length > 0 || recipeExams.length > 0) && (
-                          <>
-                            <th
-                              style={{ background: "#3d1f00", color: "#ffd580", textAlign: "center", fontWeight: 700 }}
-                            >
-                              Combined Avg
-                            </th>
-                            <th
-                              style={{ background: "#3d1f00", color: "#ffd580", textAlign: "center", fontWeight: 700 }}
-                            >
-                              70% Practical CW
-                            </th>
-                          </>
+                          <th
+                            style={{ background: "#3d1f00", color: "#ffd580", textAlign: "center", fontWeight: 700 }}
+                          >
+                            70% Practical CW
+                          </th>
                         )}
                         {finalPracExam && (
                           <>
@@ -656,28 +645,16 @@ export default function ReportsPage() {
                             </td>
                           )}
                           {(practicalCWExams.length > 0 || recipeExams.length > 0) && (
-                            <>
-                              <td
-                                style={{
-                                  textAlign: "center",
-                                  fontFamily: "'JetBrains Mono',monospace",
-                                  background: "#fdecd0",
-                                  fontWeight: 600,
-                                }}
-                              >
-                                {r.allPracCWAvg !== null ? r.allPracCWAvg.toFixed(1) : "—"}
-                              </td>
-                              <td
-                                style={{
-                                  textAlign: "center",
-                                  fontFamily: "'JetBrains Mono',monospace",
-                                  background: "#fdecd0",
-                                  fontWeight: 700,
-                                }}
-                              >
-                                {r.pracCW70 ?? "—"}
-                              </td>
-                            </>
+                            <td
+                              style={{
+                                textAlign: "center",
+                                fontFamily: "'JetBrains Mono',monospace",
+                                background: "#fdecd0",
+                                fontWeight: 700,
+                              }}
+                            >
+                              {r.pracCW70 ?? 0}
+                            </td>
                           )}
                           {finalPracExam && (
                             <>
@@ -690,7 +667,7 @@ export default function ReportsPage() {
                                   fontWeight: 700,
                                 }}
                               >
-                                {r.finalPrac20 ?? "—"}
+                                {r.finalPrac20 ?? 0}
                               </td>
                             </>
                           )}
@@ -705,7 +682,7 @@ export default function ReportsPage() {
                                   fontWeight: 700,
                                 }}
                               >
-                                {r.finalPracT10 ?? "—"}
+                                {r.finalPracT10 ?? 0}
                               </td>
                             </>
                           )}
@@ -717,7 +694,7 @@ export default function ReportsPage() {
                               fontWeight: 700,
                             }}
                           >
-                            {r.practicalMark ?? "—"}
+                            {r.practicalMark ?? 0}
                           </td>
                           <td
                             style={{
@@ -727,7 +704,7 @@ export default function ReportsPage() {
                               fontWeight: 700,
                             }}
                           >
-                            {r.prac20 ?? "—"}
+                            {r.prac20 ?? 0}
                           </td>
                         </tr>
                       ))}
@@ -777,12 +754,12 @@ export default function ReportsPage() {
                       <td
                         style={{ textAlign: "center", fontFamily: "'JetBrains Mono',monospace", background: "#fdecd0" }}
                       >
-                        {r.prac20 ?? "—"}
+                        {r.prac20 ?? 0}
                       </td>
                       <td
                         style={{ textAlign: "center", fontFamily: "'JetBrains Mono',monospace", background: "#fdecea" }}
                       >
-                        {r.final40 ?? "—"}
+                        {r.final40 ?? 0}
                       </td>
                       <td
                         style={{
@@ -790,24 +767,13 @@ export default function ReportsPage() {
                           fontFamily: "'JetBrains Mono',monospace",
                           fontSize: 14,
                           fontWeight: 800,
-                          background:
-                            r.moduleMark !== null
-                              ? r.moduleMark >= 80
-                                ? "#dcfce7"
-                                : r.moduleMark >= 50
-                                  ? "#eff6ff"
-                                  : "#fef2f2"
-                              : undefined,
+                          background: r.moduleMark >= 80 ? "#dcfce7" : r.moduleMark >= 50 ? "#eff6ff" : "#fef2f2",
                         }}
                       >
-                        {r.moduleMark !== null ? `${r.moduleMark}%` : "—"}
+                        {r.moduleMark}%
                       </td>
                       <td style={{ textAlign: "center" }}>
-                        {r.decision !== "—" ? (
-                          <span className={`badge ${gradeColor(r.decision)}`}>{r.decision}</span>
-                        ) : (
-                          "—"
-                        )}
+                        <span className={`badge ${gradeColor(r.decision)}`}>{r.decision}</span>
                       </td>
                     </tr>
                   ))}

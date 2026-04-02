@@ -376,7 +376,7 @@ export default function ConfigPage() {
   const handleAddModule = () => {
     let name = ALL_MODULES[0],
       code = "",
-      dept = db.departments[0]?.name || "";
+      dept = db.departments[0]?.id || "";
     let customName = "";
     let useCustom = false;
     showModal(
@@ -419,7 +419,7 @@ export default function ConfigPage() {
             <label>Department</label>
             <select className="form-select" defaultValue={dept} onChange={(e) => (dept = e.target.value)}>
               {db.departments.map((d) => (
-                <option key={d.id} value={d.name}>
+                <option key={d.id} value={d.id}>
                   {d.name}
                 </option>
               ))}
@@ -473,7 +473,7 @@ export default function ConfigPage() {
             <select className="form-select" defaultValue={dept} onChange={(e) => (dept = e.target.value)}>
               <option value="">— None —</option>
               {db.departments.map((d) => (
-                <option key={d.id} value={d.name}>
+                <option key={d.id} value={d.id}>
                   {d.name}
                 </option>
               ))}
