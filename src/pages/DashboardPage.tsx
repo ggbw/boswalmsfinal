@@ -51,7 +51,18 @@ export default function DashboardPage() {
           <div><div style={{ fontSize: 12, fontWeight: 700 }}>{n.title}</div><div style={{ fontSize: 11, color: 'var(--text2)', marginTop: 2 }}>{n.body.substring(0, 100)}…</div></div>
         </div>
       ))}
-      <div className="page-header"><div><div className="page-title">Welcome back, {currentUser?.name?.split(' ')[0] || 'Admin'}</div><div className="page-sub">Academic Year {db.config.currentYear} · Semester {db.config.currentSemester} · Boswa Culinary Institute of Botswana</div></div></div>
+      <div className="page-header">
+        <div>
+          <div className="page-title">Welcome back, {currentUser?.name?.split(' ')[0] || 'Admin'}</div>
+          <div className="page-sub">
+            Academic Year {db.config.currentYear} · Semester {db.config.currentSemester}
+            {db.config.semesterStartDate && db.config.semesterEndDate && (
+              <> · {db.config.semesterStartDate} — {db.config.semesterEndDate}</>
+            )}
+            {' '}· Boswa Culinary Institute of Botswana
+          </div>
+        </div>
+      </div>
       {isStaff && (
         <div className="stat-grid">
           <div className="stat-card"><div className="stat-icon" style={{ background: '#fff0cc' }}><i className="fa-solid fa-user-graduate" style={{ color: '#d4920a' }} /></div><div><div className="stat-val">{totalStudents}</div><div className="stat-label">Total Students</div></div></div>
@@ -62,24 +73,36 @@ export default function DashboardPage() {
         </div>
       )}
       <div style={{ marginBottom: 20 }}>
-        <div className="card-title" style={{ fontSize: 15, fontWeight: 700, marginBottom: 14 }}>Active Classes</div>
+        <div className="card-title" style={{ fontSize: 15, fontWeight: 700, marginBottom: 14 }}>
+          Active Classes — {db.config.currentYear} · Semester {db.config.currentSemester}
+        </div>
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill,minmax(280px,1fr))', gap: 12 }}>
-          {db.classes.map(cls => {
-            const studCount = db.students.filter(s => s.classId === cls.id).length;
-            const prog = db.config.programmes.find(p => p.id === cls.programme);
-            return (
-              <div key={cls.id} className="card" style={{ cursor: 'pointer' }} onClick={() => navigate('students')}>
-                <div style={{ fontWeight: 700, fontSize: 14, marginBottom: 6 }}><i className="fa-solid fa-school" /> {cls.name}</div>
-                <div style={{ fontSize: 11, color: 'var(--text2)', marginBottom: 3 }}>{prog?.type} · Year {cls.year} · Semester {cls.semester}</div>
-                <div style={{ fontSize: 11, color: 'var(--text2)', marginBottom: 10 }}><i className="fa-solid fa-user-tie" /> {cls.lecturer}</div>
-                <div className="prog-bar"><div className="prog-fill" style={{ width: `${Math.round(studCount / 20 * 100)}%` }} /></div>
-                <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: 6 }}>
-                  <span style={{ fontSize: 11, color: 'var(--text2)' }}>{studCount} students</span>
-                  <span className="badge badge-active">Active</span>
+          {(() => {
+            const activeClasses = db.classes.filter(cls => cls.calYear === db.config.currentYear && cls.semester === db.config.currentSemester);
+            if (activeClasses.length === 0) {
+              return (
+                <div style={{ color: 'var(--text2)', fontSize: 13, padding: '20px 0' }}>
+                  No classes found for Year {db.config.currentYear} · Semester {db.config.currentSemester}. Update the Academic Year Settings in Configuration.
                 </div>
-              </div>
-            );
-          })}
+              );
+            }
+            return activeClasses.map(cls => {
+              const studCount = db.students.filter(s => s.classId === cls.id).length;
+              const prog = db.config.programmes.find(p => p.id === cls.programme);
+              return (
+                <div key={cls.id} className="card" style={{ cursor: 'pointer' }} onClick={() => navigate('students')}>
+                  <div style={{ fontWeight: 700, fontSize: 14, marginBottom: 6 }}><i className="fa-solid fa-school" /> {cls.name}</div>
+                  <div style={{ fontSize: 11, color: 'var(--text2)', marginBottom: 3 }}>{prog?.type} · Year {cls.year} · Semester {cls.semester}</div>
+                  <div style={{ fontSize: 11, color: 'var(--text2)', marginBottom: 10 }}><i className="fa-solid fa-user-tie" /> {cls.lecturer}</div>
+                  <div className="prog-bar"><div className="prog-fill" style={{ width: `${Math.round(studCount / 20 * 100)}%` }} /></div>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: 6 }}>
+                    <span style={{ fontSize: 11, color: 'var(--text2)' }}>{studCount} students</span>
+                    <span className="badge badge-active">Active</span>
+                  </div>
+                </div>
+              );
+            });
+          })()}
         </div>
       </div>
     </>

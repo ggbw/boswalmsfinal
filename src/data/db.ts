@@ -188,6 +188,8 @@ export interface DB {
     schoolName: string;
     currentYear: number;
     currentSemester: number;
+    semesterStartDate?: string;
+    semesterEndDate?: string;
     programmes: Programme[];
     transcriptIssuer?: string;
     transcriptIssuerTitle?: string;

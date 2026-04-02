@@ -750,8 +750,87 @@ export default function ConfigPage() {
       <div className="card" style={{ marginTop: 16 }}>
         <div className="card-title">
           <span>
-            <i className="fa-solid fa-gear" /> Academic Year Settings
+            <i className="fa-solid fa-calendar-days" /> Academic Year Settings
           </span>
+          <button
+            className="btn btn-outline btn-sm"
+            onClick={() => {
+              let year = db.config.currentYear;
+              let semester = db.config.currentSemester;
+              let startDate = db.config.semesterStartDate || "";
+              let endDate = db.config.semesterEndDate || "";
+              showModal(
+                "Edit Academic Year Settings",
+                <div>
+                  <div className="form-row cols2">
+                    <div className="form-group">
+                      <label>Current Year</label>
+                      <input
+                        className="form-input"
+                        type="number"
+                        defaultValue={year}
+                        onChange={(e) => (year = Number(e.target.value))}
+                      />
+                    </div>
+                    <div className="form-group">
+                      <label>Active Semester</label>
+                      <select
+                        className="form-input"
+                        defaultValue={semester}
+                        onChange={(e) => (semester = Number(e.target.value))}
+                      >
+                        <option value={1}>Semester 1</option>
+                        <option value={2}>Semester 2</option>
+                      </select>
+                    </div>
+                  </div>
+                  <div className="form-row cols2">
+                    <div className="form-group">
+                      <label>Semester Start Date</label>
+                      <input
+                        className="form-input"
+                        type="date"
+                        defaultValue={startDate}
+                        onChange={(e) => (startDate = e.target.value)}
+                      />
+                    </div>
+                    <div className="form-group">
+                      <label>Semester End Date</label>
+                      <input
+                        className="form-input"
+                        type="date"
+                        defaultValue={endDate}
+                        onChange={(e) => (endDate = e.target.value)}
+                      />
+                    </div>
+                  </div>
+                  <button
+                    className="btn btn-primary"
+                    style={{ marginTop: 12 }}
+                    onClick={async () => {
+                      const { error } = await supabase
+                        .from("school_config")
+                        .update({
+                          current_year: year,
+                          current_semester: semester,
+                          semester_start_date: startDate || null,
+                          semester_end_date: endDate || null,
+                        } as any)
+                        .eq("id", 1);
+                      if (error) { toast(error.message, "error"); return; }
+                      toast("Academic year settings saved!", "success");
+                      closeModal();
+                      reloadDb();
+                    }}
+                  >
+                    Save Settings
+                  </button>
+                </div>,
+              );
+            }}
+          >
+            <i className="fa-solid fa-pen" /> Edit
+          </button>
         </div>
         <div className="info-row">
           <span className="info-label">Current Year</span>
@@ -761,6 +840,18 @@ export default function ConfigPage() {
           <span className="info-label">Active Semester</span>
           <span className="info-val">Semester {db.config.currentSemester}</span>
         </div>
+        {db.config.semesterStartDate && (
+          <div className="info-row">
+            <span className="info-label">Semester Start</span>
+            <span className="info-val">{db.config.semesterStartDate}</span>
+          </div>
+        )}
+        {db.config.semesterEndDate && (
+          <div className="info-row">
+            <span className="info-label">Semester End</span>
+            <span className="info-val">{db.config.semesterEndDate}</span>
+          </div>
+        )}
       </div>
     </>
   );

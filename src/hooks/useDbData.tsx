@@ -41,6 +41,8 @@ export function useDbData() {
         school_name?: string | null;
         current_year?: number | null;
         current_semester?: number | null;
+        semester_start_date?: string | null;
+        semester_end_date?: string | null;
         transcript_issuer?: string | null;
         transcript_issuer_title?: string | null;
       } | null;
@@ -54,6 +56,8 @@ export function useDbData() {
           schoolName: config?.school_name || "Boswa CIB",
           currentYear: config?.current_year || 2026,
           currentSemester: config?.current_semester || 1,
+          semesterStartDate: config?.semester_start_date || "",
+          semesterEndDate: config?.semester_end_date || "",
           programmes,
           transcriptIssuer: config?.transcript_issuer || "Boisi Dibuile",
           transcriptIssuerTitle: config?.transcript_issuer_title || "Deputy Principal",
