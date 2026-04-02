@@ -74,6 +74,7 @@ export interface Exam {
   type?: string;
   startTime?: string;
   endTime?: string;
+  room?: string;
   createdBy?: string;
 }
 export interface Assignment {

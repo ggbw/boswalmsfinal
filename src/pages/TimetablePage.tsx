@@ -835,7 +835,14 @@ export default function TimetablePage() {
                               {e.name}
                             </span>
                           </td>
-                          <td style={{ fontSize: 11 }}>{(e as any).venue || "—"}</td>
+                          <td style={{ fontSize: 11 }}>
+                            {e.room ? (
+                              <span style={{ background: "var(--surface2)", borderRadius: 4, padding: "2px 8px", fontSize: 11 }}>
+                                <i className="fa-solid fa-door-open" style={{ marginRight: 4, fontSize: 9, opacity: 0.7 }} />
+                                {e.room}
+                              </span>
+                            ) : "—"}
+                          </td>
                         </tr>
                       );
                     });

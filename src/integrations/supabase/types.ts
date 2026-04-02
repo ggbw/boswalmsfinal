@@ -369,6 +369,7 @@ export type Database = {
           type: string | null
           start_time: string | null
           end_time: string | null
+          room: string | null
         }
         Insert: {
           class_id?: string | null
@@ -381,6 +382,7 @@ export type Database = {
           type?: string | null
           start_time?: string | null
           end_time?: string | null
+          room?: string | null
         }
         Update: {
           class_id?: string | null
@@ -393,6 +395,7 @@ export type Database = {
           type?: string | null
           start_time?: string | null
           end_time?: string | null
+          room?: string | null
         }
         Relationships: [
           {
