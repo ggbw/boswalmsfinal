@@ -33,8 +33,8 @@ export default function ReportsPage() {
   const [view, setView] = useState<"overview" | "detail">("overview");
   const [selClassId, setSelClassId] = useState(visibleClasses[0]?.id || "");
   const [selModuleId, setSelModuleId] = useState("");
-  const [yearFilter, setYearFilter] = useState<number | "">(db.config.currentYear);
-  const [semFilter, setSemFilter] = useState<number | "">(db.config.currentSemester);
+  const [yearFilter, setYearFilter] = useState<number | "">("");
+  const [semFilter, setSemFilter] = useState<number | "">("");
   const [asmMarks, setAsmMarks] = useState<AssessmentMark[]>([]);
   const [loading, setLoading] = useState(false);
 
