@@ -1,3 +1,4 @@
+import { useState } from "react";
 import { useApp } from "@/context/AppContext";
 import { supabase } from "@/integrations/supabase/client";
 
@@ -26,6 +27,21 @@ async function syncModulesForClass(classId: string, programmeId: string, year: n
 export default function ClassesPage() {
   const { db, currentUser, toast, showModal, closeModal, reloadDb } = useApp();
   const isAdmin = currentUser?.role === "admin";
+  const [syncing, setSyncing] = useState(false);
+
+  const syncAllModules = async () => {
+    setSyncing(true);
+    let count = 0;
+    for (const cls of db.classes) {
+      if (cls.programme) {
+        await syncModulesForClass(cls.id, cls.programme, cls.year, cls.semester);
+        count++;
+      }
+    }
+    await reloadDb();
+    setSyncing(false);
+    toast(`Synced modules for ${count} class(es)`, "success");
+  };
 
   const showEditClass = (clsId: string) => {
     const cls = db.classes.find((c) => c.id === clsId);
@@ -267,9 +283,14 @@ export default function ClassesPage() {
       <div className="page-header">
         <div className="page-title">Classes</div>
         {isAdmin && (
-          <button className="btn btn-primary btn-sm" onClick={showAddClass}>
-            <i className="fa-solid fa-plus" /> New Class (Intake)
-          </button>
+          <div style={{ display: "flex", gap: 8 }}>
+            <button className="btn btn-outline btn-sm" onClick={syncAllModules} disabled={syncing}>
+              <i className={`fa-solid ${syncing ? "fa-spinner fa-spin" : "fa-rotate"}`} /> {syncing ? "Syncing…" : "Sync Modules"}
+            </button>
+            <button className="btn btn-primary btn-sm" onClick={showAddClass}>
+              <i className="fa-solid fa-plus" /> New Class (Intake)
+            </button>
+          </div>
         )}
       </div>
       <div className="card">

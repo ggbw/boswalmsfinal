@@ -26,10 +26,9 @@ export default function ExamsPage() {
 
     const getClassesForModule = (mid: string) => {
       const mod = db.modules.find(m => m.id === mid);
-      if (!mod) return [];
-      if (isAdmin) return db.classes.filter(c => mod.classes.includes(c.id));
-      const lecClassIds = db.classes.filter(c => c.lecturer === currentUser?.name).map(c => c.id);
-      return db.classes.filter(c => mod.classes.includes(c.id) && lecClassIds.includes(c.id));
+      const linkedClasses = mod ? db.classes.filter(c => mod.classes.includes(c.id)) : db.classes;
+      if (isAdmin) return linkedClasses;
+      return linkedClasses.filter(c => c.lecturer === currentUser?.name);
     };
 
     const initialClasses = getClassesForModule(moduleId);
@@ -99,10 +98,9 @@ export default function ExamsPage() {
 
     const getClassesForModule = (mid: string) => {
       const mod = db.modules.find(m => m.id === mid);
-      if (!mod) return [];
-      if (isAdmin) return db.classes.filter(c => mod.classes.includes(c.id));
-      const lecClassIds = db.classes.filter(c => c.lecturer === currentUser?.name).map(c => c.id);
-      return db.classes.filter(c => mod.classes.includes(c.id) && lecClassIds.includes(c.id));
+      const linkedClasses = mod ? db.classes.filter(c => mod.classes.includes(c.id)) : db.classes;
+      if (isAdmin) return linkedClasses;
+      return linkedClasses.filter(c => c.lecturer === currentUser?.name);
     };
 
     showModal('Edit Exam', (
