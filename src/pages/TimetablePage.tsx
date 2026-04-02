@@ -793,10 +793,10 @@ export default function TimetablePage() {
                   <tr>
                     <th>Date</th>
                     <th>Day</th>
+                    <th>Time</th>
                     <th>Class</th>
                     <th>Module</th>
                     <th>Exam Name</th>
-                    <th>Duration</th>
                     <th>Venue</th>
                   </tr>
                 </thead>
@@ -819,10 +819,12 @@ export default function TimetablePage() {
                       const dateObj = e.date ? new Date(e.date) : null;
                       const dateStr = dateObj ? dateObj.toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric" }) : "—";
                       const dayName = dateObj && !isNaN(dateObj.getTime()) ? dateObj.toLocaleDateString("en-GB", { weekday: "long" }) : "—";
+                      const timeStr = e.time ? e.time.substring(0, 5) : "—";
                       return (
                         <tr key={e.id} style={{ background: "rgba(220,38,38,0.03)" }}>
                           <td style={{ fontWeight: 600, color: "#dc2626", whiteSpace: "nowrap" }}>{dateStr}</td>
                           <td style={{ fontSize: 11, color: "var(--text2)" }}>{dayName}</td>
+                          <td style={{ fontFamily: "'JetBrains Mono',monospace", fontSize: 11, whiteSpace: "nowrap" }}>{timeStr}</td>
                           <td style={{ fontWeight: 600 }}>{cls?.name || "—"}</td>
                           <td>{mod?.name || "—"}</td>
                           <td>
@@ -830,7 +832,6 @@ export default function TimetablePage() {
                               {e.name}
                             </span>
                           </td>
-                          <td style={{ fontSize: 11, color: "var(--text2)" }}>{(e as any).duration || "—"}</td>
                           <td style={{ fontSize: 11 }}>{(e as any).venue || "—"}</td>
                         </tr>
                       );

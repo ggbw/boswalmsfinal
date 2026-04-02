@@ -135,7 +135,7 @@ export function useDbData() {
           exams: (examsRes.data || []).map((e: any) => ({
             id: e.id, name: e.name, moduleId: e.module_id || "",
             classId: e.class_id || "", date: e.date || "",
-            status: e.status || "", type: e.type || "", createdBy: e.created_by || "",
+            status: e.status || "", type: e.type || "", time: e.time || "", createdBy: e.created_by || "",
           })),
           assignments: (assignmentsRes.data || []).map((a: any) => ({
             id: a.id, title: a.title, moduleId: a.module_id || "",

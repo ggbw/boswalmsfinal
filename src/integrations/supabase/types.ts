@@ -367,6 +367,7 @@ export type Database = {
           name: string
           status: string | null
           type: string | null
+          time: string | null
         }
         Insert: {
           class_id?: string | null
@@ -377,6 +378,7 @@ export type Database = {
           name: string
           status?: string | null
           type?: string | null
+          time?: string | null
         }
         Update: {
           class_id?: string | null
@@ -387,6 +389,7 @@ export type Database = {
           name?: string
           status?: string | null
           type?: string | null
+          time?: string | null
         }
         Relationships: [
           {
