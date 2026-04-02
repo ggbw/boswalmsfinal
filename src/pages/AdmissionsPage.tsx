@@ -272,8 +272,8 @@ export default function AdmissionsPage() {
 
   // ── Enroll ──
   const handleEnroll = (a: Application) => {
+    let sid = "BCI" + new Date().getFullYear() + "-" + Math.floor(1000 + Math.random() * 9000);
     let password = "BoswaStudent2026!";
-    const studentId = "BCI" + new Date().getFullYear() + "-" + Math.floor(1000 + Math.random() * 9000);
 
     showModal(
       "Enroll Student — " + a.applicant_name,
@@ -298,10 +298,8 @@ export default function AdmissionsPage() {
             <label>Student ID</label>
             <input
               className="form-input"
-              defaultValue={studentId}
-              onChange={(e) => {
-                (window as any)._enrollSid = e.target.value;
-              }}
+              defaultValue={sid}
+              onChange={(e) => { sid = e.target.value; }}
             />
           </div>
           <div className="form-group">
@@ -309,9 +307,7 @@ export default function AdmissionsPage() {
             <input
               className="form-input"
               defaultValue={password}
-              onChange={(e) => {
-                password = e.target.value;
-              }}
+              onChange={(e) => { password = e.target.value; }}
             />
           </div>
         </div>
@@ -323,7 +319,6 @@ export default function AdmissionsPage() {
             className="btn btn-primary"
             style={{ flex: 1 }}
             onClick={async () => {
-              const sid = (window as any)._enrollSid || studentId;
               await doEnroll(a, sid, password, toast, closeModal, load, reloadDb);
             }}
           >
@@ -335,7 +330,6 @@ export default function AdmissionsPage() {
         </div>
       </div>,
     );
-    (window as any)._enrollSid = studentId;
   };
 
   const FILTERS = ["all", "submitted", "under_review", "accepted", "rejected", "awaiting_enrollment", "enrolled"];

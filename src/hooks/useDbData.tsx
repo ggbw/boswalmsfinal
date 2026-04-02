@@ -49,6 +49,8 @@ export function useDbData() {
           currentYear: config?.current_year || 2026,
           currentSemester: config?.current_semester || 1,
           programmes,
+          transcriptIssuer: config?.transcript_issuer || "Boisi Dibuile",
+          transcriptIssuerTitle: config?.transcript_issuer_title || "Deputy Principal",
         },
         departments: (departmentsRes.data || []).map((d: any) => ({
           id: d.id, name: d.name, hod: d.hod || "",

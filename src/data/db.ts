@@ -189,6 +189,8 @@ export interface DB {
     currentYear: number;
     currentSemester: number;
     programmes: Programme[];
+    transcriptIssuer?: string;
+    transcriptIssuerTitle?: string;
   };
   departments: Department[];
   users: User[];

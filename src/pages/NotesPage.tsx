@@ -35,7 +35,7 @@ export default function NotesPage() {
   const { db, currentUser } = useApp();
   const role = currentUser?.role;
   const isStudent = role === "student";
-  const canUpload = role === "admin" || role === "lecturer";
+  const canUpload = role === "admin" || role === "lecturer" || role === "hod" || role === "hoy";
 
   // Determine which modules to show
   const visibleModules = (() => {

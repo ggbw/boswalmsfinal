@@ -157,8 +157,8 @@ function printTranscript(student: any, prog: any, passedModules: PassedModule[])
     <strong>${student.name}</strong> in the academic studies of ${studyYears}.
   </p>
   <div style="font-size:12px;margin-bottom:16px;line-height:1.8">
-    <div><strong>Issued By:</strong> Boisi Dibuile</div>
-    <div><strong>Position:</strong> Deputy Principal</div>
+    <div><strong>Issued By:</strong> ${db.config.transcriptIssuer || "Boisi Dibuile"}</div>
+    <div><strong>Position:</strong> ${db.config.transcriptIssuerTitle || "Deputy Principal"}</div>
     <div><strong>Date:</strong> ${todayStr()}</div>
   </div>
 
@@ -497,10 +497,10 @@ export function TranscriptView({ stu }: { stu: any }) {
       </p>
       <div style={{ fontSize: 12, marginBottom: 14, lineHeight: 1.8 }}>
         <div>
-          <strong>Issued By:</strong> Boisi Dibuile
+          <strong>Issued By:</strong> {db.config.transcriptIssuer || "Boisi Dibuile"}
         </div>
         <div>
-          <strong>Position:</strong> Deputy Principal
+          <strong>Position:</strong> {db.config.transcriptIssuerTitle || "Deputy Principal"}
         </div>
         <div>
           <strong>Date:</strong> {todayStr()}
