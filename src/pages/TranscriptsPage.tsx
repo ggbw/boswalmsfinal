@@ -221,11 +221,7 @@ export default function TranscriptsPage() {
   const role = currentUser?.role;
 
   if (role === "student") {
-    const stu = db.students.find(
-      (s) =>
-        s.studentId === currentUser?.studentId ||
-        s.name.split(" ")[0].toLowerCase() === (currentUser?.name || "").split(" ")[0].toLowerCase(),
-    );
+    const stu = db.students.find((s) => s.studentId === currentUser?.studentId);
     if (!stu)
       return (
         <div className="card" style={{ textAlign: "center", padding: 40 }}>

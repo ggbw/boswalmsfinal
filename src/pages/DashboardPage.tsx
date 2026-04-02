@@ -13,7 +13,7 @@ export default function DashboardPage() {
   const attPct = totalAtt ? Math.round(presentAtt / totalAtt * 100) : 92;
 
   if (role === 'student') {
-    const stu = db.students.find(s => s.studentId === currentUser?.studentId || s.name.split(' ')[0].toLowerCase() === (currentUser?.name || '').split(' ')[0].toLowerCase());
+    const stu = db.students.find(s => s.studentId === currentUser?.studentId);
     if (!stu) return <div className="card" style={{ textAlign: 'center', padding: 40, color: 'var(--text2)' }}>Student record not found.</div>;
     const cls = db.classes.find(c => c.id === stu.classId);
     const prog = db.config.programmes.find(p => p.id === stu.programme);
