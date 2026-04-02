@@ -225,6 +225,7 @@ ${sheets.map((_, i) => `<Override PartName="/xl/worksheets/sheet${i + 1}.xml" Co
 export default function TimetablePage() {
   const { db, currentUser, showModal, closeModal, toast, reloadDb } = useApp();
   const role = currentUser?.role;
+  const [activeTab, setActiveTab] = useState<"timetable" | "exams">("timetable");
   const [filterCls, setFilterCls] = useState("");
   const [filterDay, setFilterDay] = useState("");
   const days = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday"];
@@ -270,15 +271,13 @@ export default function TimetablePage() {
     toast("Timetable downloaded!", "success");
   };
 
-  const [showExams, setShowExams] = useState(true);
-
   const printTimetable = () => {
     const logoUrl = window.location.origin + "/transcript_logo.png";
     const allDays = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday"];
 
     // Build combined slots + exams per day
     const examsByDay: Record<string, typeof db.exams> = {};
-    if (showExams) {
+    if (true) {
       db.exams.forEach((e) => {
         if (!e.date) return;
         const d = new Date(e.date);
@@ -583,6 +582,56 @@ export default function TimetablePage() {
     );
   };
 
+  // ── Conflict detection for timetable tab ─────────────────────────────────
+  const conflictBanner = (() => {
+    const parseT = (t: string): [number, number] | null => {
+      const m = t.match(/^(\d{1,2}):(\d{2})\s*[-–]\s*(\d{1,2}):(\d{2})$/);
+      if (!m) return null;
+      return [parseInt(m[1]) * 60 + parseInt(m[2]), parseInt(m[3]) * 60 + parseInt(m[4])];
+    };
+    const ov = (a: string, b: string) => {
+      const ra = parseT(a), rb = parseT(b);
+      if (!ra || !rb) return a === b;
+      return ra[0] < rb[1] && rb[0] < ra[1];
+    };
+    const conflicts: { label: string; detail: string }[] = [];
+    const seenPairs = new Set<string>();
+    db.timetable.forEach((a) => {
+      db.timetable.forEach((b) => {
+        if (a.id >= b.id) return;
+        if (a.day !== b.day) return;
+        if (!ov(a.time, b.time)) return;
+        const clsA = db.classes.find((c) => c.id === a.classId)?.name || a.classId;
+        const clsB = db.classes.find((c) => c.id === b.classId)?.name || b.classId;
+        if (a.room && a.room === b.room) {
+          const k = `room|${a.room}|${a.day}|${a.id}|${b.id}`;
+          if (!seenPairs.has(k)) { seenPairs.add(k); conflicts.push({ label: "Room conflict", detail: `"${a.room}" on ${a.day}: ${clsA} (${a.time}) vs ${clsB} (${b.time})` }); }
+        }
+        if (a.classId === b.classId) {
+          const k = `class|${a.classId}|${a.day}|${a.id}|${b.id}`;
+          if (!seenPairs.has(k)) { seenPairs.add(k); conflicts.push({ label: "Class conflict", detail: `${clsA} double-booked on ${a.day}: ${a.time} vs ${b.time}` }); }
+        }
+      });
+    });
+    if (!conflicts.length) return null;
+    return (
+      <div style={{ background: "rgba(239,68,68,0.08)", border: "1px solid rgba(239,68,68,0.35)", borderRadius: 8, padding: "12px 16px", marginBottom: 14 }}>
+        <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 8 }}>
+          <i className="fa-solid fa-circle-exclamation" style={{ color: "#ef4444", fontSize: 15 }} />
+          <strong style={{ fontSize: 13, color: "#ef4444" }}>{conflicts.length} Scheduling Conflict{conflicts.length > 1 ? "s" : ""} Detected</strong>
+        </div>
+        <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+          {conflicts.map((c, i) => (
+            <div key={i} style={{ fontSize: 12, color: "var(--text1)", display: "flex", alignItems: "center", gap: 8 }}>
+              <span style={{ background: "#ef4444", color: "#fff", borderRadius: 4, padding: "1px 7px", fontWeight: 700, fontSize: 11, whiteSpace: "nowrap" }}>{c.label.toUpperCase()}</span>
+              {c.detail}
+            </div>
+          ))}
+        </div>
+      </div>
+    );
+  })();
+
   return (
     <>
       <div className="page-header">
@@ -591,312 +640,208 @@ export default function TimetablePage() {
             <i className="fa-solid fa-calendar-days" style={{ color: "var(--accent)", marginRight: 8 }} />
             Timetable
           </div>
-          <div className="page-sub">{db.timetable.length} scheduled slot(s)</div>
+          <div className="page-sub">
+            {activeTab === "timetable" ? `${db.timetable.length} scheduled slot(s)` : `${db.exams.length} exam(s)`}
+          </div>
         </div>
-        {role === "admin" && (
+        {activeTab === "timetable" && role === "admin" && (
           <button className="btn btn-primary btn-sm" onClick={handleAddSlot}>
             <i className="fa-solid fa-plus" /> Add Slot
           </button>
         )}
-        <button className="btn btn-outline btn-sm" onClick={exportToExcel} title="Download as Excel">
-          <i className="fa-solid fa-file-excel" /> Export Excel
-        </button>
-        <button className="btn btn-outline btn-sm" onClick={printTimetable} title="Print as PDF">
-          <i className="fa-solid fa-print" /> Print PDF
-        </button>
+        {activeTab === "timetable" && (
+          <>
+            <button className="btn btn-outline btn-sm" onClick={exportToExcel} title="Download as Excel">
+              <i className="fa-solid fa-file-excel" /> Export Excel
+            </button>
+            <button className="btn btn-outline btn-sm" onClick={printTimetable} title="Print as PDF">
+              <i className="fa-solid fa-print" /> Print PDF
+            </button>
+          </>
+        )}
       </div>
 
-      {/* Existing double-booking conflicts banner */}
-      {(() => {
-        const parseT = (t: string): [number, number] | null => {
-          const m = t.match(/^(\d{1,2}):(\d{2})\s*[-–]\s*(\d{1,2}):(\d{2})$/);
-          if (!m) return null;
-          return [parseInt(m[1]) * 60 + parseInt(m[2]), parseInt(m[3]) * 60 + parseInt(m[4])];
-        };
-        const ov = (a: string, b: string) => {
-          const ra = parseT(a),
-            rb = parseT(b);
-          if (!ra || !rb) return a === b;
-          return ra[0] < rb[1] && rb[0] < ra[1];
-        };
-
-        const conflicts: { label: string; detail: string }[] = [];
-        const seenPairs = new Set<string>();
-
-        db.timetable.forEach((a) => {
-          db.timetable.forEach((b) => {
-            if (a.id >= b.id) return;
-            if (a.day !== b.day) return;
-            if (!ov(a.time, b.time)) return;
-            const clsA = db.classes.find((c) => c.id === a.classId)?.name || a.classId;
-            const clsB = db.classes.find((c) => c.id === b.classId)?.name || b.classId;
-            // Room conflict
-            if (a.room && a.room === b.room) {
-              const k = `room|${a.room}|${a.day}|${a.id}|${b.id}`;
-              if (!seenPairs.has(k)) {
-                seenPairs.add(k);
-                conflicts.push({
-                  label: "Room conflict",
-                  detail: `"${a.room}" on ${a.day}: ${clsA} (${a.time}) vs ${clsB} (${b.time})`,
-                });
-              }
-            }
-            // Class conflict
-            if (a.classId === b.classId) {
-              const k = `class|${a.classId}|${a.day}|${a.id}|${b.id}`;
-              if (!seenPairs.has(k)) {
-                seenPairs.add(k);
-                conflicts.push({
-                  label: "Class conflict",
-                  detail: `${clsA} double-booked on ${a.day}: ${a.time} vs ${b.time}`,
-                });
-              }
-            }
-          });
-        });
-
-        if (!conflicts.length) return null;
-        return (
-          <div
+      {/* Tabs */}
+      <div style={{ display: "flex", gap: 0, marginBottom: 16, borderBottom: "2px solid var(--border)" }}>
+        {(["timetable", "exams"] as const).map((tab) => (
+          <button
+            key={tab}
+            onClick={() => setActiveTab(tab)}
             style={{
-              background: "rgba(239,68,68,0.08)",
-              border: "1px solid rgba(239,68,68,0.35)",
-              borderRadius: 8,
-              padding: "12px 16px",
-              marginBottom: 14,
+              padding: "8px 22px",
+              fontSize: 13,
+              fontWeight: 600,
+              cursor: "pointer",
+              border: "none",
+              borderBottom: activeTab === tab ? "2px solid var(--accent)" : "2px solid transparent",
+              marginBottom: -2,
+              background: "transparent",
+              color: activeTab === tab ? "var(--accent)" : "var(--text2)",
+              transition: "color 0.15s",
             }}
           >
-            <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 8 }}>
-              <i className="fa-solid fa-circle-exclamation" style={{ color: "#ef4444", fontSize: 15 }} />
-              <strong style={{ fontSize: 13, color: "#ef4444" }}>
-                {conflicts.length} Scheduling Conflict{conflicts.length > 1 ? "s" : ""} Detected
-              </strong>
-            </div>
-            <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
-              {conflicts.map((c, i) => (
-                <div
-                  key={i}
-                  style={{ fontSize: 12, color: "var(--text1)", display: "flex", alignItems: "center", gap: 8 }}
-                >
-                  <span
-                    style={{
-                      background: "#ef4444",
-                      color: "#fff",
-                      borderRadius: 4,
-                      padding: "1px 7px",
-                      fontWeight: 700,
-                      fontSize: 11,
-                      whiteSpace: "nowrap",
-                    }}
-                  >
-                    {c.label.toUpperCase()}
-                  </span>
-                  {c.detail}
-                </div>
-              ))}
-            </div>
-          </div>
-        );
-      })()}
-
-      <div className="card" style={{ marginBottom: 14, padding: "12px 16px" }}>
-        <div style={{ display: "flex", gap: 12, flexWrap: "wrap", alignItems: "flex-end" }}>
-          <div className="form-group" style={{ marginBottom: 0, minWidth: 160 }}>
-            <label style={{ fontSize: 11 }}>Class</label>
-            <select className="form-select" value={filterCls} onChange={(e) => setFilterCls(e.target.value)}>
-              <option value="">All Classes</option>
-              {db.classes.map((c) => (
-                <option key={c.id} value={c.id}>
-                  {c.name}
-                </option>
-              ))}
-            </select>
-          </div>
-          <div className="form-group" style={{ marginBottom: 0, minWidth: 140 }}>
-            <label style={{ fontSize: 11 }}>Day</label>
-            <select className="form-select" value={filterDay} onChange={(e) => setFilterDay(e.target.value)}>
-              <option value="">All Days</option>
-              {days.map((d) => (
-                <option key={d} value={d}>
-                  {d}
-                </option>
-              ))}
-            </select>
-          </div>
-          <div className="form-group" style={{ marginBottom: 0 }}>
-            <label style={{ fontSize: 11 }}>Show Exams</label>
-            <div style={{ display: "flex", alignItems: "center", gap: 6, height: 34 }}>
-              <button
-                onClick={() => setShowExams(!showExams)}
-                style={{
-                  padding: "4px 12px",
-                  fontSize: 12,
-                  borderRadius: 6,
-                  cursor: "pointer",
-                  fontWeight: 600,
-                  background: showExams ? "#dc2626" : "var(--bg3)",
-                  color: showExams ? "#fff" : "var(--text2)",
-                  border: `1px solid ${showExams ? "#dc2626" : "var(--border)"}`,
-                }}
-              >
-                <i className={`fa-solid fa-${showExams ? "eye" : "eye-slash"}`} style={{ marginRight: 5 }} />
-                {showExams ? "Exams On" : "Exams Off"}
-              </button>
-            </div>
-          </div>
-        </div>
+            <i className={`fa-solid ${tab === "timetable" ? "fa-calendar-days" : "fa-file-pen"}`} style={{ marginRight: 7 }} />
+            {tab === "timetable" ? "Class Timetable" : "Exam Timetable"}
+          </button>
+        ))}
       </div>
 
-      <div className="card" style={{ padding: 0, overflow: "hidden" }}>
-        <div className="table-wrap">
-          <table>
-            <thead>
-              <tr>
-                <th>Day</th>
-                <th>Time / Date</th>
-                <th>Class</th>
-                <th>Module</th>
-                <th>Lecturer</th>
-                <th>Room</th>
-                <th>Type</th>
-                {role === "admin" && <th>Edit</th>}
-              </tr>
-            </thead>
-            <tbody>
-              {days.map((day) => {
-                if (filterDay && filterDay !== day) return null;
-                const daySlots = slots.filter((t) => t.day === day).sort((a, b) => a.time.localeCompare(b.time));
+      {/* ── CLASS TIMETABLE TAB ── */}
+      {activeTab === "timetable" && (
+        <>
+          {conflictBanner}
+          <div className="card" style={{ marginBottom: 14, padding: "12px 16px" }}>
+            <div style={{ display: "flex", gap: 12, flexWrap: "wrap", alignItems: "flex-end" }}>
+              <div className="form-group" style={{ marginBottom: 0, minWidth: 160 }}>
+                <label style={{ fontSize: 11 }}>Class</label>
+                <select className="form-select" value={filterCls} onChange={(e) => setFilterCls(e.target.value)}>
+                  <option value="">All Classes</option>
+                  {db.classes.map((c) => (
+                    <option key={c.id} value={c.id}>{c.name}</option>
+                  ))}
+                </select>
+              </div>
+              <div className="form-group" style={{ marginBottom: 0, minWidth: 140 }}>
+                <label style={{ fontSize: 11 }}>Day</label>
+                <select className="form-select" value={filterDay} onChange={(e) => setFilterDay(e.target.value)}>
+                  <option value="">All Days</option>
+                  {days.map((d) => <option key={d} value={d}>{d}</option>)}
+                </select>
+              </div>
+            </div>
+          </div>
 
-                // Exams scheduled on this weekday
-                const dayExams = showExams
-                  ? db.exams.filter((e) => {
-                      if (!e.date) return false;
-                      if (filterCls && e.classId !== filterCls) return false;
-                      const d = new Date(e.date);
-                      if (isNaN(d.getTime())) return false;
-                      return d.toLocaleDateString("en-GB", { weekday: "long" }) === day;
-                    })
-                  : [];
-
-                if (!daySlots.length && !dayExams.length) return null;
-                const totalRows = daySlots.length + dayExams.length;
-
-                return [
-                  ...daySlots.map((t, i) => {
-                    const cls = db.classes.find((c) => c.id === t.classId);
-                    const mod = db.modules.find((m) => m.id === t.moduleId);
-                    return (
-                      <tr key={t.id}>
-                        <td style={{ fontWeight: 600, color: "var(--accent)" }}>
-                          {i === 0 && !dayExams.length ? day : i === 0 ? day : ""}
-                        </td>
-                        <td style={{ fontFamily: "'JetBrains Mono',monospace", fontSize: 11, whiteSpace: "nowrap" }}>
-                          {t.time}
-                        </td>
-                        <td style={{ fontWeight: 600 }}>{cls?.name}</td>
-                        <td>{mod?.name}</td>
-                        <td style={{ fontSize: 11, color: "var(--text2)" }}>{cls?.lecturer || "—"}</td>
-                        <td>
-                          {t.room ? (
-                            <span
-                              style={{
-                                background: "var(--surface2)",
-                                borderRadius: 4,
-                                padding: "2px 8px",
-                                fontSize: 11,
-                              }}
-                            >
-                              <i
-                                className="fa-solid fa-door-open"
-                                style={{ marginRight: 4, fontSize: 9, opacity: 0.7 }}
-                              />
-                              {t.room}
-                            </span>
-                          ) : (
-                            <span style={{ color: "var(--text2)", fontSize: 11 }}>—</span>
-                          )}
-                        </td>
-                        <td>
-                          <span
-                            style={{
-                              background: "rgba(99,102,241,0.12)",
-                              color: "var(--accent)",
-                              borderRadius: 4,
-                              padding: "2px 8px",
-                              fontSize: 11,
-                              fontWeight: 600,
-                            }}
-                          >
-                            Class
-                          </span>
-                        </td>
-                        {role === "admin" && (
+          <div className="card" style={{ padding: 0, overflow: "hidden" }}>
+            <div className="table-wrap">
+              <table>
+                <thead>
+                  <tr>
+                    <th>Day</th>
+                    <th>Time</th>
+                    <th>Class</th>
+                    <th>Module</th>
+                    <th>Lecturer</th>
+                    <th>Room</th>
+                    {role === "admin" && <th>Edit</th>}
+                  </tr>
+                </thead>
+                <tbody>
+                  {days.map((day) => {
+                    if (filterDay && filterDay !== day) return null;
+                    const daySlots = slots.filter((t) => t.day === day).sort((a, b) => a.time.localeCompare(b.time));
+                    if (!daySlots.length) return null;
+                    return daySlots.map((t, i) => {
+                      const cls = db.classes.find((c) => c.id === t.classId);
+                      const mod = db.modules.find((m) => m.id === t.moduleId);
+                      return (
+                        <tr key={t.id}>
+                          <td style={{ fontWeight: 600, color: "var(--accent)" }}>{i === 0 ? day : ""}</td>
+                          <td style={{ fontFamily: "'JetBrains Mono',monospace", fontSize: 11, whiteSpace: "nowrap" }}>{t.time}</td>
+                          <td style={{ fontWeight: 600 }}>{cls?.name}</td>
+                          <td>{mod?.name}</td>
+                          <td style={{ fontSize: 11, color: "var(--text2)" }}>{cls?.lecturer || "—"}</td>
                           <td>
-                            <button className="btn btn-outline btn-sm" onClick={() => handleEditSlot(t)}>
-                              <i className="fa-solid fa-pen" />
-                            </button>
+                            {t.room ? (
+                              <span style={{ background: "var(--surface2)", borderRadius: 4, padding: "2px 8px", fontSize: 11 }}>
+                                <i className="fa-solid fa-door-open" style={{ marginRight: 4, fontSize: 9, opacity: 0.7 }} />
+                                {t.room}
+                              </span>
+                            ) : <span style={{ color: "var(--text2)", fontSize: 11 }}>—</span>}
                           </td>
-                        )}
-                      </tr>
+                          {role === "admin" && (
+                            <td>
+                              <button className="btn btn-outline btn-sm" onClick={() => handleEditSlot(t)}>
+                                <i className="fa-solid fa-pen" />
+                              </button>
+                            </td>
+                          )}
+                        </tr>
+                      );
+                    });
+                  })}
+                  {slots.length === 0 && (
+                    <tr><td colSpan={role === "admin" ? 7 : 6} style={{ textAlign: "center", color: "var(--text2)", padding: 32 }}>No timetable slots found.</td></tr>
+                  )}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </>
+      )}
+
+      {/* ── EXAM TIMETABLE TAB ── */}
+      {activeTab === "exams" && (
+        <>
+          <div className="card" style={{ marginBottom: 14, padding: "12px 16px" }}>
+            <div style={{ display: "flex", gap: 12, flexWrap: "wrap", alignItems: "flex-end" }}>
+              <div className="form-group" style={{ marginBottom: 0, minWidth: 160 }}>
+                <label style={{ fontSize: 11 }}>Class</label>
+                <select className="form-select" value={filterCls} onChange={(e) => setFilterCls(e.target.value)}>
+                  <option value="">All Classes</option>
+                  {db.classes.map((c) => (
+                    <option key={c.id} value={c.id}>{c.name}</option>
+                  ))}
+                </select>
+              </div>
+            </div>
+          </div>
+
+          <div className="card" style={{ padding: 0, overflow: "hidden" }}>
+            <div className="table-wrap">
+              <table>
+                <thead>
+                  <tr>
+                    <th>Date</th>
+                    <th>Day</th>
+                    <th>Class</th>
+                    <th>Module</th>
+                    <th>Exam Name</th>
+                    <th>Duration</th>
+                    <th>Venue</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {(() => {
+                    const filtered = db.exams
+                      .filter((e) => {
+                        if (filterCls && e.classId !== filterCls) return false;
+                        return !!e.date;
+                      })
+                      .sort((a, b) => (a.date || "").localeCompare(b.date || ""));
+
+                    if (!filtered.length) return (
+                      <tr><td colSpan={7} style={{ textAlign: "center", color: "var(--text2)", padding: 32 }}>No exams scheduled.</td></tr>
                     );
-                  }),
-                  ...dayExams.map((e, ei) => {
-                    const cls = db.classes.find((c) => c.id === e.classId);
-                    const mod = db.modules.find((m) => m.id === e.moduleId);
-                    const dateStr = e.date
-                      ? new Date(e.date).toLocaleDateString("en-GB", { day: "numeric", month: "short" })
-                      : "—";
-                    return (
-                      <tr key={`exam-${e.id}`} style={{ background: "rgba(220,38,38,0.04)" }}>
-                        <td style={{ fontWeight: 600, color: "#dc2626" }}>
-                          {daySlots.length === 0 && ei === 0 ? day : ""}
-                        </td>
-                        <td
-                          style={{
-                            fontFamily: "'JetBrains Mono',monospace",
-                            fontSize: 11,
-                            whiteSpace: "nowrap",
-                            color: "#dc2626",
-                          }}
-                        >
-                          {dateStr}
-                        </td>
-                        <td style={{ fontWeight: 600 }}>{cls?.name || "—"}</td>
-                        <td>
-                          <span>{mod?.name || "—"}</span>
-                          <span style={{ marginLeft: 6, fontSize: 11, color: "#dc2626", fontWeight: 600 }}>
-                            — {e.name}
-                          </span>
-                        </td>
-                        <td style={{ fontSize: 11, color: "var(--text2)" }}>—</td>
-                        <td>
-                          <span style={{ color: "var(--text2)", fontSize: 11 }}>—</span>
-                        </td>
-                        <td>
-                          <span
-                            style={{
-                              background: "rgba(220,38,38,0.12)",
-                              color: "#dc2626",
-                              borderRadius: 4,
-                              padding: "2px 8px",
-                              fontSize: 11,
-                              fontWeight: 600,
-                            }}
-                          >
-                            <i className="fa-solid fa-pen-to-square" style={{ marginRight: 4, fontSize: 9 }} />
-                            EXAM
-                          </span>
-                        </td>
-                        {role === "admin" && <td />}
-                      </tr>
-                    );
-                  }),
-                ];
-              })}
-            </tbody>
-          </table>
-        </div>
-      </div>
+
+                    return filtered.map((e) => {
+                      const cls = db.classes.find((c) => c.id === e.classId);
+                      const mod = db.modules.find((m) => m.id === e.moduleId);
+                      const dateObj = e.date ? new Date(e.date) : null;
+                      const dateStr = dateObj ? dateObj.toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric" }) : "—";
+                      const dayName = dateObj && !isNaN(dateObj.getTime()) ? dateObj.toLocaleDateString("en-GB", { weekday: "long" }) : "—";
+                      return (
+                        <tr key={e.id} style={{ background: "rgba(220,38,38,0.03)" }}>
+                          <td style={{ fontWeight: 600, color: "#dc2626", whiteSpace: "nowrap" }}>{dateStr}</td>
+                          <td style={{ fontSize: 11, color: "var(--text2)" }}>{dayName}</td>
+                          <td style={{ fontWeight: 600 }}>{cls?.name || "—"}</td>
+                          <td>{mod?.name || "—"}</td>
+                          <td>
+                            <span style={{ background: "rgba(220,38,38,0.12)", color: "#dc2626", borderRadius: 4, padding: "2px 8px", fontSize: 11, fontWeight: 600 }}>
+                              {e.name}
+                            </span>
+                          </td>
+                          <td style={{ fontSize: 11, color: "var(--text2)" }}>{(e as any).duration || "—"}</td>
+                          <td style={{ fontSize: 11 }}>{(e as any).venue || "—"}</td>
+                        </tr>
+                      );
+                    });
+                  })()}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </>
+      )}
     </>
   );
 }
