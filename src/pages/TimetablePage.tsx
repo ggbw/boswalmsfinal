@@ -819,7 +819,10 @@ export default function TimetablePage() {
                       const dateObj = e.date ? new Date(e.date) : null;
                       const dateStr = dateObj ? dateObj.toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric" }) : "—";
                       const dayName = dateObj && !isNaN(dateObj.getTime()) ? dateObj.toLocaleDateString("en-GB", { weekday: "long" }) : "—";
-                      const timeStr = e.time ? e.time.substring(0, 5) : "—";
+                      const fmt = (t: string) => t ? t.substring(0, 5) : "";
+                      const timeStr = e.startTime || e.endTime
+                        ? [fmt(e.startTime || ""), fmt(e.endTime || "")].filter(Boolean).join(" – ")
+                        : "—";
                       return (
                         <tr key={e.id} style={{ background: "rgba(220,38,38,0.03)" }}>
                           <td style={{ fontWeight: 600, color: "#dc2626", whiteSpace: "nowrap" }}>{dateStr}</td>

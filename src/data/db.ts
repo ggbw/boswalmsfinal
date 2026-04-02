@@ -72,7 +72,8 @@ export interface Exam {
   date: string;
   status: string;
   type?: string;
-  time?: string;
+  startTime?: string;
+  endTime?: string;
   createdBy?: string;
 }
 export interface Assignment {

@@ -20,7 +20,7 @@ export default function ExamsPage() {
   const handleCreateExam = () => {
     const isAdmin = role === 'admin';
     const availableModules = isAdmin ? db.modules : getLecturerModules();
-    let name = '', moduleId = availableModules[0]?.id || '', classId = '', date = '', type = 'Written Exam', time = '';
+    let name = '', moduleId = availableModules[0]?.id || '', classId = '', date = '', type = 'Written Exam', startTime = '', endTime = '';
 
     const getClassesForModule = (mid: string) => {
       const mod = db.modules.find(m => m.id === mid);
@@ -51,7 +51,10 @@ export default function ExamsPage() {
         </div>
         <div className="form-row cols2">
           <div className="form-group"><label>Date</label><input className="form-input" type="date" onChange={e => date = e.target.value} /></div>
-          <div className="form-group"><label>Time</label><input className="form-input" type="time" onChange={e => time = e.target.value} /></div>
+        </div>
+        <div className="form-row cols2">
+          <div className="form-group"><label>Start Time</label><input className="form-input" type="time" onChange={e => startTime = e.target.value} /></div>
+          <div className="form-group"><label>End Time</label><input className="form-input" type="time" onChange={e => endTime = e.target.value} /></div>
         </div>
         <div className="form-group"><label>Type</label>
           <select className="form-select" defaultValue={type} onChange={e => type = e.target.value}>
@@ -69,7 +72,8 @@ export default function ExamsPage() {
           const { error } = await supabase.from('exams').insert({
             id: 'exam_' + Date.now(), name, module_id: moduleId,
             class_id: classId || null, date: date || null,
-            time: time || null, type, status: 'scheduled', created_by: currentUser?.id || null,
+            start_time: startTime || null, end_time: endTime || null,
+            type, status: 'scheduled', created_by: currentUser?.id || null,
           });
           if (error) { toast(error.message, 'error'); } else {
             toast('Exam created!', 'success'); closeModal(); reloadDb();
@@ -82,7 +86,7 @@ export default function ExamsPage() {
   const handleEditExam = (exam: typeof exams[0]) => {
     const isAdmin = role === 'admin';
     const availableModules = isAdmin ? db.modules : getLecturerModules();
-    let name = exam.name, moduleId = exam.moduleId, classId = exam.classId || '', date = exam.date || '', type = exam.type || 'Written Exam', time = exam.time || '';
+    let name = exam.name, moduleId = exam.moduleId, classId = exam.classId || '', date = exam.date || '', type = exam.type || 'Written Exam', startTime = exam.startTime || '', endTime = exam.endTime || '';
 
     const getClassesForModule = (mid: string) => {
       const mod = db.modules.find(m => m.id === mid);
@@ -110,7 +114,10 @@ export default function ExamsPage() {
         </div>
         <div className="form-row cols2">
           <div className="form-group"><label>Date</label><input className="form-input" type="date" defaultValue={date} onChange={e => date = e.target.value} /></div>
-          <div className="form-group"><label>Time</label><input className="form-input" type="time" defaultValue={time} onChange={e => time = e.target.value} /></div>
+        </div>
+        <div className="form-row cols2">
+          <div className="form-group"><label>Start Time</label><input className="form-input" type="time" defaultValue={startTime} onChange={e => startTime = e.target.value} /></div>
+          <div className="form-group"><label>End Time</label><input className="form-input" type="time" defaultValue={endTime} onChange={e => endTime = e.target.value} /></div>
         </div>
         <div className="form-group"><label>Type</label>
           <select className="form-select" defaultValue={type} onChange={e => type = e.target.value}>
@@ -127,7 +134,7 @@ export default function ExamsPage() {
           if (!name || !moduleId) { toast('Name and module are required', 'error'); return; }
           const { error } = await supabase.from('exams').update({
             name, module_id: moduleId, class_id: classId || null,
-            date: date || null, time: time || null, type,
+            date: date || null, start_time: startTime || null, end_time: endTime || null, type,
           }).eq('id', exam.id);
           if (error) { toast(error.message, 'error'); } else {
             toast('Exam updated!', 'success'); closeModal(); reloadDb();
