@@ -264,6 +264,7 @@ export type Database = {
           class_id: string
           date: string
           id: string
+          module_id: string | null
           status: string
           student_id: string
         }
@@ -271,6 +272,7 @@ export type Database = {
           class_id: string
           date: string
           id?: string
+          module_id?: string | null
           status?: string
           student_id: string
         }
@@ -278,6 +280,7 @@ export type Database = {
           class_id?: string
           date?: string
           id?: string
+          module_id?: string | null
           status?: string
           student_id?: string
         }
@@ -287,6 +290,13 @@ export type Database = {
             columns: ["class_id"]
             isOneToOne: false
             referencedRelation: "classes"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "attendance_module_id_fkey"
+            columns: ["module_id"]
+            isOneToOne: false
+            referencedRelation: "modules"
             referencedColumns: ["id"]
           },
           {
@@ -362,40 +372,37 @@ export type Database = {
           class_id: string | null
           created_by: string | null
           date: string | null
+          end_time: string | null
           id: string
           module_id: string | null
           name: string
+          start_time: string | null
           status: string | null
           type: string | null
-          start_time: string | null
-          end_time: string | null
-          room: string | null
         }
         Insert: {
           class_id?: string | null
           created_by?: string | null
           date?: string | null
+          end_time?: string | null
           id: string
           module_id?: string | null
           name: string
+          start_time?: string | null
           status?: string | null
           type?: string | null
-          start_time?: string | null
-          end_time?: string | null
-          room?: string | null
         }
         Update: {
           class_id?: string | null
           created_by?: string | null
           date?: string | null
+          end_time?: string | null
           id?: string
           module_id?: string | null
           name?: string
+          start_time?: string | null
           status?: string | null
           type?: string | null
-          start_time?: string | null
-          end_time?: string | null
-          room?: string | null
         }
         Relationships: [
           {

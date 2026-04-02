@@ -1,5 +1,5 @@
 import { AuthProvider, useAuth } from "@/hooks/useAuth";
-import { AppProvider } from "@/context/AppContext";
+import { AppProvider } from "@/context/AppProvider";
 import LoginScreen from "@/components/LoginScreen";
 import AppLayout from "@/components/AppLayout";
 import PublicApplyPage from "@/pages/PublicApplyPage";

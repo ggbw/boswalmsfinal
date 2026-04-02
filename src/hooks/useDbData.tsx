@@ -37,7 +37,13 @@ export function useDbData() {
         moduleClassMap[mc.module_id].push(mc.class_id);
       });
 
-      const config = configRes.data;
+      const config = (configRes.data ?? null) as {
+        school_name?: string | null;
+        current_year?: number | null;
+        current_semester?: number | null;
+        transcript_issuer?: string | null;
+        transcript_issuer_title?: string | null;
+      } | null;
       const programmes = (programmesRes.data || []).map((p: any) => ({
         id: p.id, name: p.name, years: p.years, semesters: p.semesters,
         type: p.type, startYear: p.start_year, level: p.level ?? null,

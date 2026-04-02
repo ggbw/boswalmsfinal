@@ -32,7 +32,12 @@ interface PassedModule {
 }
 
 // ── Print transcript in a new window ─────────────────────────────────────────
-function printTranscript(student: any, prog: any, passedModules: PassedModule[]) {
+function printTranscript(
+  student: any,
+  prog: any,
+  passedModules: PassedModule[],
+  transcriptMeta?: { issuer?: string; title?: string },
+) {
   const studyYears = prog?.startYear ? `${prog.startYear}–${prog.startYear + (prog.years || 3)}` : "—";
 
   const totalCredits = passedModules.reduce((s, m) => s + m.credits, 0);
@@ -157,8 +162,8 @@ function printTranscript(student: any, prog: any, passedModules: PassedModule[])
     <strong>${student.name}</strong> in the academic studies of ${studyYears}.
   </p>
   <div style="font-size:12px;margin-bottom:16px;line-height:1.8">
-    <div><strong>Issued By:</strong> ${db.config.transcriptIssuer || "Boisi Dibuile"}</div>
-    <div><strong>Position:</strong> ${db.config.transcriptIssuerTitle || "Deputy Principal"}</div>
+    <div><strong>Issued By:</strong> ${transcriptMeta?.issuer || "Boisi Dibuile"}</div>
+    <div><strong>Position:</strong> ${transcriptMeta?.title || "Deputy Principal"}</div>
     <div><strong>Date:</strong> ${todayStr()}</div>
   </div>
 
@@ -292,7 +297,10 @@ export default function TranscriptsPage() {
                               year: x.markRecord.year,
                               semester: x.markRecord.semester,
                             }));
-                          printTranscript(s, prog, passed);
+                          printTranscript(s, prog, passed, {
+                            issuer: db.config.transcriptIssuer,
+                            title: db.config.transcriptIssuerTitle,
+                          });
                         }}
                       >
                         <i className="fa-solid fa-print" /> Print
@@ -356,7 +364,11 @@ export function TranscriptView({ stu }: { stu: any }) {
 
   const studyYears = prog?.startYear ? `${prog.startYear}–${prog.startYear + (prog.years || 3)}` : "—";
 
-  const handlePrint = () => printTranscript(stu, prog, passedModules);
+  const handlePrint = () =>
+    printTranscript(stu, prog, passedModules, {
+      issuer: db.config.transcriptIssuer,
+      title: db.config.transcriptIssuerTitle,
+    });
 
   // ── On-screen preview ──────────────────────────────────────────────────────
   return (
