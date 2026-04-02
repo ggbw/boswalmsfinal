@@ -76,7 +76,7 @@ export default function ReportsPage() {
     const cls = db.classes.find((c) => c.id === selClassId);
     if (!cls) return <Placeholder text="Select a class to view the report." />;
 
-    const classModules = db.modules.filter((m) => m.classes.includes(cls.id));
+    const classModules = db.modules;
     const moduleId = selModuleId || classModules[0]?.id || "";
     const mod = db.modules.find((m) => m.id === moduleId);
     const students = db.students.filter((s) => s.classId === cls.id);
