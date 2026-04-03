@@ -40,11 +40,7 @@ export default function NotesPage() {
   // Determine which modules to show
   const visibleModules = (() => {
     if (isStudent) {
-      const stu = db.students.find(
-        (s) =>
-          s.studentId === currentUser?.studentId ||
-          s.name.split(" ")[0].toLowerCase() === (currentUser?.name || "").split(" ")[0].toLowerCase(),
-      );
+      const stu = db.students.find((s) => s.studentId === currentUser?.studentId);
       if (!stu || !stu.classId) return [];
       return db.modules.filter((m) => m.classes.includes(stu.classId));
     }

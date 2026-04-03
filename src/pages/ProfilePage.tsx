@@ -17,11 +17,7 @@ export default function ProfilePage() {
 
   const studentRecord =
     u?.role === "student"
-      ? db.students.find(
-          (s) =>
-            s.studentId === u.studentId ||
-            s.name.split(" ")[0].toLowerCase() === (u.name || "").split(" ")[0].toLowerCase(),
-        )
+      ? db.students.find((s) => s.studentId === u.studentId)
       : null;
 
   useEffect(() => {

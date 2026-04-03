@@ -231,7 +231,7 @@ export default function TranscriptsPage() {
     return <TranscriptView stu={stu} />;
   }
 
-  const filtered = db.students.filter((s) => !search || s.name.toLowerCase().includes(search.toLowerCase()));
+  const filtered = db.students.filter((s) => !search || s.name.toLowerCase().includes(search.toLowerCase()) || s.studentId.toLowerCase().includes(search.toLowerCase()));
 
   return (
     <>

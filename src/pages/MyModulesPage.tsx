@@ -5,11 +5,7 @@ export default function MyModulesPage() {
   const { db, currentUser } = useApp();
   const stu =
     currentUser?.role === "student"
-      ? db.students.find(
-          (s) =>
-            s.studentId === currentUser?.studentId ||
-            s.name.split(" ")[0].toLowerCase() === (currentUser?.name || "").split(" ")[0].toLowerCase(),
-        )
+      ? db.students.find((s) => s.studentId === currentUser?.studentId)
       : null;
 
   if (!stu)
