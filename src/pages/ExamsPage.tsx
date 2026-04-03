@@ -25,10 +25,10 @@ export default function ExamsPage() {
     let name = '', moduleId = availableModules[0]?.id || '', classId = '', date = '', type = 'Written Exam', startTime = '', endTime = '', room = '';
 
     const getClassesForModule = (mid: string) => {
+      const availableClasses = isAdmin ? db.classes : db.classes.filter(c => c.lecturer === currentUser?.name);
       const mod = db.modules.find(m => m.id === mid);
-      const linkedClasses = mod ? db.classes.filter(c => mod.classes.includes(c.id)) : db.classes;
-      if (isAdmin) return linkedClasses;
-      return linkedClasses.filter(c => c.lecturer === currentUser?.name);
+      const linked = mod ? availableClasses.filter(c => mod.classes.includes(c.id)) : [];
+      return linked.length > 0 ? linked : availableClasses;
     };
 
     const initialClasses = getClassesForModule(moduleId);
@@ -97,10 +97,10 @@ export default function ExamsPage() {
     let name = exam.name, moduleId = exam.moduleId, classId = exam.classId || '', date = exam.date || '', type = exam.type || 'Written Exam', startTime = exam.startTime || '', endTime = exam.endTime || '', room = exam.room || '';
 
     const getClassesForModule = (mid: string) => {
+      const availableClasses = isAdmin ? db.classes : db.classes.filter(c => c.lecturer === currentUser?.name);
       const mod = db.modules.find(m => m.id === mid);
-      const linkedClasses = mod ? db.classes.filter(c => mod.classes.includes(c.id)) : db.classes;
-      if (isAdmin) return linkedClasses;
-      return linkedClasses.filter(c => c.lecturer === currentUser?.name);
+      const linked = mod ? availableClasses.filter(c => mod.classes.includes(c.id)) : [];
+      return linked.length > 0 ? linked : availableClasses;
     };
 
     showModal('Edit Exam', (
