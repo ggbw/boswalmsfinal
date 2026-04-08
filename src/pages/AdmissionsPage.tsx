@@ -48,7 +48,7 @@ const STATUS_BG: Record<string, string> = {
 };
 
 export default function AdmissionsPage() {
-  const { toast, showModal, closeModal, reloadDb } = useApp();
+  const { db, toast, showModal, closeModal, reloadDb } = useApp();
   const [applications, setApplications] = useState<Application[]>([]);
   const [loading, setLoading] = useState(true);
   const [filter, setFilter] = useState<string>("all");
@@ -332,6 +332,101 @@ export default function AdmissionsPage() {
     );
   };
 
+  // ── Letter Settings ──
+  const handleLetterSettings = () => {
+    let signatoryName = (db as any).config?.offerLetterSignatory || "";
+    let signatoryTitle = (db as any).config?.offerLetterSignatoryTitle || "";
+    let sigPreviewUrl = (db as any).config?.offerLetterSignatureUrl || "";
+    let uploadingRef = { value: false };
+
+    const doUpload = async (file: File, refresh: () => void) => {
+      uploadingRef.value = true;
+      const ext = file.name.split(".").pop();
+      const path = `signatures/offer_letter_signature.${ext}`;
+      const { error: upErr } = await supabase.storage
+        .from("applicant-docs")
+        .upload(path, file, { upsert: true });
+      if (upErr) { toast(upErr.message, "error"); uploadingRef.value = false; return; }
+      const { data: urlData } = supabase.storage.from("applicant-docs").getPublicUrl(path);
+      sigPreviewUrl = urlData.publicUrl + "?t=" + Date.now();
+      uploadingRef.value = false;
+      refresh();
+    };
+
+    const LetterSettingsForm = () => {
+      const [preview, setPreview] = useState(sigPreviewUrl);
+      const [uploading, setUploading] = useState(false);
+
+      return (
+        <div>
+          <div className="form-group">
+            <label>Signatory Name</label>
+            <input
+              className="form-input"
+              defaultValue={signatoryName}
+              placeholder="e.g. Ms Claudette Latifa Ziteyo"
+              onChange={(e) => (signatoryName = e.target.value)}
+            />
+          </div>
+          <div className="form-group">
+            <label>Signatory Title</label>
+            <input
+              className="form-input"
+              defaultValue={signatoryTitle}
+              placeholder="e.g. School Administration Manager"
+              onChange={(e) => (signatoryTitle = e.target.value)}
+            />
+          </div>
+          <div className="form-group">
+            <label>Digital Signature Image</label>
+            {preview && (
+              <div style={{ marginBottom: 8, padding: 8, background: "#f9fafb", border: "1px solid #e5e7eb", borderRadius: 6 }}>
+                <img src={preview} alt="Signature" style={{ maxHeight: 80, maxWidth: 280 }} />
+              </div>
+            )}
+            <input
+              type="file"
+              accept="image/*"
+              className="form-input"
+              disabled={uploading}
+              onChange={async (e) => {
+                const file = e.target.files?.[0];
+                if (!file) return;
+                setUploading(true);
+                await doUpload(file, () => { setPreview(sigPreviewUrl); });
+                setUploading(false);
+              }}
+            />
+            {uploading && <div style={{ fontSize: 12, color: "#888", marginTop: 4 }}>Uploading…</div>}
+            <div style={{ fontSize: 11, color: "#aaa", marginTop: 4 }}>PNG or JPG with transparent/white background recommended</div>
+          </div>
+          <button
+            className="btn btn-primary"
+            style={{ marginTop: 8 }}
+            onClick={async () => {
+              const { error } = await supabase
+                .from("school_config")
+                .update({
+                  offer_letter_signatory: signatoryName || null,
+                  offer_letter_signatory_title: signatoryTitle || null,
+                  offer_letter_signature_url: sigPreviewUrl || null,
+                } as any)
+                .eq("id", 1);
+              if (error) { toast(error.message, "error"); return; }
+              toast("Letter settings saved!", "success");
+              closeModal();
+              reloadDb();
+            }}
+          >
+            Save
+          </button>
+        </div>
+      );
+    };
+
+    showModal("Offer Letter Settings", <LetterSettingsForm />);
+  };
+
   const FILTERS = ["all", "submitted", "under_review", "accepted", "rejected", "awaiting_enrollment", "enrolled"];
 
   return (
@@ -354,9 +449,14 @@ export default function AdmissionsPage() {
               enrollment
             </div>
           </div>
-          <a href="/apply" target="_blank" className="btn btn-outline btn-sm">
-            <i className="fa-solid fa-arrow-up-right-from-square" /> Public Form
-          </a>
+          <div style={{ display: "flex", gap: 8 }}>
+            <button className="btn btn-outline btn-sm" onClick={handleLetterSettings}>
+              <i className="fa-solid fa-signature" /> Letter Settings
+            </button>
+            <a href="/apply" target="_blank" className="btn btn-outline btn-sm">
+              <i className="fa-solid fa-arrow-up-right-from-square" /> Public Form
+            </a>
+          </div>
         </div>
 
         {/* Filter tabs — scrollable */}

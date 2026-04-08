@@ -305,15 +305,29 @@ function DownloadLetterBtn({ applicationId, type }: { applicationId:string; type
   const handleDownload = async () => {
     setLoading(true);
     try {
-      // Fetch application + applicant + programme data
-      const { data: appl } = await supabase.from('applications').select('*').eq('id', applicationId).single();
-      const { data: applicant } = await supabase.from('applicants').select('*').eq('id', appl.applicant_id).single();
-      const { data: prog } = await supabase.from('programmes').select('name,type').eq('id', appl.first_choice_programme).single();
+      // Fetch application + applicant + programme + school config in parallel
+      const [applRes, configRes] = await Promise.all([
+        supabase.from('applications').select('*').eq('id', applicationId).single(),
+        supabase.from('school_config').select('offer_letter_signatory,offer_letter_signatory_title,offer_letter_signature_url').eq('id', 1).single(),
+      ]);
+      const appl = applRes.data;
+      const [applicantRes, progRes] = await Promise.all([
+        supabase.from('applicants').select('*').eq('id', appl.applicant_id).single(),
+        supabase.from('programmes').select('name,type').eq('id', appl.first_choice_programme).single(),
+      ]);
+      const applicant = applicantRes.data;
+      const prog = progRes.data;
+      const cfg = configRes.data;
 
       const today = new Date().toLocaleDateString('en-GB',{day:'numeric',month:'long',year:'numeric'});
       const logoAbsUrl = new URL(logoImg, window.location.href).href;
+      const signatory = {
+        name: cfg?.offer_letter_signatory || 'Ms Claudette Latifa Ziteyo',
+        title: cfg?.offer_letter_signatory_title || 'School Administration Manager',
+        signatureUrl: cfg?.offer_letter_signature_url || '',
+      };
       const html = type === 'offer'
-        ? buildOfferHtml(applicant, prog, today, logoAbsUrl)
+        ? buildOfferHtml(applicant, prog, today, logoAbsUrl, signatory)
         : type === 'welcome'
         ? buildWelcomeHtml(applicant, today, logoAbsUrl)
         : buildRejectionHtml(applicant, prog, today, appl.rejection_reason);
@@ -339,7 +353,7 @@ function DownloadLetterBtn({ applicationId, type }: { applicationId:string; type
   );
 }
 
-function buildOfferHtml(applicant:any, prog:any, date:string, logoUrl:string) {
+function buildOfferHtml(applicant:any, prog:any, date:string, logoUrl:string, signatory:{name:string;title:string;signatureUrl:string}) {
   // Calculate programme end date (3 years from commencement — commencement is 27 July of the start year)
   const startYear = new Date().getFullYear();
   const commenceDate = `27th July ${startYear}`;
@@ -407,8 +421,10 @@ function buildOfferHtml(applicant:any, prog:any, date:string, logoUrl:string) {
       <p>Yours Faithfully</p>
 
       <div class="sig-block">
-        <div class="sig-line"></div>
-        <p><strong>Ms Claudette Latifa Ziteyo</strong><br>School Administration Manager</p>
+        ${signatory.signatureUrl
+          ? `<img src="${signatory.signatureUrl}" alt="Signature" style="max-height:70px;max-width:220px;display:block;margin-bottom:4px" />`
+          : '<div class="sig-line"></div>'}
+        <p><strong>${signatory.name}</strong><br>${signatory.title}</p>
       </div>
     </div>
 

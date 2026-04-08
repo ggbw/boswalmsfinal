@@ -45,6 +45,9 @@ export function useDbData() {
         semester_end_date?: string | null;
         transcript_issuer?: string | null;
         transcript_issuer_title?: string | null;
+        offer_letter_signatory?: string | null;
+        offer_letter_signatory_title?: string | null;
+        offer_letter_signature_url?: string | null;
       } | null;
       const programmes = (programmesRes.data || []).map((p: any) => ({
         id: p.id, name: p.name, years: p.years, semesters: p.semesters,
@@ -61,6 +64,9 @@ export function useDbData() {
           programmes,
           transcriptIssuer: config?.transcript_issuer || "Boisi Dibuile",
           transcriptIssuerTitle: config?.transcript_issuer_title || "Deputy Principal",
+          offerLetterSignatory: config?.offer_letter_signatory || "Ms Claudette Latifa Ziteyo",
+          offerLetterSignatoryTitle: config?.offer_letter_signatory_title || "School Administration Manager",
+          offerLetterSignatureUrl: config?.offer_letter_signature_url || "",
         },
         departments: (departmentsRes.data || []).map((d: any) => ({
           id: d.id, name: d.name, hod: d.hod || "",
