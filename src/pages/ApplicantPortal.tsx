@@ -308,7 +308,8 @@ function DownloadLetterBtn({ applicationId, type }: { applicationId:string; type
       const { data: prog } = await supabase.from('programmes').select('name,type').eq('id', appl.first_choice_programme).single();
 
       const today = new Date().toLocaleDateString('en-GB',{day:'numeric',month:'long',year:'numeric'});
-      const html = type === 'offer' ? buildOfferHtml(applicant, prog, today) : buildRejectionHtml(applicant, prog, today, appl.rejection_reason);
+      const logoAbsUrl = new URL(logoImg, window.location.href).href;
+      const html = type === 'offer' ? buildOfferHtml(applicant, prog, today, logoAbsUrl) : buildRejectionHtml(applicant, prog, today, appl.rejection_reason);
 
       // Open print window
       const win = window.open('','_blank');
@@ -331,26 +332,89 @@ function DownloadLetterBtn({ applicationId, type }: { applicationId:string; type
   );
 }
 
-function buildOfferHtml(applicant:any, prog:any, date:string) {
-  return `<!DOCTYPE html><html><head><meta charset="utf-8"><title>Offer Letter</title>
-  <style>body{font-family:Arial,sans-serif;margin:60px;color:#222;line-height:1.7}
-  .header{text-align:center;border-bottom:3px solid #C9A227;padding-bottom:20px;margin-bottom:30px}
-  .logo{font-size:20px;font-weight:800;color:#002060}
-  .sub{font-size:13px;color:#C9A227;font-style:italic}
-  h2{color:#002060}p{margin:12px 0}
-  .sig{margin-top:60px}.line{border-bottom:1px solid #000;width:220px;margin-top:40px}
-  </style></head><body>
-  <div class="header"><div class="logo">BOSWA CULINARY INSTITUTE OF BOTSWANA</div><div class="sub">Official Offer Letter</div></div>
-  <p>${date}</p>
-  <p>Dear <strong>${applicant.name}</strong>,</p>
-  <h2>OFFER OF ADMISSION</h2>
-  <p>We are delighted to inform you that your application to Boswa Culinary Institute of Botswana has been <strong>successful</strong>.</p>
-  <p>You have been offered a place on the following programme:</p>
-  <p style="padding:12px 20px;background:#f0f4ff;border-left:4px solid #002060;font-weight:700;font-size:15px">${prog?.name || '—'} (${prog?.type || '—'})</p>
-  <p>To secure your place, please log in to your applicant portal and click <strong>"Accept Offer"</strong> to submit your sponsorship information.</p>
-  <p>We look forward to welcoming you to Boswa Culinary Institute of Botswana.</p>
-  <p>Yours sincerely,</p>
-  <div class="sig"><div class="line"></div><p><strong>Admissions Office</strong><br>Boswa Culinary Institute of Botswana</p></div>
+function buildOfferHtml(applicant:any, prog:any, date:string, logoUrl:string) {
+  // Calculate programme end date (3 years from commencement — commencement is 27 July of the start year)
+  const startYear = new Date().getFullYear();
+  const commenceDate = `27th July ${startYear}`;
+  const endDate = `27th July ${startYear + 3}`;
+
+  return `<!DOCTYPE html><html><head><meta charset="utf-8"><title>Acceptance Letter</title>
+  <style>
+    *{box-sizing:border-box}
+    body{font-family:Arial,sans-serif;margin:0;padding:0;color:#222;line-height:1.7;font-size:13.5px}
+    .page{max-width:700px;margin:0 auto;padding:0 50px 40px}
+    /* Top navy bar */
+    .top-bar{background:#002060;height:12px;width:100%}
+    /* Header */
+    .header{border-bottom:2px solid #C9A227;padding:18px 0 14px;margin-bottom:24px;text-align:center}
+.school-name{font-size:17px;font-weight:900;color:#002060;letter-spacing:1px;display:block}
+    .school-sub{font-size:11px;color:#555;display:block}
+    /* Contact bar */
+    .contact-bar{display:flex;gap:18px;font-size:10.5px;color:#444;border-top:1px solid #ddd;padding-top:8px;margin-top:8px;flex-wrap:wrap;justify-content:center}
+    /* Body */
+    .body{padding-top:10px}
+    p{margin:10px 0}
+    .re-line{text-align:center;font-weight:700;color:#002060;font-size:13.5px;border-bottom:2px solid #C9A227;padding-bottom:6px;margin:20px 0}
+    .sig-block{margin-top:50px}
+    .sig-line{border-bottom:1px solid #333;width:200px;margin:30px 0 6px}
+    /* Footer */
+    .footer{margin-top:40px;border-top:1px solid #ddd;padding-top:8px;display:flex;gap:18px;font-size:10px;color:#555;flex-wrap:wrap;justify-content:center}
+    .bottom-bar{background:#002060;height:8px;width:100%;margin-top:14px}
+    @media print{body{margin:0}.top-bar,.bottom-bar{-webkit-print-color-adjust:exact;print-color-adjust:exact;background:#002060!important}}
+  </style></head>
+  <body>
+  <div class="top-bar"></div>
+  <div class="page">
+    <div class="header">
+      <img src="${logoUrl}" alt="Boswa Logo" style="height:60px;margin-bottom:6px;display:block;margin-left:auto;margin-right:auto" />
+      <span class="school-name">BOSWA</span>
+      <span class="school-sub">Bosswa Culinary Institute of Botswana</span>
+      <div class="contact-bar">
+        <span>&#9742; +267 686 0262</span>
+        <span>&#9990; +267 686 0261</span>
+        <span>&#9993; info@boswa.ac.bw</span>
+        <span>&#9632; Plot 2830, Sedie &bull; Maun</span>
+        <span>&#9993; P O Box 661 &bull; Maun</span>
+      </div>
+    </div>
+
+    <div class="body">
+      <p>${date}</p>
+      <p>Att: <strong>${applicant.name}</strong><br>Cell: ${applicant.mobile || '—'}</p>
+      <br/>
+      <p><strong>Dear ${applicant.name}</strong></p>
+
+      <div class="re-line">RE: &nbsp; ACCEPTANCE LETTER &ndash; ${(prog?.name || '').toUpperCase()}</div>
+
+      <p>It is with great pleasure to welcome you as a student at Bosswa Culinary Institute of Botswana based in Maun the gateway to the Okavango Delta. Congratulations on being accepted into our <strong>${prog?.name || '—'}</strong> program which is a three-years (3) program. This course commences on ${commenceDate} and ends on ${endDate}.</p>
+
+      <p>Let us start off by thanking you for enrolling with us. We commit to giving you a culinary experience that will give you a culinary qualification that will be recognised internationally. Our lecturers are committed to parting with knowledge and experience that they have earned over many years of work in the industry.</p>
+
+      <p>Please note that this is a provisional acceptance and your studies will only commence once you have managed to comply with our payment terms. This could be either by sourcing financing from the Department of Tertiary Education Funding (DTEF) or by self-sponsoring or through a sponsor.</p>
+
+      <p>You may now take this letter to the next step and apply for sponsorship through DTEF (www.tef.gov.bw) or source funding. If you are self-sponsoring or you have a sponsor, please contact our accounts department to enquire about our payment terms that are available @ admin@boswa.ac.bw.</p>
+
+      <p>We are so excited to have you as our student and look forward to a fruitful relationship.</p>
+
+      <p>Thank you.</p>
+      <p>Yours Faithfully</p>
+
+      <div class="sig-block">
+        <div class="sig-line"></div>
+        <p><strong>Ms Claudette Latifa Ziteyo</strong><br>School Administration Manager</p>
+      </div>
+    </div>
+
+    <div class="footer">
+      <span>&#9742; +267 686 0262</span>
+      <span>&#9990; +267 686 0261</span>
+      <span>&#9993; info@boswa.ac.bw</span>
+      <span>&#9632; Plot 2830, Sedie &bull; Maun</span>
+      <span>&#9993; P O Box 661 &bull; Maun</span>
+    </div>
+    <div style="text-align:center;font-size:10px;color:#555;margin-top:6px">www.boswa.ac.bw &bull; Bosswa Culinary Institute of Botswana</div>
+  </div>
+  <div class="bottom-bar"></div>
   </body></html>`;
 }
 
