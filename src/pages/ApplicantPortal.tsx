@@ -174,6 +174,9 @@ export default function ApplicantPortal({ userId, onSignOut }: { userId:string; 
             <p style={{ fontSize:13, color:'#374151', lineHeight:1.6 }}>
               Welcome to Boswa Culinary Institute of Botswana. Your student account is now active. Please log in using your student credentials.
             </p>
+            <div style={{ marginTop:12 }}>
+              <DownloadLetterBtn applicationId={application.id} type="welcome" />
+            </div>
           </div>
         )}
 
@@ -296,7 +299,7 @@ function SponsorshipForm({ application, onBack, onDone }: { application:Applicat
 // ─────────────────────────────────────────────────────────────────────────────
 // LETTER DOWNLOAD BUTTON
 // ─────────────────────────────────────────────────────────────────────────────
-function DownloadLetterBtn({ applicationId, type }: { applicationId:string; type:'offer'|'rejection' }) {
+function DownloadLetterBtn({ applicationId, type }: { applicationId:string; type:'offer'|'rejection'|'welcome' }) {
   const [loading, setLoading] = useState(false);
 
   const handleDownload = async () => {
@@ -309,7 +312,11 @@ function DownloadLetterBtn({ applicationId, type }: { applicationId:string; type
 
       const today = new Date().toLocaleDateString('en-GB',{day:'numeric',month:'long',year:'numeric'});
       const logoAbsUrl = new URL(logoImg, window.location.href).href;
-      const html = type === 'offer' ? buildOfferHtml(applicant, prog, today, logoAbsUrl) : buildRejectionHtml(applicant, prog, today, appl.rejection_reason);
+      const html = type === 'offer'
+        ? buildOfferHtml(applicant, prog, today, logoAbsUrl)
+        : type === 'welcome'
+        ? buildWelcomeHtml(applicant, today, logoAbsUrl)
+        : buildRejectionHtml(applicant, prog, today, appl.rejection_reason);
 
       // Open print window
       const win = window.open('','_blank');
@@ -327,7 +334,7 @@ function DownloadLetterBtn({ applicationId, type }: { applicationId:string; type
   return (
     <button className="btn btn-outline" onClick={handleDownload} disabled={loading}>
       <i className="fa-solid fa-file-pdf" style={{ marginRight:6 }} />
-      {loading ? 'Generating…' : `Download ${type === 'offer' ? 'Offer' : 'Rejection'} Letter`}
+      {loading ? 'Generating…' : `Download ${type === 'offer' ? 'Offer' : type === 'welcome' ? 'Welcome' : 'Rejection'} Letter`}
     </button>
   );
 }
@@ -438,6 +445,81 @@ function buildRejectionHtml(applicant:any, prog:any, date:string, reason?:string
   <p>We wish you every success in your future endeavours.</p>
   <p>Yours sincerely,</p>
   <div class="sig"><div class="line"></div><p><strong>Admissions Office</strong><br>Boswa Culinary Institute of Botswana</p></div>
+  </body></html>`;
+}
+
+function buildWelcomeHtml(applicant:any, date:string, logoUrl:string) {
+  return `<!DOCTYPE html><html><head><meta charset="utf-8"><title>Welcome Letter</title>
+  <style>
+    *{box-sizing:border-box}
+    body{font-family:Arial,sans-serif;margin:0;padding:0;color:#222;line-height:1.7;font-size:13.5px}
+    .page{max-width:700px;margin:0 auto;padding:0 60px 40px}
+    .header{text-align:center;padding:30px 0 20px}
+    .re-line{font-weight:700;text-decoration:underline;margin:20px 0 14px}
+    p{margin:10px 0}
+    ul{margin:8px 0 8px 20px;padding:0}
+    ul li{margin:4px 0}
+    .quote{font-style:italic}
+    .next-steps{font-weight:700;margin-top:18px}
+    ol{margin:8px 0 8px 20px;padding:0}
+    ol li{margin:6px 0}
+    .sig-block{margin-top:40px}
+    .sig-line{border-bottom:1px solid #333;width:200px;margin:30px 0 6px}
+    .footer{margin-top:40px;border-top:1px solid #ccc;padding-top:10px;display:flex;gap:18px;font-size:10px;color:#555;flex-wrap:wrap;justify-content:center}
+    .footer-web{text-align:center;font-size:10px;color:#555;margin-top:4px}
+    @media print{body{margin:0}}
+  </style></head>
+  <body>
+  <div class="page">
+    <div class="header">
+      <img src="${logoUrl}" alt="Boswa Logo" style="height:80px;margin-bottom:4px" />
+    </div>
+
+    <p>${date}</p>
+    <p><strong>Att: ${applicant.name}</strong><br><strong>ID: ${applicant.national_id || '—'}</strong></p>
+    <br/>
+    <p><strong>Dear: ${applicant.name}</strong></p>
+
+    <div class="re-line">RE: WELCOME LETTER</div>
+
+    <p>Welcome to all new fellow culinarians! We welcome you to the wonderful world of culinary arts.</p>
+
+    <p>This is where your life will now start and your future career will begin. We are always trying to improve, and this year we have a whole BUNCH of changes to make your culinary education more powerful and to better prepare you for industry when you graduate.</p>
+
+    <p>Everything you do in class and every homework assignment you have to complete does one of two things:</p>
+    <ul>
+      <li>Prepares you for a career in the hospitality industry as a professional chef</li>
+      <li>It helps you grow as an individual in this demanding career</li>
+    </ul>
+
+    <p>Good luck for the upcoming years and I leave you with a quote to remember by a famous Chef Anthony Bourdain</p>
+    <p class="quote">&ldquo;Food is everything we are. It&rsquo;s an extension of naturalist feeling, ethnic feeling, your personal history, your region, your tribe, your grandma. Its inseparable from those from the get go&rdquo;</p>
+
+    <p class="next-steps">We are pleased to let you know what the next steps are:</p>
+    <ol>
+      <li>Uniform Fitting will be open from 26<sup>th</sup> January 2026 (Contact our Student Support Office Mr. Oathusa on +267 686 0261 or 71 995 523 to make an appointment). Uniform fitting will close on 30<sup>th</sup> January 2026.</li>
+      <li>Registration will start during the week of 26<sup>th</sup> January to 30<sup>th</sup> January 2026. You will receive a registration document electronically which you will be required to fill out and send back to us as soon as possible.</li>
+      <li>Induction will be held on 17<sup>th</sup> February 2026</li>
+      <li>Classes will start on 23<sup>rd</sup> February 2026.</li>
+    </ol>
+
+    <p>We cannot wait to have you on campus!</p>
+
+    <p><strong>Yours Faithfully</strong></p>
+    <div class="sig-block">
+      <div class="sig-line"></div>
+      <p><strong>Mr. Boisi Dibuile</strong><br><strong>Deputy Principal &amp; Head of Academics</strong></p>
+    </div>
+
+    <div class="footer">
+      <span>&#9742; + 267 686 0262</span>
+      <span>&#9783; + 267 686 0261</span>
+      <span>&#9993; info@boswa.ac.bw</span>
+      <span>&#9650; Plot 2830, Sedie Ward, Maun</span>
+      <span>&#9993; PO Box 752, Maun</span>
+    </div>
+    <div class="footer-web">www.boswa.ac.bw</div>
+  </div>
   </body></html>`;
 }
 
