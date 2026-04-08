@@ -52,6 +52,7 @@ export function useDbData() {
       const programmes = (programmesRes.data || []).map((p: any) => ({
         id: p.id, name: p.name, years: p.years, semesters: p.semesters,
         type: p.type, startYear: p.start_year, level: p.level ?? null,
+        intakeMonth: p.intake_month ?? 7,
       }));
 
       const initialDb: DB = {

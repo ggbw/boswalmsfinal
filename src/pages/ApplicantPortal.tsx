@@ -313,7 +313,7 @@ function DownloadLetterBtn({ applicationId, type }: { applicationId:string; type
       const appl = applRes.data;
       const [applicantRes, progRes] = await Promise.all([
         supabase.from('applicants').select('*').eq('id', appl.applicant_id).single(),
-        supabase.from('programmes').select('name,type').eq('id', appl.first_choice_programme).single(),
+        supabase.from('programmes').select('name,type,years,intake_month').eq('id', appl.first_choice_programme).single(),
       ]);
       const applicant = applicantRes.data;
       const prog = progRes.data;
@@ -354,10 +354,14 @@ function DownloadLetterBtn({ applicationId, type }: { applicationId:string; type
 }
 
 function buildOfferHtml(applicant:any, prog:any, date:string, logoUrl:string, signatory:{name:string;title:string;signatureUrl:string}) {
-  // Calculate programme end date (3 years from commencement — commencement is 27 July of the start year)
-  const startYear = new Date().getFullYear();
-  const commenceDate = `27th July ${startYear}`;
-  const endDate = `27th July ${startYear + 3}`;
+  const durationYears = prog?.years || 3;
+  const currentYear = new Date().getFullYear();
+  // Diplomas always start July. Certificates use their configured intake_month (1=Jan, 7=Jul).
+  const intakeMonth: number = prog?.type === 'Diploma' ? 7 : (prog?.intake_month ?? 7);
+  const monthName = intakeMonth === 1 ? 'January' : 'July';
+  const commenceDate = `27th ${monthName} ${currentYear}`;
+  const endDate = `27th ${monthName} ${currentYear + durationYears}`;
+  const durationText = durationYears === 1 ? 'one-year (1)' : durationYears === 2 ? 'two-years (2)' : durationYears === 3 ? 'three-years (3)' : `${durationYears}-years (${durationYears})`;
 
   return `<!DOCTYPE html><html><head><meta charset="utf-8"><title>Acceptance Letter</title>
   <style>
@@ -407,7 +411,7 @@ function buildOfferHtml(applicant:any, prog:any, date:string, logoUrl:string, si
 
       <div class="re-line">RE: &nbsp; ACCEPTANCE LETTER &ndash; ${(prog?.name || '').toUpperCase()}</div>
 
-      <p>It is with great pleasure to welcome you as a student at Bosswa Culinary Institute of Botswana based in Maun the gateway to the Okavango Delta. Congratulations on being accepted into our <strong>${prog?.name || '—'}</strong> program which is a three-years (3) program. This course commences on ${commenceDate} and ends on ${endDate}.</p>
+      <p>It is with great pleasure to welcome you as a student at Bosswa Culinary Institute of Botswana based in Maun the gateway to the Okavango Delta. Congratulations on being accepted into our <strong>${prog?.name || '—'}</strong> program which is a ${durationText} program. This course commences on ${commenceDate} and ends on ${endDate}.</p>
 
       <p>Let us start off by thanking you for enrolling with us. We commit to giving you a culinary experience that will give you a culinary qualification that will be recognised internationally. Our lecturers are committed to parting with knowledge and experience that they have earned over many years of work in the industry.</p>
 

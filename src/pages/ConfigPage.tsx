@@ -49,7 +49,8 @@ export default function ConfigPage() {
       years = 3,
       semesters = 2,
       startYear = new Date().getFullYear(),
-      level = 6;
+      level = 6,
+      intakeMonth = 7;
     showModal(
       "Add Programme",
       <div>
@@ -100,16 +101,25 @@ export default function ConfigPage() {
             />
           </div>
         </div>
-        <div className="form-group">
-          <label>Semesters per Year</label>
-          <input
-            className="form-input"
-            type="number"
-            min={1}
-            max={4}
-            defaultValue={semesters}
-            onChange={(e) => (semesters = Number(e.target.value))}
-          />
+        <div className="form-row cols2">
+          <div className="form-group">
+            <label>Semesters per Year</label>
+            <input
+              className="form-input"
+              type="number"
+              min={1}
+              max={4}
+              defaultValue={semesters}
+              onChange={(e) => (semesters = Number(e.target.value))}
+            />
+          </div>
+          <div className="form-group">
+            <label>Intake Month</label>
+            <select className="form-select" defaultValue={intakeMonth} onChange={(e) => (intakeMonth = Number(e.target.value))}>
+              <option value={7}>July</option>
+              <option value={1}>January</option>
+            </select>
+          </div>
         </div>
         <button
           className="btn btn-primary"
@@ -122,7 +132,7 @@ export default function ConfigPage() {
             const id = "prog_" + Date.now();
             const { error } = await supabase
               .from("programmes")
-              .insert({ id, name, type, years, semesters, start_year: startYear, level });
+              .insert({ id, name, type, years, semesters, start_year: startYear, level, intake_month: intakeMonth });
             if (error) {
               toast(error.message, "error");
             } else {
@@ -144,7 +154,8 @@ export default function ConfigPage() {
       years = prog.years,
       semesters = prog.semesters,
       startYear = prog.startYear,
-      level = prog.level ?? 6;
+      level = prog.level ?? 6,
+      intakeMonth = prog.intakeMonth ?? 7;
     showModal(
       "Edit Programme",
       <div>
@@ -195,16 +206,25 @@ export default function ConfigPage() {
             />
           </div>
         </div>
-        <div className="form-group">
-          <label>Semesters per Year</label>
-          <input
-            className="form-input"
-            type="number"
-            min={1}
-            max={4}
-            defaultValue={semesters}
-            onChange={(e) => (semesters = Number(e.target.value))}
-          />
+        <div className="form-row cols2">
+          <div className="form-group">
+            <label>Semesters per Year</label>
+            <input
+              className="form-input"
+              type="number"
+              min={1}
+              max={4}
+              defaultValue={semesters}
+              onChange={(e) => (semesters = Number(e.target.value))}
+            />
+          </div>
+          <div className="form-group">
+            <label>Intake Month</label>
+            <select className="form-select" defaultValue={intakeMonth} onChange={(e) => (intakeMonth = Number(e.target.value))}>
+              <option value={7}>July</option>
+              <option value={1}>January</option>
+            </select>
+          </div>
         </div>
         <div style={{ display: "flex", gap: 8, marginTop: 12 }}>
           <button
@@ -212,7 +232,7 @@ export default function ConfigPage() {
             onClick={async () => {
               const { error } = await supabase
                 .from("programmes")
-                .update({ name, type, years, semesters, start_year: startYear, level })
+                .update({ name, type, years, semesters, start_year: startYear, level, intake_month: intakeMonth })
                 .eq("id", prog.id);
               if (error) {
                 toast(error.message, "error");
