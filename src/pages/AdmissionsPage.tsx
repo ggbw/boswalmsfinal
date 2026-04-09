@@ -183,7 +183,7 @@ export default function AdmissionsPage() {
             onClick={async () => {
               await supabase
                 .from("applications")
-                .update({ status: "awaiting_enrollment", decided_at: new Date().toISOString() })
+                .update({ status: "accepted", decided_at: new Date().toISOString() })
                 .eq("id", a.id);
               await supabase
                 .from("notifications")
@@ -198,7 +198,7 @@ export default function AdmissionsPage() {
               toast("Application accepted!", "success");
               closeModal();
               load();
-              setSelected((prev) => (prev?.id === a.id ? { ...prev, status: "awaiting_enrollment" } : prev));
+              setSelected((prev) => (prev?.id === a.id ? { ...prev, status: "accepted" } : prev));
             }}
           >
             <i className="fa-solid fa-check" style={{ marginRight: 6 }} /> Confirm Accept
