@@ -141,7 +141,7 @@ export default function ApplicantPortal({ userId, onSignOut }: { userId:string; 
               Download your offer letter below. Once you're ready, click <strong>"Accept Offer"</strong> to proceed and submit your sponsorship information.
             </p>
             <div style={{ display:'flex', gap:10 }}>
-              <DownloadLetterBtn applicationId={application.id} type="offer" />
+              <DownloadLetterBtn applicationId={application.id} type="offer" progName={application.first_prog_name} />
               <button className="btn btn-primary" onClick={() => setView('sponsorship')}>
                 Accept Offer & Submit Sponsorship →
               </button>
@@ -299,7 +299,7 @@ function SponsorshipForm({ application, onBack, onDone }: { application:Applicat
 // ─────────────────────────────────────────────────────────────────────────────
 // LETTER DOWNLOAD BUTTON
 // ─────────────────────────────────────────────────────────────────────────────
-function DownloadLetterBtn({ applicationId, type }: { applicationId:string; type:'offer'|'rejection'|'welcome' }) {
+function DownloadLetterBtn({ applicationId, type, progName }: { applicationId:string; type:'offer'|'rejection'|'welcome'; progName?:string }) {
   const [loading, setLoading] = useState(false);
 
   const handleDownload = async () => {
@@ -316,7 +316,9 @@ function DownloadLetterBtn({ applicationId, type }: { applicationId:string; type
         supabase.from('programmes').select('name,type,years,intake_month').eq('id', appl.first_choice_programme).single(),
       ]);
       const applicant = applicantRes.data;
-      const prog = progRes.data;
+      const prog = progRes.data
+        ? progRes.data
+        : { name: progName || '—', type: '', years: 3, intake_month: 7 };
       const cfg = configRes.data;
 
       const today = new Date().toLocaleDateString('en-GB',{day:'numeric',month:'long',year:'numeric'});
