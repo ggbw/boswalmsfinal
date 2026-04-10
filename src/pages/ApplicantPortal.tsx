@@ -322,7 +322,11 @@ function DownloadLetterBtn({ applicationId, type, progName }: { applicationId:st
       const cfg = configRes.data;
 
       const fmt = (iso: string) => new Date(iso).toLocaleDateString('en-GB',{day:'numeric',month:'long',year:'numeric'});
-      const letterDate = cfg?.letter_date ? fmt(cfg.letter_date) : new Date().toLocaleDateString('en-GB',{day:'numeric',month:'long',year:'numeric'});
+      const today = new Date().toLocaleDateString('en-GB',{day:'numeric',month:'long',year:'numeric'});
+      // Each letter uses the relevant event date from the application record
+      const offerDate      = appl.decided_at  ? fmt(appl.decided_at)  : today;
+      const rejectionDate  = appl.decided_at  ? fmt(appl.decided_at)  : today;
+      const enrollmentDate = appl.enrolled_at ? fmt(appl.enrolled_at) : today;
       const logoAbsUrl = new URL(logoImg, window.location.href).href;
       const signatory = {
         name: cfg?.offer_letter_signatory || 'Ms Claudette Latifa Ziteyo',
@@ -338,10 +342,10 @@ function DownloadLetterBtn({ applicationId, type, progName }: { applicationId:st
         classesStart: cfg?.wl_classes_start ? fmt(cfg.wl_classes_start) : '23rd February 2026',
       };
       const html = type === 'offer'
-        ? buildOfferHtml(applicant, prog, letterDate, logoAbsUrl, signatory)
+        ? buildOfferHtml(applicant, prog, offerDate, logoAbsUrl, signatory)
         : type === 'welcome'
-        ? buildWelcomeHtml(applicant, letterDate, logoAbsUrl, welcomeDates)
-        : buildRejectionHtml(applicant, prog, letterDate, appl.rejection_reason);
+        ? buildWelcomeHtml(applicant, enrollmentDate, logoAbsUrl, welcomeDates)
+        : buildRejectionHtml(applicant, prog, rejectionDate, appl.rejection_reason);
 
       // Open print window
       const win = window.open('','_blank');

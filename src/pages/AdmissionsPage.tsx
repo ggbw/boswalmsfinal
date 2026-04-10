@@ -338,8 +338,6 @@ export default function AdmissionsPage() {
     let signatoryName = cfg.offerLetterSignatory || "";
     let signatoryTitle = cfg.offerLetterSignatoryTitle || "";
     let sigPreviewUrl = cfg.offerLetterSignatureUrl || "";
-    // Letter issue date (shown at top of both letters)
-    let letterDate = cfg.letterDate || "";
     // Welcome letter event dates
     let wlUniformOpen  = cfg.wlUniformOpen  || "";
     let wlUniformClose = cfg.wlUniformClose || "";
@@ -403,14 +401,6 @@ export default function AdmissionsPage() {
             <div style={{ fontSize: 11, color: "#aaa", marginTop: 4 }}>PNG or JPG with transparent background recommended</div>
           </div>
 
-          {/* ── Letter Date ── */}
-          <SectionLabel>Letter Issue Date</SectionLabel>
-          <div className="form-group">
-            <label>Date shown at the top of all letters</label>
-            <input type="date" className="form-input" defaultValue={letterDate} onChange={(e) => (letterDate = e.target.value)} />
-            <div style={{ fontSize: 11, color: "#aaa", marginTop: 4 }}>Leave blank to use today's date automatically</div>
-          </div>
-
           {/* ── Welcome Letter Dates ── */}
           <SectionLabel>Welcome Letter — Event Dates</SectionLabel>
           <div className="form-row cols2">
@@ -454,7 +444,6 @@ export default function AdmissionsPage() {
                   offer_letter_signatory: signatoryName || null,
                   offer_letter_signatory_title: signatoryTitle || null,
                   offer_letter_signature_url: sigPreviewUrl || null,
-                  letter_date: letterDate || null,
                   wl_uniform_open: wlUniformOpen || null,
                   wl_uniform_close: wlUniformClose || null,
                   wl_reg_start: wlRegStart || null,
