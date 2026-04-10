@@ -163,7 +163,7 @@ export default function AssignmentsPage() {
           </table>
         </div>
         <button className="btn btn-primary" style={{ marginTop: 14, width: '100%' }} onClick={async () => {
-          let hasError = false;
+          const errors: string[] = [];
           for (const s of students) {
             const score = marksMap[s.studentId] ?? 0;
             // Normalise to 0-100
@@ -171,18 +171,21 @@ export default function AssignmentsPage() {
             const ex = (existing || []).find((x: any) => x.student_id === s.studentId);
             if (ex) {
               const { error } = await supabase.from('assessment_marks').update({ score: normalised }).eq('id', ex.id);
-              if (error) hasError = true;
+              if (error) errors.push(s.name);
             } else {
               const { error } = await supabase.from('assessment_marks').insert({
                 id: 'am_' + Date.now() + '_' + s.studentId,
                 student_id: s.studentId, assessment_id: a.id, assessment_type: 'assignment',
                 class_id: a.classId, module_id: a.moduleId, score: normalised,
               });
-              if (error) hasError = true;
+              if (error) errors.push(s.name);
             }
           }
-          if (hasError) { toast('Some marks could not be saved', 'error'); }
-          else { toast('Marks saved!', 'success'); closeModal(); reloadDb(); }
+          if (errors.length > 0) {
+            toast(`Could not save marks for: ${errors.join(', ')}`, 'error');
+          } else {
+            toast('Marks saved!', 'success'); closeModal(); reloadDb();
+          }
         }}>Save Marks</button>
       </div>
     ), 'large');

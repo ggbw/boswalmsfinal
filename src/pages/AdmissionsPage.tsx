@@ -492,6 +492,13 @@ export default function AdmissionsPage() {
                   wl_classes_start: wlClassesStart || null,
                 } as any)
                 .eq("id", 1);
+              // Validate event date order
+              if (wlRegStart && wlRegEnd && wlRegStart > wlRegEnd) {
+                toast("Registration start date must be before end date", "error"); return;
+              }
+              if (wlUniformOpen && wlUniformClose && wlUniformOpen > wlUniformClose) {
+                toast("Uniform fitting open date must be before close date", "error"); return;
+              }
               if (error) { toast(error.message, "error"); return; }
               toast("Letter settings saved!", "success");
               closeModal();
@@ -792,9 +799,11 @@ async function doEnroll(
     guardian_mobile: a.applicant_guardian_mobile || "",
     class_id: null,
     programme: a.first_choice_programme || null,
+    nationality: a.applicant_nationality || "",
     year: 1,
     semester: 1,
     status: "active",
+    enrolment_date: new Date().toISOString().split("T")[0],
   });
   if (stuErr) {
     toast("Failed to create student: " + stuErr.message, "error");

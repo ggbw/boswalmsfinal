@@ -219,49 +219,58 @@ export default function ExamsPage() {
           </table>
         </div>
         <button className="btn btn-primary" style={{ marginTop: 14, width: '100%' }} onClick={async () => {
-          let hasError = false;
+          const errors: string[] = [];
+
+          // Step 1: save to assessment_marks
           for (const s of students) {
             const score = marksMap[s.studentId] ?? 0;
             const ex = (existing || []).find((x: any) => x.student_id === s.studentId);
             if (ex) {
               const { error } = await supabase.from('assessment_marks').update({ score }).eq('id', ex.id);
-              if (error) hasError = true;
+              if (error) errors.push(`assessment_marks update: ${s.studentId}`);
             } else {
               const { error } = await supabase.from('assessment_marks').insert({
                 id: 'am_' + Date.now() + '_' + s.studentId,
                 student_id: s.studentId, assessment_id: exam.id, assessment_type: 'exam',
                 class_id: exam.classId, module_id: exam.moduleId, score,
               });
-              if (error) hasError = true;
+              if (error) errors.push(`assessment_marks insert: ${s.studentId}`);
             }
           }
-          // Also upsert into marks table (final_exam column) so ResultsPage / Transcripts reflect this exam
+
+          // Step 2: sync to marks table (final_exam column) for ResultsPage / Transcripts
           for (const s of students) {
             const score = marksMap[s.studentId] ?? 0;
-            const { data: existingMark } = await supabase
-              .from('marks')
-              .select('id')
+            const { data: existingMark, error: fetchErr } = await supabase
+              .from('marks').select('id')
               .eq('student_id', s.studentId)
               .eq('module_id', exam.moduleId)
               .eq('class_id', exam.classId)
               .maybeSingle();
+            if (fetchErr) { errors.push(`marks lookup: ${s.studentId}`); continue; }
             if (existingMark) {
-              await supabase.from('marks').update({ final_exam: score })
+              const { error } = await supabase.from('marks').update({ final_exam: score })
                 .eq('student_id', s.studentId)
                 .eq('module_id', exam.moduleId)
                 .eq('class_id', exam.classId);
+              if (error) errors.push(`marks update: ${s.studentId}`);
             } else {
-              await supabase.from('marks').insert({
+              const { error } = await supabase.from('marks').insert({
                 student_id: s.studentId, module_id: exam.moduleId,
                 class_id: exam.classId, final_exam: score,
                 test1: 0, test2: 0, pract_test: 0, ind_ass: 0, grp_ass: 0, practical: 0,
                 year: db.config.currentYear, semester: db.config.currentSemester,
               });
+              if (error) errors.push(`marks insert: ${s.studentId}`);
             }
           }
+
           await supabase.from('exams').update({ status: 'done' }).eq('id', exam.id);
-          if (hasError) { toast('Some marks could not be saved', 'error'); }
-          else { toast('Marks saved!', 'success'); closeModal(); reloadDb(); }
+          if (errors.length > 0) {
+            toast(`${errors.length} mark(s) could not be saved. Please try again.`, 'error');
+          } else {
+            toast('Marks saved!', 'success'); closeModal(); reloadDb();
+          }
         }}>Save Marks</button>
       </div>
     ), 'large');

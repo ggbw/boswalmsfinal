@@ -11,14 +11,16 @@ export default function ResultsPage() {
     const myMarks = db.marks.filter(m => m.studentId === stu.studentId);
     return (<>
       <div className="page-header"><div className="page-title">My Results</div></div>
-      <div className="card"><div className="table-wrap"><table><thead><tr><th>Module</th><th style={{textAlign:'center'}}>CW 40%</th><th style={{textAlign:'center'}}>Prac 20%</th><th style={{textAlign:'center'}}>Exam 40%</th><th style={{textAlign:'center'}}>Total</th><th>Grade</th></tr></thead>
+      {myMarks.length === 0
+        ? <div className="card" style={{textAlign:'center',padding:40,color:'var(--text2)'}}>No results available yet. Results will appear here once your lecturer has entered marks.</div>
+        : <div className="card"><div className="table-wrap"><table><thead><tr><th>Module</th><th style={{textAlign:'center'}}>CW 40%</th><th style={{textAlign:'center'}}>Prac 20%</th><th style={{textAlign:'center'}}>Exam 40%</th><th style={{textAlign:'center'}}>Total</th><th>Grade</th></tr></thead>
         <tbody>{myMarks.map(m=>{const mod=db.modules.find(mo=>mo.id===m.moduleId);const cw=Math.round(((m.test1+m.test2+m.practTest+m.indAss+m.grpAss)/5)*0.4);const pe=Math.round(m.practical*0.2);const fe=Math.round(m.finalExam*0.4);const mm=cw+pe+fe;const g=grade(mm);return<tr key={m.moduleId}><td className="td-name">{mod?.name}</td><td style={{fontFamily:"'JetBrains Mono',monospace",textAlign:'center'}}>{cw}%</td><td style={{fontFamily:"'JetBrains Mono',monospace",textAlign:'center'}}>{pe}%</td><td style={{fontFamily:"'JetBrains Mono',monospace",textAlign:'center'}}>{fe}%</td><td style={{fontFamily:"'JetBrains Mono',monospace",fontWeight:700,textAlign:'center'}}>{mm}%</td><td><span className={`badge ${gradeColor(g)}`}>{g}</span></td></tr>;})}</tbody>
-      </table></div></div>
+      </table></div></div>}
     </>);
   }
 
   if (!['admin','hod','hoy','lecturer'].includes(role || '')) {
-    return <div className="card" style={{textAlign:'center',padding:40,color:'var(--text2)'}}>You do not have permission to view this page.</div>;
+    return <div className="card" style={{textAlign:'center',padding:40,color:'var(--text2)'}}>Access restricted. Please contact your administrator if you believe this is an error.</div>;
   }
 
   // Lecturer: only see marks for modules in their classes

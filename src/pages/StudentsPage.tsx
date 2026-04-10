@@ -270,7 +270,8 @@ export default function StudentsPage() {
       classId = db.classes[0]?.id || "",
       guard = "",
       guardEmail = "",
-      guardMobile = "";
+      guardMobile = "",
+      enrolmentDate = "";
 
     showModal(
       "Add New Student",
@@ -329,6 +330,9 @@ export default function StudentsPage() {
           </div>
         </FSec>
         <FSec title="Academic">
+          <FG label="Enrolment Date">
+            <input className="form-input" type="date" onChange={(e) => (enrolmentDate = e.target.value)} />
+          </FG>
           <FG label="Class">
             <select className="form-select" onChange={(e) => (classId = e.target.value)}>
               <option value="">— Assign later —</option>
@@ -344,10 +348,7 @@ export default function StudentsPage() {
           className="btn btn-primary"
           style={{ marginTop: 12, width: "100%" }}
           onClick={async () => {
-            if (!name) {
-              toast("Name is required", "error");
-              return;
-            }
+            if (!name) { toast("Name is required", "error"); return; }
             const cls = db.classes.find((c) => c.id === classId);
             const { error } = await supabase.from("students").insert({
               id: "s" + Date.now(),
@@ -367,6 +368,7 @@ export default function StudentsPage() {
               year: cls?.year || 1,
               semester: cls?.semester || 1,
               status: "active",
+              enrolment_date: enrolmentDate,
             });
             if (error) {
               toast(error.message, "error");
