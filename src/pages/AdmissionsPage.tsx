@@ -338,6 +338,10 @@ export default function AdmissionsPage() {
     let signatoryName = cfg.offerLetterSignatory || "";
     let signatoryTitle = cfg.offerLetterSignatoryTitle || "";
     let sigPreviewUrl = cfg.offerLetterSignatureUrl || "";
+    // Welcome letter signatory
+    let wlSignatoryName  = cfg.welcomeLetterSignatory      || "";
+    let wlSignatoryTitle = cfg.welcomeLetterSignatoryTitle || "";
+    let wlSigPreviewUrl  = cfg.welcomeLetterSignatureUrl   || "";
     // Welcome letter event dates
     let wlUniformOpen  = cfg.wlUniformOpen  || "";
     let wlUniformClose = cfg.wlUniformClose || "";
@@ -346,14 +350,13 @@ export default function AdmissionsPage() {
     let wlInduction    = cfg.wlInduction    || "";
     let wlClassesStart = cfg.wlClassesStart || "";
 
-    const doUpload = async (file: File, refresh: () => void) => {
+    const doUpload = async (file: File, storageKey: string, onDone: (url: string) => void) => {
       const ext = file.name.split(".").pop();
-      const path = `signatures/offer_letter_signature.${ext}`;
+      const path = `signatures/${storageKey}.${ext}`;
       const { error: upErr } = await supabase.storage.from("applicant-docs").upload(path, file, { upsert: true });
       if (upErr) { toast(upErr.message, "error"); return; }
       const { data: urlData } = supabase.storage.from("applicant-docs").getPublicUrl(path);
-      sigPreviewUrl = urlData.publicUrl + "?t=" + Date.now();
-      refresh();
+      onDone(urlData.publicUrl + "?t=" + Date.now());
     };
 
     const SectionLabel = ({ children }: { children: string }) => (
@@ -363,13 +366,15 @@ export default function AdmissionsPage() {
     );
 
     const LetterSettingsForm = () => {
-      const [preview, setPreview] = useState(sigPreviewUrl);
-      const [uploading, setUploading] = useState(false);
+      const [offerPreview, setOfferPreview] = useState(sigPreviewUrl);
+      const [offerUploading, setOfferUploading] = useState(false);
+      const [wlPreview, setWlPreview] = useState(wlSigPreviewUrl);
+      const [wlUploading, setWlUploading] = useState(false);
 
       return (
         <div style={{ maxHeight: "70vh", overflowY: "auto", paddingRight: 4 }}>
 
-          {/* ── Signatory ── */}
+          {/* ── Offer Letter Signatory ── */}
           <SectionLabel>Offer Letter — Signatory</SectionLabel>
           <div className="form-row cols2">
             <div className="form-group">
@@ -382,22 +387,54 @@ export default function AdmissionsPage() {
             </div>
           </div>
           <div className="form-group">
-            <label>Digital Signature Image</label>
-            {preview && (
+            <label>Offer Letter Signature Image</label>
+            {offerPreview && (
               <div style={{ marginBottom: 8, padding: 8, background: "#f9fafb", border: "1px solid #e5e7eb", borderRadius: 6 }}>
-                <img src={preview} alt="Signature" style={{ maxHeight: 70, maxWidth: 260 }} />
+                <img src={offerPreview} alt="Signature" style={{ maxHeight: 70, maxWidth: 260 }} />
               </div>
             )}
-            <input type="file" accept="image/*" className="form-input" disabled={uploading}
+            <input type="file" accept="image/*" className="form-input" disabled={offerUploading}
               onChange={async (e) => {
                 const file = e.target.files?.[0];
                 if (!file) return;
-                setUploading(true);
-                await doUpload(file, () => setPreview(sigPreviewUrl));
-                setUploading(false);
+                setOfferUploading(true);
+                await doUpload(file, "offer_letter_signature", (url) => { sigPreviewUrl = url; setOfferPreview(url); });
+                setOfferUploading(false);
               }}
             />
-            {uploading && <div style={{ fontSize: 11, color: "#888", marginTop: 4 }}>Uploading…</div>}
+            {offerUploading && <div style={{ fontSize: 11, color: "#888", marginTop: 4 }}>Uploading…</div>}
+            <div style={{ fontSize: 11, color: "#aaa", marginTop: 4 }}>PNG or JPG with transparent background recommended</div>
+          </div>
+
+          {/* ── Welcome Letter Signatory ── */}
+          <SectionLabel>Welcome Letter — Signatory</SectionLabel>
+          <div className="form-row cols2">
+            <div className="form-group">
+              <label>Signatory Name</label>
+              <input className="form-input" defaultValue={wlSignatoryName} placeholder="Mr. Boisi Dibuile" onChange={(e) => (wlSignatoryName = e.target.value)} />
+            </div>
+            <div className="form-group">
+              <label>Signatory Title</label>
+              <input className="form-input" defaultValue={wlSignatoryTitle} placeholder="Deputy Principal & Head of Academics" onChange={(e) => (wlSignatoryTitle = e.target.value)} />
+            </div>
+          </div>
+          <div className="form-group">
+            <label>Welcome Letter Signature Image</label>
+            {wlPreview && (
+              <div style={{ marginBottom: 8, padding: 8, background: "#f9fafb", border: "1px solid #e5e7eb", borderRadius: 6 }}>
+                <img src={wlPreview} alt="Signature" style={{ maxHeight: 70, maxWidth: 260 }} />
+              </div>
+            )}
+            <input type="file" accept="image/*" className="form-input" disabled={wlUploading}
+              onChange={async (e) => {
+                const file = e.target.files?.[0];
+                if (!file) return;
+                setWlUploading(true);
+                await doUpload(file, "welcome_letter_signature", (url) => { wlSigPreviewUrl = url; setWlPreview(url); });
+                setWlUploading(false);
+              }}
+            />
+            {wlUploading && <div style={{ fontSize: 11, color: "#888", marginTop: 4 }}>Uploading…</div>}
             <div style={{ fontSize: 11, color: "#aaa", marginTop: 4 }}>PNG or JPG with transparent background recommended</div>
           </div>
 
@@ -444,6 +481,9 @@ export default function AdmissionsPage() {
                   offer_letter_signatory: signatoryName || null,
                   offer_letter_signatory_title: signatoryTitle || null,
                   offer_letter_signature_url: sigPreviewUrl || null,
+                  welcome_letter_signatory: wlSignatoryName || null,
+                  welcome_letter_signatory_title: wlSignatoryTitle || null,
+                  welcome_letter_signature_url: wlSigPreviewUrl || null,
                   wl_uniform_open: wlUniformOpen || null,
                   wl_uniform_close: wlUniformClose || null,
                   wl_reg_start: wlRegStart || null,

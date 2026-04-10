@@ -55,6 +55,9 @@ export function useDbData() {
         wl_reg_end?: string | null;
         wl_induction?: string | null;
         wl_classes_start?: string | null;
+        welcome_letter_signatory?: string | null;
+        welcome_letter_signatory_title?: string | null;
+        welcome_letter_signature_url?: string | null;
       } | null;
       const programmes = (programmesRes.data || []).map((p: any) => ({
         id: p.id, name: p.name, years: p.years, semesters: p.semesters,
@@ -82,6 +85,9 @@ export function useDbData() {
           wlRegEnd:       config?.wl_reg_end       || "",
           wlInduction:    config?.wl_induction     || "",
           wlClassesStart: config?.wl_classes_start || "",
+          welcomeLetterSignatory:      config?.welcome_letter_signatory       || "",
+          welcomeLetterSignatoryTitle: config?.welcome_letter_signatory_title || "",
+          welcomeLetterSignatureUrl:   config?.welcome_letter_signature_url   || "",
         },
         departments: (departmentsRes.data || []).map((d: any) => ({
           id: d.id, name: d.name, hod: d.hod || "",

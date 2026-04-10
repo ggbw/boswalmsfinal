@@ -145,7 +145,7 @@ function printTranscript(
     <div><strong style="color:#002060">Program of Study:</strong> ${prog?.name || "—"}</div>
     <div><strong style="color:#002060">Gender:</strong> ${student.gender || "—"}</div>
     <div><strong style="color:#002060">Level:</strong> ${prog?.level ? `Level ${prog.level}` : "—"}</div>
-    <div><strong style="color:#002060">Nationality:</strong> Motswana</div>
+    <div><strong style="color:#002060">Nationality:</strong> ${student.nationality || "—"}</div>
     <div><strong style="color:#002060">Issue Date:</strong> ${todayStr()}</div>
   </div>
 
@@ -412,7 +412,7 @@ export function TranscriptView({ stu }: { stu: any }) {
             ["Program of Study", prog?.name || "—"],
             ["Gender", stu.gender || "—"],
             ["Level", prog?.level ? `Level ${prog.level}` : "—"],
-            ["Nationality", "Motswana"],
+            ["Nationality", stu.nationality || "—"],
             ["Issue Date", todayStr()],
           ] as [string, string][]
         ).map(([label, value]) => (

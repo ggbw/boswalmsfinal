@@ -308,7 +308,7 @@ function DownloadLetterBtn({ applicationId, type, progName }: { applicationId:st
       // Fetch application + applicant + programme + school config in parallel
       const [applRes, configRes] = await Promise.all([
         supabase.from('applications').select('*').eq('id', applicationId).single(),
-        supabase.from('school_config').select('offer_letter_signatory,offer_letter_signatory_title,offer_letter_signature_url,letter_date,wl_uniform_open,wl_uniform_close,wl_reg_start,wl_reg_end,wl_induction,wl_classes_start').eq('id', 1).single(),
+        supabase.from('school_config').select('offer_letter_signatory,offer_letter_signatory_title,offer_letter_signature_url,welcome_letter_signatory,welcome_letter_signatory_title,welcome_letter_signature_url,wl_uniform_open,wl_uniform_close,wl_reg_start,wl_reg_end,wl_induction,wl_classes_start').eq('id', 1).single(),
       ]);
       const appl = applRes.data;
       const [applicantRes, progRes] = await Promise.all([
@@ -334,17 +334,22 @@ function DownloadLetterBtn({ applicationId, type, progName }: { applicationId:st
         signatureUrl: cfg?.offer_letter_signature_url || '',
       };
       const welcomeDates = {
-        uniformOpen:  cfg?.wl_uniform_open  ? fmt(cfg.wl_uniform_open)  : '26th January 2026',
-        uniformClose: cfg?.wl_uniform_close ? fmt(cfg.wl_uniform_close) : '30th January 2026',
-        regStart:     cfg?.wl_reg_start     ? fmt(cfg.wl_reg_start)     : '26th January 2026',
-        regEnd:       cfg?.wl_reg_end       ? fmt(cfg.wl_reg_end)       : '30th January 2026',
-        induction:    cfg?.wl_induction     ? fmt(cfg.wl_induction)     : '17th February 2026',
-        classesStart: cfg?.wl_classes_start ? fmt(cfg.wl_classes_start) : '23rd February 2026',
+        uniformOpen:  cfg?.wl_uniform_open  ? fmt(cfg.wl_uniform_open)  : 'TBC',
+        uniformClose: cfg?.wl_uniform_close ? fmt(cfg.wl_uniform_close) : 'TBC',
+        regStart:     cfg?.wl_reg_start     ? fmt(cfg.wl_reg_start)     : 'TBC',
+        regEnd:       cfg?.wl_reg_end       ? fmt(cfg.wl_reg_end)       : 'TBC',
+        induction:    cfg?.wl_induction     ? fmt(cfg.wl_induction)     : 'TBC',
+        classesStart: cfg?.wl_classes_start ? fmt(cfg.wl_classes_start) : 'TBC',
+      };
+      const welcomeSignatory = {
+        name: cfg?.welcome_letter_signatory || 'Mr. Boisi Dibuile',
+        title: cfg?.welcome_letter_signatory_title || 'Deputy Principal & Head of Academics',
+        signatureUrl: cfg?.welcome_letter_signature_url || '',
       };
       const html = type === 'offer'
         ? buildOfferHtml(applicant, prog, offerDate, logoAbsUrl, signatory)
         : type === 'welcome'
-        ? buildWelcomeHtml(applicant, enrollmentDate, logoAbsUrl, welcomeDates)
+        ? buildWelcomeHtml(applicant, enrollmentDate, logoAbsUrl, welcomeDates, welcomeSignatory)
         : buildRejectionHtml(applicant, prog, rejectionDate, appl.rejection_reason);
 
       // Open print window
@@ -483,7 +488,7 @@ function buildRejectionHtml(applicant:any, prog:any, date:string, reason?:string
   </body></html>`;
 }
 
-function buildWelcomeHtml(applicant:any, date:string, logoUrl:string, d:{uniformOpen:string;uniformClose:string;regStart:string;regEnd:string;induction:string;classesStart:string}) {
+function buildWelcomeHtml(applicant:any, date:string, logoUrl:string, d:{uniformOpen:string;uniformClose:string;regStart:string;regEnd:string;induction:string;classesStart:string}, signatory:{name:string;title:string;signatureUrl:string}) {
   return `<!DOCTYPE html><html><head><meta charset="utf-8"><title>Welcome Letter</title>
   <style>
     *{box-sizing:border-box}
@@ -542,8 +547,10 @@ function buildWelcomeHtml(applicant:any, date:string, logoUrl:string, d:{uniform
 
     <p><strong>Yours Faithfully</strong></p>
     <div class="sig-block">
-      <div class="sig-line"></div>
-      <p><strong>Mr. Boisi Dibuile</strong><br><strong>Deputy Principal &amp; Head of Academics</strong></p>
+      ${signatory.signatureUrl
+        ? `<img src="${signatory.signatureUrl}" alt="Signature" style="max-height:70px;max-width:220px;display:block;margin-bottom:4px" />`
+        : '<div class="sig-line"></div>'}
+      <p><strong>${signatory.name}</strong><br><strong>${signatory.title}</strong></p>
     </div>
 
     <div class="footer">
