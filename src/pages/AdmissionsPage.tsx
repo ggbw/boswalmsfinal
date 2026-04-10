@@ -334,75 +334,119 @@ export default function AdmissionsPage() {
 
   // ── Letter Settings ──
   const handleLetterSettings = () => {
-    let signatoryName = (db as any).config?.offerLetterSignatory || "";
-    let signatoryTitle = (db as any).config?.offerLetterSignatoryTitle || "";
-    let sigPreviewUrl = (db as any).config?.offerLetterSignatureUrl || "";
-    let uploadingRef = { value: false };
+    const cfg = (db as any).config || {};
+    let signatoryName = cfg.offerLetterSignatory || "";
+    let signatoryTitle = cfg.offerLetterSignatoryTitle || "";
+    let sigPreviewUrl = cfg.offerLetterSignatureUrl || "";
+    // Letter issue date (shown at top of both letters)
+    let letterDate = cfg.letterDate || "";
+    // Welcome letter event dates
+    let wlUniformOpen  = cfg.wlUniformOpen  || "";
+    let wlUniformClose = cfg.wlUniformClose || "";
+    let wlRegStart     = cfg.wlRegStart     || "";
+    let wlRegEnd       = cfg.wlRegEnd       || "";
+    let wlInduction    = cfg.wlInduction    || "";
+    let wlClassesStart = cfg.wlClassesStart || "";
 
     const doUpload = async (file: File, refresh: () => void) => {
-      uploadingRef.value = true;
       const ext = file.name.split(".").pop();
       const path = `signatures/offer_letter_signature.${ext}`;
-      const { error: upErr } = await supabase.storage
-        .from("applicant-docs")
-        .upload(path, file, { upsert: true });
-      if (upErr) { toast(upErr.message, "error"); uploadingRef.value = false; return; }
+      const { error: upErr } = await supabase.storage.from("applicant-docs").upload(path, file, { upsert: true });
+      if (upErr) { toast(upErr.message, "error"); return; }
       const { data: urlData } = supabase.storage.from("applicant-docs").getPublicUrl(path);
       sigPreviewUrl = urlData.publicUrl + "?t=" + Date.now();
-      uploadingRef.value = false;
       refresh();
     };
+
+    const SectionLabel = ({ children }: { children: string }) => (
+      <div style={{ fontWeight: 700, fontSize: 12, color: "#002060", borderBottom: "2px solid #C9A227", paddingBottom: 4, marginBottom: 12, marginTop: 20 }}>
+        {children}
+      </div>
+    );
 
     const LetterSettingsForm = () => {
       const [preview, setPreview] = useState(sigPreviewUrl);
       const [uploading, setUploading] = useState(false);
 
       return (
-        <div>
-          <div className="form-group">
-            <label>Signatory Name</label>
-            <input
-              className="form-input"
-              defaultValue={signatoryName}
-              placeholder="e.g. Ms Claudette Latifa Ziteyo"
-              onChange={(e) => (signatoryName = e.target.value)}
-            />
-          </div>
-          <div className="form-group">
-            <label>Signatory Title</label>
-            <input
-              className="form-input"
-              defaultValue={signatoryTitle}
-              placeholder="e.g. School Administration Manager"
-              onChange={(e) => (signatoryTitle = e.target.value)}
-            />
+        <div style={{ maxHeight: "70vh", overflowY: "auto", paddingRight: 4 }}>
+
+          {/* ── Signatory ── */}
+          <SectionLabel>Offer Letter — Signatory</SectionLabel>
+          <div className="form-row cols2">
+            <div className="form-group">
+              <label>Signatory Name</label>
+              <input className="form-input" defaultValue={signatoryName} placeholder="Ms Claudette Latifa Ziteyo" onChange={(e) => (signatoryName = e.target.value)} />
+            </div>
+            <div className="form-group">
+              <label>Signatory Title</label>
+              <input className="form-input" defaultValue={signatoryTitle} placeholder="School Administration Manager" onChange={(e) => (signatoryTitle = e.target.value)} />
+            </div>
           </div>
           <div className="form-group">
             <label>Digital Signature Image</label>
             {preview && (
               <div style={{ marginBottom: 8, padding: 8, background: "#f9fafb", border: "1px solid #e5e7eb", borderRadius: 6 }}>
-                <img src={preview} alt="Signature" style={{ maxHeight: 80, maxWidth: 280 }} />
+                <img src={preview} alt="Signature" style={{ maxHeight: 70, maxWidth: 260 }} />
               </div>
             )}
-            <input
-              type="file"
-              accept="image/*"
-              className="form-input"
-              disabled={uploading}
+            <input type="file" accept="image/*" className="form-input" disabled={uploading}
               onChange={async (e) => {
                 const file = e.target.files?.[0];
                 if (!file) return;
                 setUploading(true);
-                await doUpload(file, () => { setPreview(sigPreviewUrl); });
+                await doUpload(file, () => setPreview(sigPreviewUrl));
                 setUploading(false);
               }}
             />
-            {uploading && <div style={{ fontSize: 12, color: "#888", marginTop: 4 }}>Uploading…</div>}
-            <div style={{ fontSize: 11, color: "#aaa", marginTop: 4 }}>PNG or JPG with transparent/white background recommended</div>
+            {uploading && <div style={{ fontSize: 11, color: "#888", marginTop: 4 }}>Uploading…</div>}
+            <div style={{ fontSize: 11, color: "#aaa", marginTop: 4 }}>PNG or JPG with transparent background recommended</div>
           </div>
+
+          {/* ── Letter Date ── */}
+          <SectionLabel>Letter Issue Date</SectionLabel>
+          <div className="form-group">
+            <label>Date shown at the top of all letters</label>
+            <input type="date" className="form-input" defaultValue={letterDate} onChange={(e) => (letterDate = e.target.value)} />
+            <div style={{ fontSize: 11, color: "#aaa", marginTop: 4 }}>Leave blank to use today's date automatically</div>
+          </div>
+
+          {/* ── Welcome Letter Dates ── */}
+          <SectionLabel>Welcome Letter — Event Dates</SectionLabel>
+          <div className="form-row cols2">
+            <div className="form-group">
+              <label>Uniform Fitting Opens</label>
+              <input type="date" className="form-input" defaultValue={wlUniformOpen} onChange={(e) => (wlUniformOpen = e.target.value)} />
+            </div>
+            <div className="form-group">
+              <label>Uniform Fitting Closes</label>
+              <input type="date" className="form-input" defaultValue={wlUniformClose} onChange={(e) => (wlUniformClose = e.target.value)} />
+            </div>
+          </div>
+          <div className="form-row cols2">
+            <div className="form-group">
+              <label>Registration Starts</label>
+              <input type="date" className="form-input" defaultValue={wlRegStart} onChange={(e) => (wlRegStart = e.target.value)} />
+            </div>
+            <div className="form-group">
+              <label>Registration Ends</label>
+              <input type="date" className="form-input" defaultValue={wlRegEnd} onChange={(e) => (wlRegEnd = e.target.value)} />
+            </div>
+          </div>
+          <div className="form-row cols2">
+            <div className="form-group">
+              <label>Induction Date</label>
+              <input type="date" className="form-input" defaultValue={wlInduction} onChange={(e) => (wlInduction = e.target.value)} />
+            </div>
+            <div className="form-group">
+              <label>Classes Start</label>
+              <input type="date" className="form-input" defaultValue={wlClassesStart} onChange={(e) => (wlClassesStart = e.target.value)} />
+            </div>
+          </div>
+
           <button
             className="btn btn-primary"
-            style={{ marginTop: 8 }}
+            style={{ marginTop: 16, width: "100%" }}
             onClick={async () => {
               const { error } = await supabase
                 .from("school_config")
@@ -410,6 +454,13 @@ export default function AdmissionsPage() {
                   offer_letter_signatory: signatoryName || null,
                   offer_letter_signatory_title: signatoryTitle || null,
                   offer_letter_signature_url: sigPreviewUrl || null,
+                  letter_date: letterDate || null,
+                  wl_uniform_open: wlUniformOpen || null,
+                  wl_uniform_close: wlUniformClose || null,
+                  wl_reg_start: wlRegStart || null,
+                  wl_reg_end: wlRegEnd || null,
+                  wl_induction: wlInduction || null,
+                  wl_classes_start: wlClassesStart || null,
                 } as any)
                 .eq("id", 1);
               if (error) { toast(error.message, "error"); return; }
@@ -418,13 +469,13 @@ export default function AdmissionsPage() {
               reloadDb();
             }}
           >
-            Save
+            Save All Settings
           </button>
         </div>
       );
     };
 
-    showModal("Offer Letter Settings", <LetterSettingsForm />);
+    showModal("Letter Settings", <LetterSettingsForm />);
   };
 
   const FILTERS = ["all", "submitted", "under_review", "accepted", "rejected", "awaiting_enrollment", "enrolled"];

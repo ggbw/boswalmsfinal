@@ -48,6 +48,13 @@ export function useDbData() {
         offer_letter_signatory?: string | null;
         offer_letter_signatory_title?: string | null;
         offer_letter_signature_url?: string | null;
+        letter_date?: string | null;
+        wl_uniform_open?: string | null;
+        wl_uniform_close?: string | null;
+        wl_reg_start?: string | null;
+        wl_reg_end?: string | null;
+        wl_induction?: string | null;
+        wl_classes_start?: string | null;
       } | null;
       const programmes = (programmesRes.data || []).map((p: any) => ({
         id: p.id, name: p.name, years: p.years, semesters: p.semesters,
@@ -68,6 +75,13 @@ export function useDbData() {
           offerLetterSignatory: config?.offer_letter_signatory || "Ms Claudette Latifa Ziteyo",
           offerLetterSignatoryTitle: config?.offer_letter_signatory_title || "School Administration Manager",
           offerLetterSignatureUrl: config?.offer_letter_signature_url || "",
+          letterDate: config?.letter_date || "",
+          wlUniformOpen:  config?.wl_uniform_open  || "",
+          wlUniformClose: config?.wl_uniform_close || "",
+          wlRegStart:     config?.wl_reg_start     || "",
+          wlRegEnd:       config?.wl_reg_end       || "",
+          wlInduction:    config?.wl_induction     || "",
+          wlClassesStart: config?.wl_classes_start || "",
         },
         departments: (departmentsRes.data || []).map((d: any) => ({
           id: d.id, name: d.name, hod: d.hod || "",

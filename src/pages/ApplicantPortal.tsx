@@ -308,7 +308,7 @@ function DownloadLetterBtn({ applicationId, type, progName }: { applicationId:st
       // Fetch application + applicant + programme + school config in parallel
       const [applRes, configRes] = await Promise.all([
         supabase.from('applications').select('*').eq('id', applicationId).single(),
-        supabase.from('school_config').select('offer_letter_signatory,offer_letter_signatory_title,offer_letter_signature_url').eq('id', 1).single(),
+        supabase.from('school_config').select('offer_letter_signatory,offer_letter_signatory_title,offer_letter_signature_url,letter_date,wl_uniform_open,wl_uniform_close,wl_reg_start,wl_reg_end,wl_induction,wl_classes_start').eq('id', 1).single(),
       ]);
       const appl = applRes.data;
       const [applicantRes, progRes] = await Promise.all([
@@ -321,18 +321,27 @@ function DownloadLetterBtn({ applicationId, type, progName }: { applicationId:st
         : { name: progName || '—', type: '', years: 3, intake_month: 7 };
       const cfg = configRes.data;
 
-      const today = new Date().toLocaleDateString('en-GB',{day:'numeric',month:'long',year:'numeric'});
+      const fmt = (iso: string) => new Date(iso).toLocaleDateString('en-GB',{day:'numeric',month:'long',year:'numeric'});
+      const letterDate = cfg?.letter_date ? fmt(cfg.letter_date) : new Date().toLocaleDateString('en-GB',{day:'numeric',month:'long',year:'numeric'});
       const logoAbsUrl = new URL(logoImg, window.location.href).href;
       const signatory = {
         name: cfg?.offer_letter_signatory || 'Ms Claudette Latifa Ziteyo',
         title: cfg?.offer_letter_signatory_title || 'School Administration Manager',
         signatureUrl: cfg?.offer_letter_signature_url || '',
       };
+      const welcomeDates = {
+        uniformOpen:  cfg?.wl_uniform_open  ? fmt(cfg.wl_uniform_open)  : '26th January 2026',
+        uniformClose: cfg?.wl_uniform_close ? fmt(cfg.wl_uniform_close) : '30th January 2026',
+        regStart:     cfg?.wl_reg_start     ? fmt(cfg.wl_reg_start)     : '26th January 2026',
+        regEnd:       cfg?.wl_reg_end       ? fmt(cfg.wl_reg_end)       : '30th January 2026',
+        induction:    cfg?.wl_induction     ? fmt(cfg.wl_induction)     : '17th February 2026',
+        classesStart: cfg?.wl_classes_start ? fmt(cfg.wl_classes_start) : '23rd February 2026',
+      };
       const html = type === 'offer'
-        ? buildOfferHtml(applicant, prog, today, logoAbsUrl, signatory)
+        ? buildOfferHtml(applicant, prog, letterDate, logoAbsUrl, signatory)
         : type === 'welcome'
-        ? buildWelcomeHtml(applicant, today, logoAbsUrl)
-        : buildRejectionHtml(applicant, prog, today, appl.rejection_reason);
+        ? buildWelcomeHtml(applicant, letterDate, logoAbsUrl, welcomeDates)
+        : buildRejectionHtml(applicant, prog, letterDate, appl.rejection_reason);
 
       // Open print window
       const win = window.open('','_blank');
@@ -470,7 +479,7 @@ function buildRejectionHtml(applicant:any, prog:any, date:string, reason?:string
   </body></html>`;
 }
 
-function buildWelcomeHtml(applicant:any, date:string, logoUrl:string) {
+function buildWelcomeHtml(applicant:any, date:string, logoUrl:string, d:{uniformOpen:string;uniformClose:string;regStart:string;regEnd:string;induction:string;classesStart:string}) {
   return `<!DOCTYPE html><html><head><meta charset="utf-8"><title>Welcome Letter</title>
   <style>
     *{box-sizing:border-box}
@@ -519,10 +528,10 @@ function buildWelcomeHtml(applicant:any, date:string, logoUrl:string) {
 
     <p class="next-steps">We are pleased to let you know what the next steps are:</p>
     <ol>
-      <li>Uniform Fitting will be open from 26<sup>th</sup> January 2026 (Contact our Student Support Office Mr. Oathusa on +267 686 0261 or 71 995 523 to make an appointment). Uniform fitting will close on 30<sup>th</sup> January 2026.</li>
-      <li>Registration will start during the week of 26<sup>th</sup> January to 30<sup>th</sup> January 2026. You will receive a registration document electronically which you will be required to fill out and send back to us as soon as possible.</li>
-      <li>Induction will be held on 17<sup>th</sup> February 2026</li>
-      <li>Classes will start on 23<sup>rd</sup> February 2026.</li>
+      <li>Uniform Fitting will be open from ${d.uniformOpen} (Contact our Student Support Office Mr. Oathusa on +267 686 0261 or 71 995 523 to make an appointment). Uniform fitting will close on ${d.uniformClose}.</li>
+      <li>Registration will start during the week of ${d.regStart} to ${d.regEnd}. You will receive a registration document electronically which you will be required to fill out and send back to us as soon as possible.</li>
+      <li>Induction will be held on ${d.induction}</li>
+      <li>Classes will start on ${d.classesStart}.</li>
     </ol>
 
     <p>We cannot wait to have you on campus!</p>
