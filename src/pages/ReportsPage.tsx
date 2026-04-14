@@ -2,6 +2,7 @@ import { useState, useEffect, useCallback } from "react";
 import { useApp } from "@/context/AppContext";
 import { grade, gradeColor } from "@/data/db";
 import { supabase } from "@/integrations/supabase/client";
+import { getLecturerClasses } from "@/lib/lecturerHelpers";
 
 const GRADE_ORDER = ["Distinction", "Merit", "Credit", "Pass", "Fail"] as const;
 
@@ -28,7 +29,9 @@ interface AssessmentMark {
 export default function ReportsPage() {
   const { db, currentUser } = useApp();
   const role = currentUser?.role;
-  const visibleClasses = role === "lecturer" ? db.classes.filter((c) => c.lecturer === currentUser?.name) : db.classes;
+  const visibleClasses = role === "lecturer"
+    ? getLecturerClasses(db.lecturerModules, db.classes, currentUser?.id || '')
+    : db.classes;
 
   const [view, setView] = useState<"overview" | "detail">("overview");
   const [selClassId, setSelClassId] = useState(visibleClasses[0]?.id || "");
@@ -906,7 +909,7 @@ export default function ReportsPage() {
                     <td style={{ textAlign: "center", fontSize: 11 }}>
                       Y{cls.year} S{cls.semester}
                     </td>
-                    <td style={{ fontSize: 11 }}>{cls.lecturer || "—"}</td>
+                    <td style={{ fontSize: 11 }}>{[...new Set(db.lecturerModules.filter(lm => lm.classId === cls.id).map(lm => db.users.find(u => u.id === lm.lecturerId)?.name).filter(Boolean))].join(', ') || "—"}</td>
                     {GRADE_ORDER.map((g) => (
                       <td
                         key={g}

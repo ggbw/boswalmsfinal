@@ -1,4 +1,5 @@
 import { useApp } from '@/context/AppContext';
+import { getLecturerClasses, getLecturerModulesList } from '@/lib/lecturerHelpers';
 
 export default function MyStudentsPage() {
   const { db, currentUser } = useApp();
@@ -18,9 +19,9 @@ export default function MyStudentsPage() {
   }
 
   // Lecturer / HOD / HOA: show students in classes they teach
-  const lecClasses = db.classes.filter(c => c.lecturer === currentUser?.name);
+  const lecClasses = getLecturerClasses(db.lecturerModules, db.classes, currentUser?.id || '');
   const lecClassIds = lecClasses.map(c => c.id);
-  const lecModuleIds = db.modules.filter(m => m.classes.some(cid => lecClassIds.includes(cid))).map(m => m.id);
+  const lecModuleIds = getLecturerModulesList(db.lecturerModules, db.modules, currentUser?.id || '').map(m => m.id);
 
   // Students in lecturer's classes
   const students = db.students.filter(s => lecClassIds.includes(s.classId));

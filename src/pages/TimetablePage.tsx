@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { useApp } from "@/context/AppContext";
 import { supabase } from "@/integrations/supabase/client";
+import { getLecturerForModuleClass } from "@/lib/lecturerHelpers";
 
 // Minimal XLSX builder — no external dependency needed
 function buildXlsx(sheets: { name: string; rows: (string | number)[][] }[]): Blob {
@@ -233,6 +234,11 @@ export default function TimetablePage() {
   const exportToExcel = () => {
     const HEADER = ["Day", "Time", "Class", "Module", "Lecturer", "Room"];
 
+    const slotLecturerName = (moduleId: string, classId: string) => {
+      const lmEntry = getLecturerForModuleClass(db.lecturerModules, moduleId, classId);
+      return lmEntry ? (db.users.find(u => u.id === lmEntry)?.name || "—") : "—";
+    };
+
     // Sheet 1: All slots grouped by day
     const allRows: (string | number)[][] = [HEADER];
     for (const day of days) {
@@ -240,7 +246,7 @@ export default function TimetablePage() {
       daySlots.forEach((t) => {
         const cls = db.classes.find((c) => c.id === t.classId);
         const mod = db.modules.find((m) => m.id === t.moduleId);
-        allRows.push([day, t.time, cls?.name || "", mod?.name || "", cls?.lecturer || "", t.room || ""]);
+        allRows.push([day, t.time, cls?.name || "", mod?.name || "", slotLecturerName(t.moduleId, t.classId), t.room || ""]);
       });
     }
 
@@ -253,7 +259,7 @@ export default function TimetablePage() {
         daySlots.forEach((t) => {
           const cls = db.classes.find((c) => c.id === t.classId);
           const mod = db.modules.find((m) => m.id === t.moduleId);
-          rows.push([day, t.time, cls?.name || "", mod?.name || "", cls?.lecturer || "", t.room || ""]);
+          rows.push([day, t.time, cls?.name || "", mod?.name || "", slotLecturerName(t.moduleId, t.classId), t.room || ""]);
         });
         return { name: day, rows };
       })
@@ -274,6 +280,10 @@ export default function TimetablePage() {
   const printTimetable = () => {
     const logoUrl = window.location.origin + "/transcript_logo.png";
     const allDays = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday"];
+    const slotLecturerName = (moduleId: string, classId: string) => {
+      const lmEntry = getLecturerForModuleClass(db.lecturerModules, moduleId, classId);
+      return lmEntry ? (db.users.find(u => u.id === lmEntry)?.name || "—") : "—";
+    };
 
     // Build combined slots + exams per day
     const examsByDay: Record<string, typeof db.exams> = {};
@@ -311,7 +321,7 @@ export default function TimetablePage() {
           <td style="padding:6px 10px;font-weight:600;color:#4f46e5">${t.time}</td>
           <td style="padding:6px 10px;font-weight:600">${cls?.name || "—"}</td>
           <td style="padding:6px 10px">${mod?.name || "—"}</td>
-          <td style="padding:6px 10px;color:#6b7280">${cls?.lecturer || "—"}</td>
+          <td style="padding:6px 10px;color:#6b7280">${slotLecturerName(t.moduleId, t.classId)}</td>
           <td style="padding:6px 10px">${t.room ? `<span style="background:#e0e7ff;border-radius:4px;padding:2px 8px;font-size:11px">${t.room}</span>` : "—"}</td>
           <td style="padding:6px 10px"><span style="background:#dcfce7;color:#166534;border-radius:4px;padding:2px 8px;font-size:11px;font-weight:600">Class</span></td>
         </tr>`;
@@ -739,7 +749,9 @@ export default function TimetablePage() {
                           <td style={{ fontFamily: "'JetBrains Mono',monospace", fontSize: 11, whiteSpace: "nowrap" }}>{t.time}</td>
                           <td style={{ fontWeight: 600 }}>{cls?.name}</td>
                           <td>{mod?.name}</td>
-                          <td style={{ fontSize: 11, color: "var(--text2)" }}>{cls?.lecturer || "—"}</td>
+                          <td style={{ fontSize: 11, color: "var(--text2)" }}>
+                            {(() => { const lmId = getLecturerForModuleClass(db.lecturerModules, t.moduleId, t.classId); return lmId ? (db.users.find(u => u.id === lmId)?.name || "—") : "—"; })()}
+                          </td>
                           <td>
                             {t.room ? (
                               <span style={{ background: "var(--surface2)", borderRadius: 4, padding: "2px 8px", fontSize: 11 }}>

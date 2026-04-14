@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { useApp } from '@/context/AppContext';
 import { supabase } from '@/integrations/supabase/client';
+import { getLecturerClassIds, getLecturerModulesList } from '@/lib/lecturerHelpers';
 
 export default function AssignmentsPage() {
   const { db, currentUser, showModal, closeModal, toast, reloadDb } = useApp();
@@ -27,10 +28,8 @@ export default function AssignmentsPage() {
     assignments = assignments.filter(a => allModuleIds.includes(a.moduleId));
   }
 
-  const getLecturerModules = () => {
-    const lecClasses = db.classes.filter(c => c.lecturer === currentUser?.name).map(c => c.id);
-    return db.modules.filter(m => m.classes.some(cid => lecClasses.includes(cid)));
-  };
+  const getLecturerModules = () =>
+    getLecturerModulesList(db.lecturerModules, db.modules, currentUser?.id || '');
 
   const handleCreateAssignment = () => {
     const lecModules = isAdmin ? db.modules : getLecturerModules();
@@ -42,7 +41,7 @@ export default function AssignmentsPage() {
       const mod = db.modules.find(m => m.id === mid);
       if (!mod) return [];
       if (role === 'admin') return db.classes.filter(c => mod.classes.includes(c.id));
-      const lecClassIds = db.classes.filter(c => c.lecturer === currentUser?.name).map(c => c.id);
+      const lecClassIds = getLecturerClassIds(db.lecturerModules, currentUser?.id || '');
       return db.classes.filter(c => mod.classes.includes(c.id) && lecClassIds.includes(c.id));
     };
 

@@ -93,7 +93,7 @@ export default function DashboardPage() {
                 <div key={cls.id} className="card" style={{ cursor: 'pointer' }} onClick={() => navigate('students')}>
                   <div style={{ fontWeight: 700, fontSize: 14, marginBottom: 6 }}><i className="fa-solid fa-school" /> {cls.name}</div>
                   <div style={{ fontSize: 11, color: 'var(--text2)', marginBottom: 3 }}>{prog?.type} · Year {cls.year} · Semester {cls.semester}</div>
-                  <div style={{ fontSize: 11, color: 'var(--text2)', marginBottom: 10 }}><i className="fa-solid fa-user-tie" /> {cls.lecturer}</div>
+                  <div style={{ fontSize: 11, color: 'var(--text2)', marginBottom: 10 }}><i className="fa-solid fa-user-tie" /> {[...new Set(db.lecturerModules.filter(lm => lm.classId === cls.id).map(lm => db.users.find(u => u.id === lm.lecturerId)?.name).filter(Boolean))].join(', ') || '—'}</div>
                   <div className="prog-bar"><div className="prog-fill" style={{ width: `${Math.round(studCount / 20 * 100)}%` }} /></div>
                   <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: 6 }}>
                     <span style={{ fontSize: 11, color: 'var(--text2)' }}>{studCount} students</span>

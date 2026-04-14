@@ -4,7 +4,6 @@ import { supabase } from "@/integrations/supabase/client";
 
 // Sync module_classes for a class based on its programme + year + semester
 async function syncModulesForClass(classId: string, programmeId: string, year: number, semester: number) {
-  // Get modules mapped to this programme/year/semester from programme_modules
   const { data: pmRows } = await supabase
     .from("programme_modules" as any)
     .select("module_id")
@@ -12,10 +11,8 @@ async function syncModulesForClass(classId: string, programmeId: string, year: n
     .eq("year", year)
     .eq("semester", semester);
 
-  // Remove old module_classes for this class
   await supabase.from("module_classes").delete().eq("class_id", classId);
 
-  // Insert new ones
   const moduleIds = (pmRows || []).map((r: any) => r.module_id);
   if (moduleIds.length > 0) {
     await supabase.from("module_classes").insert(
@@ -24,10 +21,94 @@ async function syncModulesForClass(classId: string, programmeId: string, year: n
   }
 }
 
+// Panel to assign a lecturer to each module within a class
+function ModuleAssignmentPanel({ classId, onClose }: { classId: string; onClose: () => void }) {
+  const { db, toast, reloadDb } = useApp();
+  const classModules = db.modules.filter((m) => m.classes.includes(classId));
+  const lecturers = db.users.filter((u) => ["lecturer", "hod", "hoy"].includes(u.role));
+  const [saving, setSaving] = useState<string | null>(null);
+
+  const getLecturerId = (moduleId: string) =>
+    db.lecturerModules.find((lm) => lm.moduleId === moduleId && lm.classId === classId)?.lecturerId || "";
+
+  const handleAssign = async (moduleId: string, lecturerId: string) => {
+    setSaving(moduleId);
+    const existing = db.lecturerModules.find((lm) => lm.moduleId === moduleId && lm.classId === classId);
+    if (existing) {
+      if (lecturerId === "") {
+        // Remove assignment
+        const { error } = await supabase.from("lecturer_modules").delete().eq("id", existing.id);
+        if (error) toast(error.message, "error");
+        else { toast("Assignment removed", "success"); reloadDb(); }
+      } else {
+        const { error } = await supabase.from("lecturer_modules").update({ lecturer_id: lecturerId }).eq("id", existing.id);
+        if (error) toast(error.message, "error");
+        else { toast("Lecturer updated", "success"); reloadDb(); }
+      }
+    } else if (lecturerId !== "") {
+      const { error } = await supabase.from("lecturer_modules").insert({
+        id: "lm_" + Date.now() + "_" + moduleId,
+        lecturer_id: lecturerId,
+        module_id: moduleId,
+        class_id: classId,
+      });
+      if (error) toast(error.message, "error");
+      else { toast("Lecturer assigned", "success"); reloadDb(); }
+    }
+    setSaving(null);
+  };
+
+  return (
+    <div style={{ background: "var(--bg2)", borderRadius: 8, padding: 16, marginTop: 12 }}>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 12 }}>
+        <div style={{ fontWeight: 700, fontSize: 14 }}>Module Lecturers</div>
+        <button className="btn btn-outline btn-sm" onClick={onClose}>Close</button>
+      </div>
+      {classModules.length === 0 ? (
+        <div style={{ color: "var(--text2)", fontSize: 13 }}>No modules assigned to this class yet.</div>
+      ) : (
+        <table style={{ width: "100%", borderCollapse: "collapse" }}>
+          <thead>
+            <tr style={{ borderBottom: "1px solid var(--border)" }}>
+              <th style={{ textAlign: "left", padding: "6px 8px", fontSize: 12 }}>Module</th>
+              <th style={{ textAlign: "left", padding: "6px 8px", fontSize: 12 }}>Lecturer</th>
+            </tr>
+          </thead>
+          <tbody>
+            {classModules.map((mod) => (
+              <tr key={mod.id} style={{ borderBottom: "1px solid var(--border)" }}>
+                <td style={{ padding: "6px 8px", fontSize: 13 }}>
+                  <div style={{ fontWeight: 600 }}>{mod.name}</div>
+                  <div style={{ fontSize: 11, color: "var(--text2)" }}>{mod.code}</div>
+                </td>
+                <td style={{ padding: "6px 8px" }}>
+                  <select
+                    className="form-select"
+                    value={getLecturerId(mod.id)}
+                    disabled={saving === mod.id}
+                    onChange={(e) => handleAssign(mod.id, e.target.value)}
+                    style={{ fontSize: 12, minWidth: 180 }}
+                  >
+                    <option value="">— Unassigned —</option>
+                    {lecturers.map((l) => (
+                      <option key={l.id} value={l.id}>{l.name}</option>
+                    ))}
+                  </select>
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      )}
+    </div>
+  );
+}
+
 export default function ClassesPage() {
   const { db, currentUser, toast, showModal, closeModal, reloadDb } = useApp();
   const isAdmin = currentUser?.role === "admin";
   const [syncing, setSyncing] = useState(false);
+  const [openPanelId, setOpenPanelId] = useState<string | null>(null);
 
   const syncAllModules = async () => {
     setSyncing(true);
@@ -51,7 +132,6 @@ export default function ClassesPage() {
       year = cls.year,
       semester = cls.semester,
       calYear = cls.calYear,
-      lecturer = cls.lecturer,
       division = cls.division;
 
     showModal(
@@ -109,10 +189,6 @@ export default function ClassesPage() {
             <input className="form-input" defaultValue={division} onChange={(e) => (division = e.target.value)} />
           </div>
         </div>
-        <div className="form-group">
-          <label>Lecturer</label>
-          <input className="form-input" defaultValue={lecturer} onChange={(e) => (lecturer = e.target.value)} />
-        </div>
         <button
           className="btn btn-primary"
           style={{ marginTop: 12 }}
@@ -123,25 +199,15 @@ export default function ClassesPage() {
             }
             const { error } = await supabase
               .from("classes")
-              .update({
-                name,
-                programme,
-                year,
-                semester,
-                cal_year: calYear,
-                lecturer,
-                division,
-              })
+              .update({ name, programme, year, semester, cal_year: calYear, division })
               .eq("id", clsId);
             if (error) {
               toast(error.message, "error");
               return;
             }
-            // If programme/year/semester changed, update students and re-sync modules
             if (programme !== cls.programme) {
               await supabase.from("students").update({ programme }).eq("class_id", clsId);
             }
-            // Always re-sync modules from programme_modules
             await syncModulesForClass(clsId, programme, year, semester);
             toast("Class updated successfully!", "success");
             closeModal();
@@ -160,7 +226,6 @@ export default function ClassesPage() {
       year = 1,
       semester = 1,
       calYear = new Date().getFullYear(),
-      lecturer = "",
       division = "";
 
     showModal(
@@ -234,14 +299,6 @@ export default function ClassesPage() {
             />
           </div>
         </div>
-        <div className="form-group">
-          <label>Class Lecturer</label>
-          <input
-            className="form-input"
-            placeholder="Lecturer full name"
-            onChange={(e) => (lecturer = e.target.value)}
-          />
-        </div>
         <button
           className="btn btn-primary"
           style={{ marginTop: 12 }}
@@ -258,14 +315,12 @@ export default function ClassesPage() {
               year,
               semester,
               cal_year: calYear,
-              lecturer,
               division,
             });
             if (error) {
               toast(error.message, "error");
               return;
             }
-            // Auto-assign modules from programme_modules for this programme/year/semester
             await syncModulesForClass(newId, programme, year, semester);
             toast("Class created successfully!", "success");
             closeModal();
@@ -302,7 +357,7 @@ export default function ClassesPage() {
                 <th>Type</th>
                 <th>Year/Sem</th>
                 <th>Cal Year</th>
-                <th>Lecturer</th>
+                <th>Lecturers</th>
                 <th>Students</th>
                 <th>Status</th>
                 {isAdmin && <th>Actions</th>}
@@ -312,36 +367,54 @@ export default function ClassesPage() {
               {db.classes.map((cls) => {
                 const prog = db.config.programmes.find((p) => p.id === cls.programme);
                 const studCount = db.students.filter((s) => s.classId === cls.id).length;
+                const classLecturers = [...new Set(
+                  db.lecturerModules
+                    .filter((lm) => lm.classId === cls.id)
+                    .map((lm) => db.users.find((u) => u.id === lm.lecturerId)?.name)
+                    .filter(Boolean) as string[]
+                )];
                 return (
-                  <tr key={cls.id}>
-                    <td className="td-name">{cls.name}</td>
-                    <td>{prog?.type}</td>
-                    <td>
-                      Year {cls.year} · Sem {cls.semester}
-                    </td>
-                    <td>{cls.calYear}</td>
-                    <td>{cls.lecturer}</td>
-                    <td style={{ fontFamily: "'JetBrains Mono',monospace" }}>{studCount}</td>
-                    <td>
-                      <span className="badge badge-active">Active</span>
-                    </td>
-                    {isAdmin && (
-                      <td>
-                        <div style={{ display: "flex", gap: 4 }}>
-                          <button className="btn btn-outline btn-sm" onClick={() => showEditClass(cls.id)}>
-                            <i className="fa-solid fa-pen" /> Edit
-                          </button>
-                          <button className="btn btn-danger btn-sm" onClick={async () => {
-                            if (!confirm(`Delete class "${cls.name}"? This cannot be undone.`)) return;
-                            const { error } = await supabase.from("classes").delete().eq("id", cls.id);
-                            if (error) { toast(error.message, "error"); } else { toast("Class deleted", "success"); reloadDb(); }
-                          }}>
-                            <i className="fa-solid fa-trash" />
-                          </button>
-                        </div>
-                      </td>
+                  <>
+                    <tr key={cls.id}>
+                      <td className="td-name">{cls.name}</td>
+                      <td>{prog?.type}</td>
+                      <td>Year {cls.year} · Sem {cls.semester}</td>
+                      <td>{cls.calYear}</td>
+                      <td style={{ fontSize: 12 }}>{classLecturers.length > 0 ? classLecturers.join(", ") : <span style={{ color: "var(--text3)" }}>—</span>}</td>
+                      <td style={{ fontFamily: "'JetBrains Mono',monospace" }}>{studCount}</td>
+                      <td><span className="badge badge-active">Active</span></td>
+                      {isAdmin && (
+                        <td>
+                          <div style={{ display: "flex", gap: 4 }}>
+                            <button
+                              className="btn btn-outline btn-sm"
+                              onClick={() => setOpenPanelId(openPanelId === cls.id ? null : cls.id)}
+                              title="Assign module lecturers"
+                            >
+                              <i className="fa-solid fa-chalkboard-user" /> Lecturers
+                            </button>
+                            <button className="btn btn-outline btn-sm" onClick={() => showEditClass(cls.id)}>
+                              <i className="fa-solid fa-pen" /> Edit
+                            </button>
+                            <button className="btn btn-danger btn-sm" onClick={async () => {
+                              if (!confirm(`Delete class "${cls.name}"? This cannot be undone.`)) return;
+                              const { error } = await supabase.from("classes").delete().eq("id", cls.id);
+                              if (error) { toast(error.message, "error"); } else { toast("Class deleted", "success"); reloadDb(); }
+                            }}>
+                              <i className="fa-solid fa-trash" />
+                            </button>
+                          </div>
+                        </td>
+                      )}
+                    </tr>
+                    {openPanelId === cls.id && (
+                      <tr key={cls.id + "_panel"}>
+                        <td colSpan={isAdmin ? 8 : 7} style={{ padding: "0 8px 12px" }}>
+                          <ModuleAssignmentPanel classId={cls.id} onClose={() => setOpenPanelId(null)} />
+                        </td>
+                      </tr>
                     )}
-                  </tr>
+                  </>
                 );
               })}
             </tbody>

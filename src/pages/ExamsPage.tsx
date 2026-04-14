@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { useApp } from '@/context/AppContext';
 import { supabase } from '@/integrations/supabase/client';
+import { getLecturerClassIds, getLecturerModulesList } from '@/lib/lecturerHelpers';
 
 export default function ExamsPage() {
   const { db, currentUser, showModal, closeModal, toast, reloadDb } = useApp();
@@ -15,17 +16,16 @@ export default function ExamsPage() {
     exams = exams.filter(e => e.createdBy === currentUser?.id);
   }
 
-  const getLecturerModules = () => {
-    const lecClasses = db.classes.filter(c => c.lecturer === currentUser?.name).map(c => c.id);
-    return db.modules.filter(m => m.classes.some(cid => lecClasses.includes(cid)));
-  };
+  const getLecturerModules = () =>
+    getLecturerModulesList(db.lecturerModules, db.modules, currentUser?.id || '');
 
   const handleCreateExam = () => {
     const availableModules = isAdmin ? db.modules : getLecturerModules();
     let name = '', moduleId = availableModules[0]?.id || '', classId = '', date = '', type = 'Written Exam', startTime = '', endTime = '', room = '';
 
     const getClassesForModule = (mid: string) => {
-      const availableClasses = isAdmin ? db.classes : db.classes.filter(c => c.lecturer === currentUser?.name);
+      const lecClassIds = getLecturerClassIds(db.lecturerModules, currentUser?.id || '');
+      const availableClasses = isAdmin ? db.classes : db.classes.filter(c => lecClassIds.includes(c.id));
       const mod = db.modules.find(m => m.id === mid);
       const linked = mod ? availableClasses.filter(c => mod.classes.includes(c.id)) : [];
       return linked.length > 0 ? linked : availableClasses;
@@ -97,7 +97,8 @@ export default function ExamsPage() {
     let name = exam.name, moduleId = exam.moduleId, classId = exam.classId || '', date = exam.date || '', type = exam.type || 'Written Exam', startTime = exam.startTime || '', endTime = exam.endTime || '', room = exam.room || '';
 
     const getClassesForModule = (mid: string) => {
-      const availableClasses = isAdmin ? db.classes : db.classes.filter(c => c.lecturer === currentUser?.name);
+      const lecClassIds = getLecturerClassIds(db.lecturerModules, currentUser?.id || '');
+      const availableClasses = isAdmin ? db.classes : db.classes.filter(c => lecClassIds.includes(c.id));
       const mod = db.modules.find(m => m.id === mid);
       const linked = mod ? availableClasses.filter(c => mod.classes.includes(c.id)) : [];
       return linked.length > 0 ? linked : availableClasses;

@@ -2,6 +2,7 @@ import { useState } from "react";
 import { useApp } from "@/context/AppContext";
 import { calcModuleMark, grade, gradeColor } from "@/data/db";
 import { supabase } from "@/integrations/supabase/client";
+import { getLecturerClassIds } from "@/lib/lecturerHelpers";
 
 const SECTIONS = {
   personal: "Personal Details",
@@ -26,7 +27,7 @@ export default function StudentsPage() {
 
   let students = db.students;
   if (role === "lecturer") {
-    const myClasses = db.classes.filter((c) => c.lecturer === currentUser?.name).map((c) => c.id);
+    const myClasses = getLecturerClassIds(db.lecturerModules, currentUser?.id || '');
     students = students.filter((s) => myClasses.includes(s.classId));
   }
   if (role === "hod") {

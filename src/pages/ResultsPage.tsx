@@ -1,5 +1,6 @@
 import { useApp } from '@/context/AppContext';
 import { calcModuleMark, grade, gradeColor } from '@/data/db';
+import { getLecturerClassIds } from '@/lib/lecturerHelpers';
 
 export default function ResultsPage() {
   const { db, currentUser } = useApp();
@@ -26,8 +27,10 @@ export default function ResultsPage() {
   // Lecturer: only see marks for modules in their classes
   let marks = db.marks;
   if (role === 'lecturer') {
-    const lecClasses = db.classes.filter(c => c.lecturer === currentUser?.name).map(c => c.id);
-    const lecModuleIds = db.modules.filter(m => m.classes.some(cid => lecClasses.includes(cid))).map(m => m.id);
+    const lecClasses = getLecturerClassIds(db.lecturerModules, currentUser?.id || '');
+    const lecModuleIds = db.lecturerModules
+      .filter(lm => lm.lecturerId === (currentUser?.id || ''))
+      .map(lm => lm.moduleId);
     marks = marks.filter(m => lecModuleIds.includes(m.moduleId) && lecClasses.includes(m.classId));
   }
 

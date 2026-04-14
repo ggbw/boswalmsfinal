@@ -135,6 +135,14 @@ export interface Programme {
   type: string;
   startYear: number;
   level?: number;
+  intakeMonth?: number;
+}
+
+export interface LecturerModule {
+  id: string;
+  lecturerId: string;
+  moduleId: string;
+  classId: string;
 }
 export interface Term {
   id: string;
@@ -209,6 +217,7 @@ export interface DB {
   notifications: Notification[];
   admissionEnquiries: AdmissionEnquiry[];
   rooms: Room[];
+  lecturerModules: LecturerModule[];
 }
 
 export function createInitialDB(): DB {
@@ -1567,6 +1576,7 @@ export function createInitialDB(): DB {
       { id: "room004", name: "Lecture Room A", type: "Classroom", capacity: 30, notes: "" },
       { id: "room005", name: "Lecture Room B", type: "Classroom", capacity: 30, notes: "" },
     ],
+    lecturerModules: [],
   };
 
   // Seed attendance

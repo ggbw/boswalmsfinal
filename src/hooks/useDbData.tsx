@@ -19,6 +19,7 @@ export function useDbData() {
         studentsRes,
         notificationsRes,
         roomsRes,
+        lecturerModulesRes,
       ] = await Promise.all([
         supabase.from("school_config").select("*").single(),
         supabase.from("programmes").select("*"),
@@ -29,6 +30,7 @@ export function useDbData() {
         supabase.from("students").select("id,student_id,name,gender,dob,mobile,class_id,guardian,programme,year,semester,status,email,progression_status,national_id,nationality,guardian_email,guardian_mobile,enrolment_date,completion_date"),
         supabase.from("notifications").select("*").order("date", { ascending: false }).limit(50),
         supabase.from("rooms").select("*"),
+        supabase.from("lecturer_modules").select("id,lecturer_id,module_id,class_id"),
       ]);
 
       const moduleClassMap: Record<string, string[]> = {};
@@ -112,6 +114,9 @@ export function useDbData() {
           nationalId: s.national_id || "", nationality: s.nationality || "",
           guardianEmail: s.guardian_email || "", guardianMobile: s.guardian_mobile || "",
           enrolmentDate: s.enrolment_date || "", completionDate: s.completion_date || "",
+        })),
+        lecturerModules: (lecturerModulesRes.data || []).map((lm: any) => ({
+          id: lm.id, lecturerId: lm.lecturer_id, moduleId: lm.module_id, classId: lm.class_id,
         })),
         // placeholders — filled in by background load
         marks: [], attendance: [], studentModules: [], exams: [],

@@ -1,5 +1,6 @@
 import { useApp } from "@/context/AppContext";
 import { calcModuleMark, grade, gradeColor } from "@/data/db";
+import { getLecturerForModuleClass } from "@/lib/lecturerHelpers";
 
 export default function MyModulesPage() {
   const { db, currentUser } = useApp();
@@ -47,9 +48,15 @@ export default function MyModulesPage() {
     : null;
 
   const getLecturer = (mod: (typeof currentMods)[0]) => {
-    const modClasses = db.classes.filter((c) => mod.classes.includes(c.id));
-    const lecturers = [...new Set(modClasses.map((c) => c.lecturer).filter(Boolean))];
-    return lecturers.join(", ") || "—";
+    // Find all lecturers assigned to this module across its classes
+    const lecturerIds = [...new Set(
+      mod.classes.flatMap(cid => {
+        const lmEntry = db.lecturerModules.find(lm => lm.moduleId === mod.id && lm.classId === cid);
+        return lmEntry ? [lmEntry.lecturerId] : [];
+      })
+    )];
+    const lecturerNames = lecturerIds.map(lid => db.users.find(u => u.id === lid)?.name).filter(Boolean);
+    return lecturerNames.join(", ") || "—";
   };
 
   const renderModuleCard = (m: (typeof currentMods)[0], isPast: boolean) => {

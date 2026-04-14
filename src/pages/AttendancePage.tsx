@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { useApp } from '@/context/AppContext';
 import { supabase } from '@/integrations/supabase/client';
+import { getLecturerClasses } from '@/lib/lecturerHelpers';
 
 export default function AttendancePage() {
   const { db, setDb, toast, currentUser } = useApp();
@@ -9,7 +10,7 @@ export default function AttendancePage() {
   // Admin sees all classes; HOD/HOA/Lecturer see only classes they teach
   const availableClasses = role === 'admin'
     ? db.classes
-    : db.classes.filter(c => c.lecturer === currentUser?.name);
+    : getLecturerClasses(db.lecturerModules, db.classes, currentUser?.id || '');
 
   const [attClass, setAttClass] = useState(availableClasses[0]?.id || '');
   const [attDate, setAttDate] = useState(new Date().toISOString().split('T')[0]);

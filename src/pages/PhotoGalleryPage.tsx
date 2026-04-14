@@ -2,6 +2,7 @@ import { useState, useEffect, useMemo, useRef } from "react";
 import { useApp } from "@/context/AppContext";
 import { supabase } from "@/integrations/supabase/client";
 import { compressImage, createThumbnail } from "@/lib/imageCompression";
+import { getLecturerClassIds } from "@/lib/lecturerHelpers";
 
 type ViewMode = "folders" | "student";
 
@@ -94,8 +95,8 @@ export default function PhotoGalleryPage() {
   // Scope: lecturers see only their own classes; admin/hod/hoy see all
   const allowedClassIds = useMemo(() => {
     if (role !== "lecturer") return null;
-    return db.classes.filter((c) => c.lecturer === currentUser?.name).map((c) => c.id);
-  }, [role, db.classes, currentUser]);
+    return getLecturerClassIds(db.lecturerModules, currentUser?.id || '');
+  }, [role, db.lecturerModules, currentUser]);
 
   const visibleClasses = allowedClassIds ? db.classes.filter((c) => allowedClassIds.includes(c.id)) : db.classes;
 

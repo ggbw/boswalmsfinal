@@ -1,6 +1,7 @@
 import { useState, useEffect, useRef } from "react";
 import { useApp } from "@/context/AppContext";
 import { supabase } from "@/integrations/supabase/client";
+import { getLecturerClassIds } from "@/lib/lecturerHelpers";
 
 /*
   SUPABASE SETUP REQUIRED:
@@ -45,7 +46,7 @@ export default function NotesPage() {
       return db.modules.filter((m) => m.classes.includes(stu.classId));
     }
     if (role === "lecturer") {
-      const lecClassIds = db.classes.filter((c) => c.lecturer === currentUser?.name).map((c) => c.id);
+      const lecClassIds = getLecturerClassIds(db.lecturerModules, currentUser?.id || '');
       return db.modules.filter((m) => m.classes.some((cid) => lecClassIds.includes(cid)));
     }
     return db.modules;

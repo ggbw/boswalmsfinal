@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback } from "react";
 import { useApp } from "@/context/AppContext";
 import { supabase } from "@/integrations/supabase/client";
+import { getLecturerClasses, getLecturerModulesList } from "@/lib/lecturerHelpers";
 
 interface FacultyRow {
   user_id: string;
@@ -407,35 +408,58 @@ export default function LecturersPage() {
           </PanelSection>
 
           {/* Assigned modules */}
-          <AssignedModules lecturerName={selected.name} />
+          <AssignedModules lecturerId={selected.id} />
         </div>
       )}
     </div>
   );
 }
 
-function AssignedModules({ lecturerName }: { lecturerName: string }) {
+function AssignedModules({ lecturerId }: { lecturerId: string }) {
   const { db } = useApp();
-  const assignedClasses = db.classes.filter((c: any) => c.lecturer === lecturerName);
-  if (assignedClasses.length === 0) return null;
+  const assignedClasses = getLecturerClasses(db.lecturerModules, db.classes, lecturerId);
+  const assignedModules = getLecturerModulesList(db.lecturerModules, db.modules, lecturerId);
+  if (assignedClasses.length === 0 && assignedModules.length === 0) return null;
 
   return (
-    <PanelSection title="Assigned Classes">
-      {assignedClasses.map((c: any) => {
-        const prog = db.config.programmes.find((p: any) => p.id === c.programme);
-        return (
-          <div
-            key={c.id}
-            style={{ gridColumn: "1/-1", background: "var(--bg2)", borderRadius: 6, padding: "8px 12px", fontSize: 13 }}
-          >
-            <div style={{ fontWeight: 600 }}>{c.name}</div>
-            <div style={{ color: "var(--text2)", fontSize: 11, marginTop: 2 }}>
-              {prog?.name || "—"} · Year {c.year} · Sem {c.semester}
-            </div>
-          </div>
-        );
-      })}
-    </PanelSection>
+    <>
+      {assignedModules.length > 0 && (
+        <PanelSection title="Assigned Modules">
+          {assignedModules.map((m: any) => {
+            const dept = db.departments.find((d: any) => d.id === m.dept);
+            return (
+              <div
+                key={m.id}
+                style={{ gridColumn: "1/-1", background: "var(--bg2)", borderRadius: 6, padding: "8px 12px", fontSize: 13 }}
+              >
+                <div style={{ fontWeight: 600 }}>{m.name}</div>
+                <div style={{ color: "var(--text2)", fontSize: 11, marginTop: 2 }}>
+                  {m.code} · {dept?.name || "—"}
+                </div>
+              </div>
+            );
+          })}
+        </PanelSection>
+      )}
+      {assignedClasses.length > 0 && (
+        <PanelSection title="Classes Taught In">
+          {assignedClasses.map((c: any) => {
+            const prog = db.config.programmes.find((p: any) => p.id === c.programme);
+            return (
+              <div
+                key={c.id}
+                style={{ gridColumn: "1/-1", background: "var(--bg2)", borderRadius: 6, padding: "8px 12px", fontSize: 13 }}
+              >
+                <div style={{ fontWeight: 600 }}>{c.name}</div>
+                <div style={{ color: "var(--text2)", fontSize: 11, marginTop: 2 }}>
+                  {prog?.name || "—"} · Year {c.year} · Sem {c.semester}
+                </div>
+              </div>
+            );
+          })}
+        </PanelSection>
+      )}
+    </>
   );
 }
 
