@@ -20,6 +20,8 @@ export function useDbData() {
         notificationsRes,
         roomsRes,
         lecturerModulesRes,
+        profilesRes,
+        userRolesRes,
       ] = await Promise.all([
         supabase.from("school_config").select("*").single(),
         supabase.from("programmes").select("*"),
@@ -31,6 +33,8 @@ export function useDbData() {
         supabase.from("notifications").select("*").order("date", { ascending: false }).limit(50),
         supabase.from("rooms").select("*"),
         supabase.from("lecturer_modules").select("id,lecturer_id,module_id,class_id"),
+        supabase.from("profiles").select("user_id,name,email,dept,code,student_id"),
+        supabase.from("user_roles").select("user_id,role"),
       ]);
 
       const moduleClassMap: Record<string, string[]> = {};
@@ -94,7 +98,16 @@ export function useDbData() {
         departments: (departmentsRes.data || []).map((d: any) => ({
           id: d.id, name: d.name, hod: d.hod || "",
         })),
-        users: [],
+        users: (() => {
+          const roleMap: Record<string, string> = {};
+          (userRolesRes.data || []).forEach((r: any) => { roleMap[r.user_id] = r.role; });
+          return (profilesRes.data || []).map((p: any) => ({
+            id: p.user_id, username: p.email || "", password: "",
+            role: roleMap[p.user_id] || "", name: p.name || "",
+            changed: false, email: p.email || "", dept: p.dept || "",
+            code: p.code || "", studentId: p.student_id || "",
+          }));
+        })(),
         classes: (classesRes.data || []).map((c: any) => ({
           id: c.id, name: c.name, programme: c.programme || "",
           year: c.year, semester: c.semester, calYear: c.cal_year,

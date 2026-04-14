@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, Fragment } from "react";
 import { useApp } from "@/context/AppContext";
 import { supabase } from "@/integrations/supabase/client";
 
@@ -374,8 +374,8 @@ export default function ClassesPage() {
                     .filter(Boolean) as string[]
                 )];
                 return (
-                  <>
-                    <tr key={cls.id}>
+                  <Fragment key={cls.id}>
+                    <tr>
                       <td className="td-name">{cls.name}</td>
                       <td>{prog?.type}</td>
                       <td>Year {cls.year} · Sem {cls.semester}</td>
@@ -408,13 +408,13 @@ export default function ClassesPage() {
                       )}
                     </tr>
                     {openPanelId === cls.id && (
-                      <tr key={cls.id + "_panel"}>
+                      <tr>
                         <td colSpan={isAdmin ? 8 : 7} style={{ padding: "0 8px 12px" }}>
                           <ModuleAssignmentPanel classId={cls.id} onClose={() => setOpenPanelId(null)} />
                         </td>
                       </tr>
                     )}
-                  </>
+                  </Fragment>
                 );
               })}
             </tbody>

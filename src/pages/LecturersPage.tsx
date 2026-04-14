@@ -408,7 +408,7 @@ export default function LecturersPage() {
           </PanelSection>
 
           {/* Assigned modules */}
-          <AssignedModules lecturerId={selected.id} />
+          <AssignedModules lecturerId={selected.user_id} />
         </div>
       )}
     </div>
