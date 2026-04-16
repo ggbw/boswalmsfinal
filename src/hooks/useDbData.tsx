@@ -214,6 +214,7 @@ export function useDbData() {
           timetable: (timetableRes.data || []).map((t: any) => ({
             id: t.id, classId: t.class_id || "", day: t.day,
             time: t.time, moduleId: t.module_id || "", room: t.room || "",
+            date: t.date || "", sessionId: t.session_id || "",
           })),
           admissionEnquiries: (admissionRes.data || []).map((a: any) => ({
             id: a.id, name: a.name, programme: a.programme || "",

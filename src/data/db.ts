@@ -158,6 +158,8 @@ export interface TimetableSlot {
   time: string;
   moduleId: string;
   room: string;
+  date?: string;       // specific calendar date (optional; recurring when absent)
+  sessionId?: string;  // shared across rows for multi-class combined slots
 }
 export interface AdmissionEnquiry {
   id: string;

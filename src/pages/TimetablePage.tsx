@@ -460,18 +460,23 @@ export default function TimetablePage() {
     roomName: string,
     day: string,
     time: string,
-    excludeId?: string,
+    moduleId?: string,
+    excludeSessionId?: string,
   ): ConflictResult | null => {
-    const others = db.timetable.filter((t) => t.day === day && t.id !== excludeId);
+    const others = db.timetable.filter((t) =>
+      t.day === day && (!excludeSessionId || t.sessionId !== excludeSessionId)
+    );
 
-    // 1. Room double-booking (any overlap)
+    // 1. Room double-booking — only a conflict if DIFFERENT module
     if (roomName) {
-      const roomConflict = others.find((t) => t.room === roomName && timesOverlap(t.time, time));
+      const roomConflict = others.find((t) =>
+        t.room === roomName && timesOverlap(t.time, time) && (!moduleId || t.moduleId !== moduleId)
+      );
       if (roomConflict) {
         const cls = db.classes.find((c) => c.id === roomConflict.classId);
         return {
           type: "room",
-          message: `Room "${roomName}" is already booked on ${day} at ${roomConflict.time} for ${cls?.name || "another class"}.`,
+          message: `Room "${roomName}" is already booked on ${day} at ${roomConflict.time} for ${cls?.name || "another class"} (different module).`,
         };
       }
     }
@@ -490,46 +495,43 @@ export default function TimetablePage() {
   };
 
   const handleAddSlot = () => {
-    let classId = db.classes[0]?.id || "";
-    let day = "Monday",
-      time = "08:00-10:00";
+    let classIds: string[] = db.classes[0] ? [db.classes[0].id] : [];
+    let day = "Monday", time = "08:00-10:00";
     let moduleId = db.modules[0]?.id || "";
-    let roomName = "";
+    let roomName = "", date = "";
 
     showModal(
       "Add Timetable Slot",
       <TimetableForm
         db={db}
         days={days}
-        initialValues={{ classId, day, time, moduleId, roomName }}
-        onChange={(v) => {
-          classId = v.classId;
-          day = v.day;
-          time = v.time;
-          moduleId = v.moduleId;
-          roomName = v.roomName;
-        }}
+        initialValues={{ classIds, day, time, moduleId, roomName, date }}
+        onChange={(v) => { classIds = v.classIds; day = v.day; time = v.time; moduleId = v.moduleId; roomName = v.roomName; date = v.date; }}
         onSubmit={async () => {
-          if (!classId || !day || !time || !moduleId) {
-            toast("All required fields must be filled", "error");
+          if (!classIds.length || !day || !time || !moduleId) {
+            toast("Select at least one class, day, time and module", "error");
             return;
           }
-          const conflict = checkConflicts(classId, roomName, day, time);
-          if (conflict) {
-            toast(`⚠️ ${conflict.type === "class" ? "Class" : "Room"} double booking: ${conflict.message}`, "error");
-            await sendDoubleBookingNotification(conflict.message, "addition");
-            return;
+          const sessionId = classIds.length > 1 ? "sess_" + Date.now() : null;
+          const errors: string[] = [];
+          for (const cid of classIds) {
+            const conflict = checkConflicts(cid, roomName, day, time, moduleId);
+            if (conflict) {
+              toast(`⚠️ ${conflict.message}`, "error");
+              await sendDoubleBookingNotification(conflict.message, "addition");
+              return;
+            }
+            const { error } = await supabase.from("timetable").insert({
+              id: "tt_" + Date.now() + "_" + cid,
+              class_id: cid, day, time, module_id: moduleId,
+              room: roomName || "", date: date || null,
+              session_id: sessionId,
+            });
+            if (error) errors.push(cid);
           }
-          const id = "tt_" + Date.now();
-          const { error } = await supabase
-            .from("timetable")
-            .insert({ id, class_id: classId, day, time, module_id: moduleId, room: roomName || "" });
-          if (error) {
-            toast(error.message, "error");
-          } else {
-            toast("Slot added!", "success");
-            closeModal();
-            reloadDb();
+          if (errors.length) { toast("Some slots could not be saved", "error"); } else {
+            toast(classIds.length > 1 ? `Combined slot added for ${classIds.length} classes!` : "Slot added!", "success");
+            closeModal(); reloadDb();
           }
         }}
         submitLabel="Add Slot"
@@ -538,55 +540,55 @@ export default function TimetablePage() {
   };
 
   const handleEditSlot = (slot: (typeof slots)[0]) => {
-    let classId = slot.classId,
-      day = slot.day,
-      time = slot.time,
-      moduleId = slot.moduleId,
-      roomName = slot.room;
+    // If this slot has a session_id, collect all sibling class IDs
+    const siblingIds = slot.sessionId
+      ? db.timetable.filter(t => t.sessionId === slot.sessionId).map(t => t.classId)
+      : [slot.classId];
+
+    let classIds: string[] = siblingIds;
+    let day = slot.day, time = slot.time, moduleId = slot.moduleId;
+    let roomName = slot.room, date = slot.date || "";
 
     showModal(
       "Edit Timetable Slot",
       <TimetableForm
         db={db}
         days={days}
-        initialValues={{ classId, day, time, moduleId, roomName }}
-        onChange={(v) => {
-          classId = v.classId;
-          day = v.day;
-          time = v.time;
-          moduleId = v.moduleId;
-          roomName = v.roomName;
-        }}
+        initialValues={{ classIds, day, time, moduleId, roomName, date, sessionId: slot.sessionId } as any}
+        onChange={(v) => { classIds = v.classIds; day = v.day; time = v.time; moduleId = v.moduleId; roomName = v.roomName; date = v.date; }}
         onSubmit={async () => {
-          const conflict = checkConflicts(classId, roomName, day, time, slot.id);
-          if (conflict) {
-            toast(`⚠️ ${conflict.type === "class" ? "Class" : "Room"} double booking: ${conflict.message}`, "error");
-            await sendDoubleBookingNotification(conflict.message, "edit");
-            return;
+          // Delete all old sibling rows then re-insert
+          const idsToDelete = slot.sessionId
+            ? db.timetable.filter(t => t.sessionId === slot.sessionId).map(t => t.id)
+            : [slot.id];
+          for (const did of idsToDelete) {
+            await supabase.from("timetable").delete().eq("id", did);
           }
-          const { error } = await supabase
-            .from("timetable")
-            .update({ class_id: classId, day, time, module_id: moduleId, room: roomName })
-            .eq("id", slot.id);
-          if (error) {
-            toast(error.message, "error");
-          } else {
-            toast("Slot updated!", "success");
-            closeModal();
-            reloadDb();
+          const sessionId = classIds.length > 1 ? (slot.sessionId || "sess_" + Date.now()) : null;
+          const errors: string[] = [];
+          for (const cid of classIds) {
+            const { error } = await supabase.from("timetable").insert({
+              id: "tt_" + Date.now() + "_" + cid,
+              class_id: cid, day, time, module_id: moduleId,
+              room: roomName || "", date: date || null,
+              session_id: sessionId,
+            });
+            if (error) errors.push(cid);
+          }
+          if (errors.length) { toast("Some slots could not be saved", "error"); } else {
+            toast("Slot updated!", "success"); closeModal(); reloadDb();
           }
         }}
         submitLabel="Save Changes"
         onDelete={async () => {
-          if (!confirm("Delete this timetable slot?")) return;
-          const { error } = await supabase.from("timetable").delete().eq("id", slot.id);
-          if (error) {
-            toast(error.message, "error");
-          } else {
-            toast("Slot deleted", "success");
-            closeModal();
-            reloadDb();
+          if (!confirm(slot.sessionId ? "Delete this combined session (all classes)?" : "Delete this timetable slot?")) return;
+          const idsToDelete = slot.sessionId
+            ? db.timetable.filter(t => t.sessionId === slot.sessionId).map(t => t.id)
+            : [slot.id];
+          for (const did of idsToDelete) {
+            await supabase.from("timetable").delete().eq("id", did);
           }
+          toast("Slot deleted", "success"); closeModal(); reloadDb();
         }}
       />,
     );
@@ -613,7 +615,8 @@ export default function TimetablePage() {
         if (!ov(a.time, b.time)) return;
         const clsA = db.classes.find((c) => c.id === a.classId)?.name || a.classId;
         const clsB = db.classes.find((c) => c.id === b.classId)?.name || b.classId;
-        if (a.room && a.room === b.room) {
+        // Room conflict only if different module (same module = allowed shared session)
+        if (a.room && a.room === b.room && a.moduleId !== b.moduleId) {
           const k = `room|${a.room}|${a.day}|${a.id}|${b.id}`;
           if (!seenPairs.has(k)) { seenPairs.add(k); conflicts.push({ label: "Room conflict", detail: `"${a.room}" on ${a.day}: ${clsA} (${a.time}) vs ${clsB} (${b.time})` }); }
         }
@@ -726,7 +729,7 @@ export default function TimetablePage() {
               <table>
                 <thead>
                   <tr>
-                    <th>Day</th>
+                    <th>Day / Date</th>
                     <th>Time</th>
                     <th>Class</th>
                     <th>Module</th>
@@ -738,16 +741,36 @@ export default function TimetablePage() {
                 <tbody>
                   {days.map((day) => {
                     if (filterDay && filterDay !== day) return null;
+                    // De-duplicate: if filtering by class, still show shared-session sibling rows
                     const daySlots = slots.filter((t) => t.day === day).sort((a, b) => a.time.localeCompare(b.time));
                     if (!daySlots.length) return null;
+                    // Group shared sessions so we can show combined class names in one row
+                    const seenSessions = new Set<string>();
                     return daySlots.map((t, i) => {
-                      const cls = db.classes.find((c) => c.id === t.classId);
+                      // For shared sessions, only show the first occurrence; merge class names
+                      if (t.sessionId) {
+                        if (seenSessions.has(t.sessionId)) return null;
+                        seenSessions.add(t.sessionId);
+                      }
+                      const sharedSlots = t.sessionId
+                        ? db.timetable.filter(s => s.sessionId === t.sessionId)
+                        : [t];
+                      const classNames = sharedSlots
+                        .map(s => db.classes.find(c => c.id === s.classId)?.name)
+                        .filter(Boolean).join(" + ");
                       const mod = db.modules.find((m) => m.id === t.moduleId);
+                      const isShared = sharedSlots.length > 1;
                       return (
                         <tr key={t.id}>
-                          <td style={{ fontWeight: 600, color: "var(--accent)" }}>{i === 0 ? day : ""}</td>
+                          <td style={{ fontWeight: 600, color: "var(--accent)" }}>
+                            {i === 0 ? day : ""}
+                            {t.date && <div style={{ fontSize: 10, color: "var(--text2)", fontWeight: 400, marginTop: 1 }}>{t.date}</div>}
+                          </td>
                           <td style={{ fontFamily: "'JetBrains Mono',monospace", fontSize: 11, whiteSpace: "nowrap" }}>{t.time}</td>
-                          <td style={{ fontWeight: 600 }}>{cls?.name}</td>
+                          <td style={{ fontWeight: 600 }}>
+                            {classNames}
+                            {isShared && <span style={{ marginLeft: 5, fontSize: 10, background: "rgba(99,102,241,0.15)", color: "var(--accent)", borderRadius: 3, padding: "1px 5px" }}>combined</span>}
+                          </td>
                           <td>{mod?.name}</td>
                           <td style={{ fontSize: 11, color: "var(--text2)" }}>
                             {(() => { const lmId = getLecturerForModuleClass(db.lecturerModules, t.moduleId, t.classId); return lmId ? (db.users.find(u => u.id === lmId)?.name || "—") : "—"; })()}
@@ -881,8 +904,8 @@ function TimetableForm({
 }: {
   db: any;
   days: string[];
-  initialValues: { classId: string; day: string; time: string; moduleId: string; roomName: string };
-  onChange: (v: { classId: string; day: string; time: string; moduleId: string; roomName: string }) => void;
+  initialValues: { classIds: string[]; day: string; time: string; moduleId: string; roomName: string; date: string };
+  onChange: (v: { classIds: string[]; day: string; time: string; moduleId: string; roomName: string; date: string }) => void;
   onSubmit: () => void;
   submitLabel: string;
   onDelete?: () => void;
@@ -890,15 +913,13 @@ function TimetableForm({
   const [vals, setVals] = useState(initialValues);
   const [roomConflict, setRoomConflict] = useState<string | null>(null);
 
-  // Parse "HH:MM-HH:MM" → [startMins, endMins]
   const parseTime = (t: string): [number, number] | null => {
     const m = t.match(/^(\d{1,2}):(\d{2})\s*[-–]\s*(\d{1,2}):(\d{2})$/);
     if (!m) return null;
     return [parseInt(m[1]) * 60 + parseInt(m[2]), parseInt(m[3]) * 60 + parseInt(m[4])];
   };
   const overlaps = (a: string, b: string) => {
-    const ra = parseTime(a),
-      rb = parseTime(b);
+    const ra = parseTime(a), rb = parseTime(b);
     if (!ra || !rb) return a === b;
     return ra[0] < rb[1] && rb[0] < ra[1];
   };
@@ -908,25 +929,34 @@ function TimetableForm({
     setVals(next);
     onChange(next);
 
-    const excludeId = (initialValues as any).id;
-    const others = db.timetable.filter((t: any) => t.day === next.day && t.id !== excludeId);
+    const excludeSessionId = (initialValues as any).sessionId;
+    const others = db.timetable.filter((t: any) =>
+      t.day === next.day &&
+      (!excludeSessionId || t.session_id !== excludeSessionId)
+    );
 
-    // Room conflict
-    if (next.roomName) {
-      const rc = others.find((t: any) => t.room === next.roomName && next.time && overlaps(t.time, next.time));
+    // Room conflict — allowed if same module (shared lecture)
+    if (next.roomName && next.time) {
+      const rc = others.find((t: any) =>
+        t.room === next.roomName &&
+        overlaps(t.time, next.time) &&
+        t.moduleId !== next.moduleId  // only flag if DIFFERENT module
+      );
       if (rc) {
         const cls = db.classes.find((c: any) => c.id === rc.classId);
-        setRoomConflict(`Room "${next.roomName}" already booked at ${rc.time} for ${cls?.name || "another class"}.`);
+        setRoomConflict(`Room "${next.roomName}" already booked at ${rc.time} for ${cls?.name || "another class"} (different module).`);
         return;
       }
     }
 
-    // Class conflict
-    if (next.classId && next.time) {
-      const cc = others.find((t: any) => t.classId === next.classId && overlaps(t.time, next.time));
+    // Class double-booking — same class can't have two overlapping slots
+    for (const cid of next.classIds) {
+      if (!cid || !next.time) continue;
+      const cc = others.find((t: any) => t.classId === cid && overlaps(t.time, next.time));
       if (cc) {
+        const cls = db.classes.find((c: any) => c.id === cid);
         const mod = db.modules.find((m: any) => m.id === cc.moduleId);
-        setRoomConflict(`This class already has a slot at ${cc.time}${mod ? ` (${mod.name})` : ""}. Times overlap.`);
+        setRoomConflict(`${cls?.name || "A class"} already has a slot at ${cc.time}${mod ? ` (${mod.name})` : ""}. Times overlap.`);
         return;
       }
     }
@@ -935,88 +965,81 @@ function TimetableForm({
   };
 
   const rooms: any[] = db.rooms || [];
+  const toggleClass = (id: string) => {
+    const next = vals.classIds.includes(id)
+      ? vals.classIds.filter(c => c !== id)
+      : [...vals.classIds, id];
+    update({ classIds: next });
+  };
 
   return (
     <div>
-      <div className="form-row cols2">
-        <div className="form-group">
-          <label>Class *</label>
-          <select className="form-select" value={vals.classId} onChange={(e) => update({ classId: e.target.value })}>
-            {db.classes.map((c: any) => (
-              <option key={c.id} value={c.id}>
-                {c.name}
-              </option>
-            ))}
-          </select>
+      {/* Classes — multi-select checkboxes */}
+      <div className="form-group">
+        <label>Class(es) * <span style={{ fontWeight: 400, color: "var(--text2)", fontSize: 11 }}>— select multiple for a combined / shared session</span></label>
+        <div style={{ display: "flex", flexWrap: "wrap", gap: 6, marginTop: 4 }}>
+          {db.classes.map((c: any) => (
+            <label key={c.id} style={{ display: "flex", alignItems: "center", gap: 5, background: "var(--bg2)", borderRadius: 5, padding: "4px 10px", fontSize: 12, cursor: "pointer", border: vals.classIds.includes(c.id) ? "1.5px solid var(--accent)" : "1.5px solid var(--border)" }}>
+              <input type="checkbox" checked={vals.classIds.includes(c.id)} onChange={() => toggleClass(c.id)} style={{ accentColor: "var(--accent)" }} />
+              {c.name}
+            </label>
+          ))}
         </div>
+        {vals.classIds.length === 0 && <div style={{ fontSize: 11, color: "var(--danger)", marginTop: 4 }}>Select at least one class.</div>}
+      </div>
+
+      <div className="form-row cols2">
         <div className="form-group">
           <label>Day *</label>
           <select className="form-select" value={vals.day} onChange={(e) => update({ day: e.target.value })}>
             {days.map((d) => (
-              <option key={d} value={d}>
-                {d}
-              </option>
+              <option key={d} value={d}>{d}</option>
             ))}
           </select>
         </div>
+        <div className="form-group">
+          <label>Specific Date <span style={{ fontWeight: 400, color: "var(--text2)", fontSize: 11 }}>(optional — leave blank for recurring)</span></label>
+          <input
+            className="form-input"
+            type="date"
+            value={vals.date}
+            onChange={(e) => update({ date: e.target.value })}
+          />
+        </div>
       </div>
+
       <div className="form-row cols2">
         <div className="form-group">
-          <label>Time *</label>
+          <label>Time * <span style={{ fontWeight: 400, color: "var(--text2)", fontSize: 11 }}>e.g. 08:00-10:00</span></label>
           <input
             className="form-input"
             value={vals.time}
-            placeholder="e.g. 08:00-10:00"
+            placeholder="08:00-10:00"
             onChange={(e) => update({ time: e.target.value })}
           />
         </div>
         <div className="form-group">
           <label>Room</label>
           {rooms.length > 0 ? (
-            <select
-              className="form-select"
-              value={vals.roomName}
-              onChange={(e) => update({ roomName: e.target.value })}
-            >
+            <select className="form-select" value={vals.roomName} onChange={(e) => update({ roomName: e.target.value })}>
               <option value="">— No Room —</option>
               {rooms.map((r: any) => (
                 <option key={r.id} value={r.name}>
-                  {r.name} ({r.type}
-                  {r.capacity > 0 ? `, cap. ${r.capacity}` : ""})
+                  {r.name} ({r.type}{r.capacity > 0 ? `, cap. ${r.capacity}` : ""})
                 </option>
               ))}
             </select>
           ) : (
-            <input
-              className="form-input"
-              value={vals.roomName}
-              placeholder="Room / Lab"
-              onChange={(e) => update({ roomName: e.target.value })}
-            />
+            <input className="form-input" value={vals.roomName} placeholder="Room / Lab" onChange={(e) => update({ roomName: e.target.value })} />
           )}
         </div>
       </div>
 
       {/* Double-booking warning */}
       {roomConflict && (
-        <div
-          style={{
-            background: "rgba(220,38,38,0.12)",
-            border: "1px solid rgba(220,38,38,0.4)",
-            borderRadius: 6,
-            padding: "8px 12px",
-            marginBottom: 10,
-            fontSize: 12,
-            color: "#f87171",
-            display: "flex",
-            alignItems: "center",
-            gap: 8,
-          }}
-        >
+        <div style={{ background: "rgba(220,38,38,0.12)", border: "1px solid rgba(220,38,38,0.4)", borderRadius: 6, padding: "8px 12px", marginBottom: 10, fontSize: 12, color: "#f87171", display: "flex", alignItems: "center", gap: 8 }}>
           <i className="fa-solid fa-triangle-exclamation" />
-          <span>
-            <strong>Double booking:</strong> {roomConflict}
-          </span>
+          <span><strong>Conflict:</strong> {roomConflict}</span>
         </div>
       )}
 
@@ -1024,15 +1047,20 @@ function TimetableForm({
         <label>Module *</label>
         <select className="form-select" value={vals.moduleId} onChange={(e) => update({ moduleId: e.target.value })}>
           {db.modules.map((m: any) => (
-            <option key={m.id} value={m.id}>
-              {m.name}
-            </option>
+            <option key={m.id} value={m.id}>{m.name}</option>
           ))}
         </select>
       </div>
 
+      {vals.classIds.length > 1 && (
+        <div style={{ background: "rgba(99,102,241,0.08)", border: "1px solid rgba(99,102,241,0.3)", borderRadius: 6, padding: "7px 12px", fontSize: 12, color: "var(--accent)", marginBottom: 8 }}>
+          <i className="fa-solid fa-users" style={{ marginRight: 6 }} />
+          <strong>Combined session</strong> — {vals.classIds.length} classes will share this room and time slot for the same module.
+        </div>
+      )}
+
       <div style={{ display: "flex", gap: 8, marginTop: 12 }}>
-        <button className="btn btn-primary" onClick={onSubmit} disabled={!!roomConflict}>
+        <button className="btn btn-primary" onClick={onSubmit} disabled={!!roomConflict || vals.classIds.length === 0}>
           {submitLabel}
         </button>
         {onDelete && (
