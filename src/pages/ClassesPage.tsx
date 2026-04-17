@@ -24,9 +24,18 @@ async function syncModulesForClass(classId: string, programmeId: string, year: n
 // Panel to assign a lecturer to each module within a class
 function ModuleAssignmentPanel({ classId, onClose }: { classId: string; onClose: () => void }) {
   const { db, toast, reloadDb } = useApp();
-  const classModules = db.modules.filter((m) => m.classes.includes(classId));
   const lecturers = db.users.filter((u) => ["lecturer", "hod", "hoy"].includes(u.role));
   const [saving, setSaving] = useState<string | null>(null);
+
+  // Modules already linked to this class via module_classes
+  const linkedModuleIds = new Set(db.modules.filter((m) => m.classes.includes(classId)).map((m) => m.id));
+  // Show linked modules first, then any modules that have a lecturer assignment but aren't linked, then all others
+  const assignedModuleIds = new Set(db.lecturerModules.filter((lm) => lm.classId === classId).map((lm) => lm.moduleId));
+  const allModules = [...db.modules].sort((a, b) => {
+    const aLinked = linkedModuleIds.has(a.id) ? 0 : assignedModuleIds.has(a.id) ? 1 : 2;
+    const bLinked = linkedModuleIds.has(b.id) ? 0 : assignedModuleIds.has(b.id) ? 1 : 2;
+    return aLinked - bLinked || a.name.localeCompare(b.name);
+  });
 
   const getLecturerId = (moduleId: string) =>
     db.lecturerModules.find((lm) => lm.moduleId === moduleId && lm.classId === classId)?.lecturerId || "";
@@ -36,7 +45,6 @@ function ModuleAssignmentPanel({ classId, onClose }: { classId: string; onClose:
     const existing = db.lecturerModules.find((lm) => lm.moduleId === moduleId && lm.classId === classId);
     if (existing) {
       if (lecturerId === "") {
-        // Remove assignment
         const { error } = await supabase.from("lecturer_modules").delete().eq("id", existing.id);
         if (error) toast(error.message, "error");
         else { toast("Assignment removed", "success"); reloadDb(); }
@@ -60,26 +68,33 @@ function ModuleAssignmentPanel({ classId, onClose }: { classId: string; onClose:
 
   return (
     <div style={{ background: "var(--bg2)", borderRadius: 8, padding: 16, marginTop: 12 }}>
-      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 12 }}>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 8 }}>
         <div style={{ fontWeight: 700, fontSize: 14 }}>Module Lecturers</div>
         <button className="btn btn-outline btn-sm" onClick={onClose}>Close</button>
       </div>
-      {classModules.length === 0 ? (
-        <div style={{ color: "var(--text2)", fontSize: 13 }}>No modules assigned to this class yet.</div>
-      ) : (
-        <table style={{ width: "100%", borderCollapse: "collapse" }}>
-          <thead>
-            <tr style={{ borderBottom: "1px solid var(--border)" }}>
-              <th style={{ textAlign: "left", padding: "6px 8px", fontSize: 12 }}>Module</th>
-              <th style={{ textAlign: "left", padding: "6px 8px", fontSize: 12 }}>Lecturer</th>
-            </tr>
-          </thead>
-          <tbody>
-            {classModules.map((mod) => (
-              <tr key={mod.id} style={{ borderBottom: "1px solid var(--border)" }}>
+      {linkedModuleIds.size === 0 && (
+        <div style={{ fontSize: 11, color: "var(--text3)", marginBottom: 10, padding: "6px 8px", background: "var(--bg3)", borderRadius: 5 }}>
+          No modules synced to this class yet — showing all modules. Run <strong>Sync Modules</strong> to auto-link modules from the programme.
+        </div>
+      )}
+      <table style={{ width: "100%", borderCollapse: "collapse" }}>
+        <thead>
+          <tr style={{ borderBottom: "1px solid var(--border)" }}>
+            <th style={{ textAlign: "left", padding: "6px 8px", fontSize: 12 }}>Module</th>
+            <th style={{ textAlign: "left", padding: "6px 8px", fontSize: 12 }}>Lecturer</th>
+          </tr>
+        </thead>
+        <tbody>
+          {allModules.map((mod) => {
+            const isLinked = linkedModuleIds.has(mod.id);
+            return (
+              <tr key={mod.id} style={{ borderBottom: "1px solid var(--border)", opacity: isLinked || linkedModuleIds.size === 0 ? 1 : 0.5 }}>
                 <td style={{ padding: "6px 8px", fontSize: 13 }}>
                   <div style={{ fontWeight: 600 }}>{mod.name}</div>
-                  <div style={{ fontSize: 11, color: "var(--text2)" }}>{mod.code}</div>
+                  <div style={{ fontSize: 11, color: "var(--text2)" }}>
+                    {mod.code}
+                    {!isLinked && linkedModuleIds.size > 0 && <span style={{ marginLeft: 6, color: "var(--text3)" }}>(not in this class)</span>}
+                  </div>
                 </td>
                 <td style={{ padding: "6px 8px" }}>
                   <select
@@ -96,10 +111,10 @@ function ModuleAssignmentPanel({ classId, onClose }: { classId: string; onClose:
                   </select>
                 </td>
               </tr>
-            ))}
-          </tbody>
-        </table>
-      )}
+            );
+          })}
+        </tbody>
+      </table>
     </div>
   );
 }
