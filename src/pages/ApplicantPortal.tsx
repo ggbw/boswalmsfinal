@@ -349,7 +349,7 @@ function DownloadLetterBtn({ applicationId, type, progName }: { applicationId:st
       const html = type === 'offer'
         ? buildOfferHtml(applicant, prog, offerDate, logoAbsUrl, signatory)
         : type === 'welcome'
-        ? buildWelcomeHtml(applicant, enrollmentDate, logoAbsUrl, welcomeDates, welcomeSignatory)
+        ? buildWelcomeHtml(applicant, enrollmentDate, logoAbsUrl, welcomeDates, signatory)
         : buildRejectionHtml(applicant, prog, rejectionDate, appl.rejection_reason);
 
       // Open print window
@@ -402,6 +402,7 @@ function buildOfferHtml(applicant:any, prog:any, date:string, logoUrl:string, si
     .re-line{text-align:center;font-weight:700;color:#002060;font-size:13.5px;border-bottom:2px solid #C9A227;padding-bottom:6px;margin:20px 0}
     .sig-block{margin-top:50px}
     .sig-line{border-bottom:1px solid #333;width:200px;margin:30px 0 6px}
+    .sc{font-variant:small-caps}
     /* Footer */
     .footer{margin-top:40px;border-top:1px solid #ddd;padding-top:8px;display:flex;gap:18px;font-size:10px;color:#555;flex-wrap:wrap;justify-content:center}
     .bottom-bar{background:#002060;height:8px;width:100%;margin-top:14px}
@@ -425,13 +426,13 @@ function buildOfferHtml(applicant:any, prog:any, date:string, logoUrl:string, si
 
     <div class="body">
       <p>${date}</p>
-      <p>Att: <strong>${applicant.name}</strong><br>Cell: ${applicant.mobile || '—'}</p>
+      <p>Att: <strong><span class="sc">${applicant.name}</span></strong><br>Cell: ${applicant.mobile || '—'}</p>
       <br/>
-      <p><strong>Dear ${applicant.name}</strong></p>
+      <p><strong>Dear <span class="sc">${applicant.name}</span></strong></p>
 
       <div class="re-line">RE: &nbsp; ACCEPTANCE LETTER &ndash; ${(prog?.name || '').toUpperCase()}</div>
 
-      <p>It is with great pleasure to welcome you as a student at Bosswa Culinary Institute of Botswana based in Maun the gateway to the Okavango Delta. Congratulations on being accepted into our <strong>${prog?.name || '—'}</strong> program which is a ${durationText} program. This course commences on ${commenceDate} and ends on ${endDate}.</p>
+      <p>It is with great pleasure to welcome you as a student at Bosswa Culinary Institute of Botswana based in Maun the gateway to the Okavango Delta. Congratulations <span class="sc">${applicant.name}</span> on being accepted into our <strong>${prog?.name || '—'}</strong> program which is a ${durationText} program. This course commences on ${commenceDate} and ends on ${endDate}.</p>
 
       <p>Let us start off by thanking you for enrolling with us. We commit to giving you a culinary experience that will give you a culinary qualification that will be recognised internationally. Our lecturers are committed to parting with knowledge and experience that they have earned over many years of work in the industry.</p>
 
