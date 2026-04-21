@@ -1,4 +1,4 @@
-import { useState } from "react";
+import React, { useState } from "react";
 import { useApp } from "@/context/AppContext";
 import { supabase } from "@/integrations/supabase/client";
 import { getLecturerForModuleClass } from "@/lib/lecturerHelpers";
@@ -228,7 +228,10 @@ export default function TimetablePage() {
   const role = currentUser?.role;
   const [activeTab, setActiveTab] = useState<"timetable" | "exams">("timetable");
   const [filterCls, setFilterCls] = useState("");
-  const [filterDay, setFilterDay] = useState("");
+  const [filterMonth, setFilterMonth] = useState(() => {
+    const n = new Date();
+    return n.getFullYear() + '-' + String(n.getMonth()+1).padStart(2,'0');
+  });
   const days = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday"];
 
   const exportToExcel = () => {
@@ -279,81 +282,95 @@ export default function TimetablePage() {
 
   const printTimetable = () => {
     const logoUrl = window.location.origin + "/transcript_logo.png";
-    const allDays = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday"];
     const slotLecturerName = (moduleId: string, classId: string) => {
       const lmEntry = getLecturerForModuleClass(db.lecturerModules, moduleId, classId);
       return lmEntry ? (db.users.find(u => u.id === lmEntry)?.name || "—") : "—";
     };
 
-    // Build combined slots + exams per day
-    const examsByDay: Record<string, typeof db.exams> = {};
-    if (true) {
-      db.exams.forEach((e) => {
-        if (!e.date) return;
-        const d = new Date(e.date);
-        if (isNaN(d.getTime())) return;
-        const dayName = d.toLocaleDateString("en-GB", { weekday: "long" });
-        if (!examsByDay[dayName]) examsByDay[dayName] = [];
-        examsByDay[dayName].push(e);
-      });
-    }
+    // Index exams by ISO date
+    const examsByDate: Record<string, typeof db.exams> = {};
+    db.exams.forEach((e) => {
+      if (!e.date) return;
+      const iso = e.date.substring(0, 10);
+      if (!examsByDate[iso]) examsByDate[iso] = [];
+      examsByDate[iso].push(e);
+    });
 
     const filteredSlots = db.timetable.filter((t) => {
       if (filterCls && t.classId !== filterCls) return false;
-      if (filterDay && t.day !== filterDay) return false;
       return true;
     });
 
-    const daysToShow = filterDay ? [filterDay] : allDays;
+    // Generate every weekday in the selected month
+    const [yr, mo] = filterMonth.split('-').map(Number);
+    const daysInMonth = new Date(yr, mo, 0).getDate();
+    const weekdayNames = ["Monday","Tuesday","Wednesday","Thursday","Friday"];
+    const daySections: string[] = [];
 
-    const daySections = daysToShow
-      .map((day) => {
-        const daySlots = filteredSlots.filter((t) => t.day === day).sort((a, b) => a.time.localeCompare(b.time));
-        const dayExams = examsByDay[day] || [];
-        if (!daySlots.length && !dayExams.length) return "";
+    for (let d = 1; d <= daysInMonth; d++) {
+      const dateObj = new Date(yr, mo - 1, d);
+      const dayName = dateObj.toLocaleDateString('en-GB', { weekday: 'long' });
+      if (!weekdayNames.includes(dayName)) continue;
+      const isoDate = `${yr}-${String(mo).padStart(2,'0')}-${String(d).padStart(2,'0')}`;
 
-        const slotRows = daySlots
-          .map((t, i) => {
-            const cls = db.classes.find((c) => c.id === t.classId);
-            const mod = db.modules.find((m) => m.id === t.moduleId);
-            const bg = i % 2 === 0 ? "#f9fafb" : "#ffffff";
-            return `<tr style="background:${bg}">
+      // Recurring slots for this weekday + any one-off slots pinned to this date
+      const dateSlots = filteredSlots.filter(t => {
+        if (t.date) return t.date === isoDate;
+        return t.day === dayName;
+      }).sort((a, b) => a.time.localeCompare(b.time));
+
+      const dayExams = examsByDate[isoDate] || [];
+      if (!dateSlots.length && !dayExams.length) continue;
+
+      const dateLabel = dateObj.toLocaleDateString('en-GB', { weekday: 'long', day: 'numeric', month: 'long' });
+
+      const seenSessions = new Set<string>();
+      const slotRows = dateSlots.map((t, i) => {
+        if (t.sessionId) {
+          if (seenSessions.has(t.sessionId)) return '';
+          seenSessions.add(t.sessionId);
+        }
+        const sharedSlots = t.sessionId
+          ? db.timetable.filter(s => s.sessionId === t.sessionId)
+          : [t];
+        const classNames = sharedSlots
+          .map(s => db.classes.find(c => c.id === s.classId)?.name)
+          .filter(Boolean).join(" + ");
+        const mod = db.modules.find(m => m.id === t.moduleId);
+        const bg = i % 2 === 0 ? "#f9fafb" : "#ffffff";
+        return `<tr style="background:${bg}">
           <td style="padding:6px 10px;font-weight:600;color:#4f46e5">${t.time}</td>
-          <td style="padding:6px 10px;font-weight:600">${cls?.name || "—"}</td>
+          <td style="padding:6px 10px;font-weight:600">${classNames}</td>
           <td style="padding:6px 10px">${mod?.name || "—"}</td>
           <td style="padding:6px 10px;color:#6b7280">${slotLecturerName(t.moduleId, t.classId)}</td>
           <td style="padding:6px 10px">${t.room ? `<span style="background:#e0e7ff;border-radius:4px;padding:2px 8px;font-size:11px">${t.room}</span>` : "—"}</td>
           <td style="padding:6px 10px"><span style="background:#dcfce7;color:#166534;border-radius:4px;padding:2px 8px;font-size:11px;font-weight:600">Class</span></td>
         </tr>`;
-          })
-          .join("");
+      }).join('');
 
-        const examRows = dayExams
-          .map((e, i) => {
-            const cls = db.classes.find((c) => c.id === e.classId);
-            const mod = db.modules.find((m) => m.id === e.moduleId);
-            const dateStr = e.date ? new Date(e.date).toLocaleDateString("en-GB") : "—";
-            const bg = (daySlots.length + i) % 2 === 0 ? "#f9fafb" : "#ffffff";
-            return `<tr style="background:${bg}">
-          <td style="padding:6px 10px;font-weight:600;color:#dc2626">${dateStr}</td>
+      const examRows = dayExams.map((e, i) => {
+        const cls = db.classes.find(c => c.id === e.classId);
+        const mod = db.modules.find(m => m.id === e.moduleId);
+        const bg = (dateSlots.length + i) % 2 === 0 ? "#f9fafb" : "#ffffff";
+        return `<tr style="background:${bg}">
+          <td style="padding:6px 10px;font-weight:600;color:#dc2626">${e.startTime || '—'}</td>
           <td style="padding:6px 10px;font-weight:600">${cls?.name || "—"}</td>
           <td style="padding:6px 10px">${mod?.name || "—"} — ${e.name}</td>
           <td style="padding:6px 10px;color:#6b7280">—</td>
           <td style="padding:6px 10px">—</td>
           <td style="padding:6px 10px"><span style="background:#fee2e2;color:#dc2626;border-radius:4px;padding:2px 8px;font-size:11px;font-weight:600">EXAM</span></td>
         </tr>`;
-          })
-          .join("");
+      }).join('');
 
-        return `
+      daySections.push(`
         <div style="margin-bottom:20px">
           <div style="background:#002060;color:#fff;padding:7px 14px;font-weight:700;font-size:13px;border-radius:4px 4px 0 0;border-left:4px solid #C9A227">
-            ${day}
+            ${dateLabel}
           </div>
           <table style="width:100%;border-collapse:collapse;font-size:12px;border:1px solid #e5e7eb;border-top:none">
             <thead>
               <tr style="background:#f3f4f6">
-                <th style="padding:6px 10px;text-align:left;font-size:11px;color:#6b7280">Time / Date</th>
+                <th style="padding:6px 10px;text-align:left;font-size:11px;color:#6b7280">Time</th>
                 <th style="padding:6px 10px;text-align:left;font-size:11px;color:#6b7280">Class</th>
                 <th style="padding:6px 10px;text-align:left;font-size:11px;color:#6b7280">Module</th>
                 <th style="padding:6px 10px;text-align:left;font-size:11px;color:#6b7280">Lecturer</th>
@@ -363,16 +380,16 @@ export default function TimetablePage() {
             </thead>
             <tbody>${slotRows}${examRows}</tbody>
           </table>
-        </div>`;
-      })
-      .join("");
+        </div>`);
+    }
 
     const clsName = filterCls ? db.classes.find((c) => c.id === filterCls)?.name || "" : "All Classes";
+    const monthLabel = new Date(yr, mo - 1, 1).toLocaleDateString('en-GB', { month: 'long', year: 'numeric' });
     const html = `<!DOCTYPE html>
 <html>
 <head>
   <meta charset="UTF-8"/>
-  <title>Timetable — ${clsName}</title>
+  <title>Timetable — ${clsName} — ${monthLabel}</title>
   <style>
     * { margin:0; padding:0; box-sizing:border-box; }
     body { font-family: Arial, sans-serif; color:#000; background:#fff; padding:20px 30px; }
@@ -388,10 +405,10 @@ export default function TimetablePage() {
   <div style="background:#002060;color:#fff;padding:12px 20px;text-align:center;border-bottom:3px solid #C9A227;margin-bottom:16px;border-radius:6px">
     <div style="font-size:15px;font-weight:800;letter-spacing:0.5px">BOSSWA CULINARY INSTITUTE OF BOTSWANA</div>
     <div style="font-size:12px;color:#C9A227;margin-top:4px">
-      Class Timetable — ${clsName} &nbsp;·&nbsp; ${db.config.currentYear} &nbsp;·&nbsp; Semester ${db.config.currentSemester}
+      Class Timetable — ${clsName} &nbsp;·&nbsp; ${monthLabel} &nbsp;·&nbsp; Semester ${db.config.currentSemester}
     </div>
   </div>
-  ${dayEmpty(dayHasContent(daysToShow, filteredSlots, examsByDay)) ? `<div style="text-align:center;padding:40px;color:#999">No timetable entries found.</div>` : daySections}
+  ${daySections.length === 0 ? `<div style="text-align:center;padding:40px;color:#999">No timetable entries found for ${monthLabel}.</div>` : daySections.join('')}
   <div class="no-print" style="text-align:center;margin-top:24px">
     <button onclick="window.print()" style="background:#002060;color:#fff;border:none;padding:10px 28px;font-size:14px;border-radius:6px;cursor:pointer">🖨️ Print / Save as PDF</button>
   </div>
@@ -408,17 +425,8 @@ export default function TimetablePage() {
     win.document.close();
   };
 
-  // helpers for print
-  const dayHasContent = (
-    daysToShow: string[],
-    filteredSlots: typeof db.timetable,
-    examsByDay: Record<string, typeof db.exams>,
-  ) => daysToShow.some((d) => filteredSlots.some((t) => t.day === d) || (examsByDay[d] || []).length > 0);
-  const dayEmpty = (v: boolean) => !v;
-
   let slots = [...db.timetable];
   if (filterCls) slots = slots.filter((t) => t.classId === filterCls);
-  if (filterDay) slots = slots.filter((t) => t.day === filterDay);
 
   // Check if a room is already booked at the given day+time (excluding a specific slot id)
   // ── Double booking notification ────────────────────────────────────────────
@@ -714,12 +722,14 @@ export default function TimetablePage() {
                   ))}
                 </select>
               </div>
-              <div className="form-group" style={{ marginBottom: 0, minWidth: 140 }}>
-                <label style={{ fontSize: 11 }}>Day</label>
-                <select className="form-select" value={filterDay} onChange={(e) => setFilterDay(e.target.value)}>
-                  <option value="">All Days</option>
-                  {days.map((d) => <option key={d} value={d}>{d}</option>)}
-                </select>
+              <div className="form-group" style={{ marginBottom: 0, minWidth: 160 }}>
+                <label style={{ fontSize: 11 }}>Month</label>
+                <input
+                  className="form-input"
+                  type="month"
+                  value={filterMonth}
+                  onChange={(e) => setFilterMonth(e.target.value)}
+                />
               </div>
             </div>
           </div>
@@ -729,7 +739,7 @@ export default function TimetablePage() {
               <table>
                 <thead>
                   <tr>
-                    <th>Day / Date</th>
+                    <th>Date</th>
                     <th>Time</th>
                     <th>Class</th>
                     <th>Module</th>
@@ -739,64 +749,76 @@ export default function TimetablePage() {
                   </tr>
                 </thead>
                 <tbody>
-                  {days.map((day) => {
-                    if (filterDay && filterDay !== day) return null;
-                    // De-duplicate: if filtering by class, still show shared-session sibling rows
-                    const daySlots = slots.filter((t) => t.day === day).sort((a, b) => a.time.localeCompare(b.time));
-                    if (!daySlots.length) return null;
-                    // Group shared sessions so we can show combined class names in one row
-                    const seenSessions = new Set<string>();
-                    return daySlots.map((t, i) => {
-                      // For shared sessions, only show the first occurrence; merge class names
-                      if (t.sessionId) {
-                        if (seenSessions.has(t.sessionId)) return null;
-                        seenSessions.add(t.sessionId);
-                      }
-                      const sharedSlots = t.sessionId
-                        ? db.timetable.filter(s => s.sessionId === t.sessionId)
-                        : [t];
-                      const classNames = sharedSlots
-                        .map(s => db.classes.find(c => c.id === s.classId)?.name)
-                        .filter(Boolean).join(" + ");
-                      const mod = db.modules.find((m) => m.id === t.moduleId);
-                      const isShared = sharedSlots.length > 1;
-                      return (
-                        <tr key={t.id}>
-                          <td style={{ fontWeight: 600, color: "var(--accent)" }}>
-                            {i === 0 ? day : ""}
-                            {t.date && <div style={{ fontSize: 10, color: "var(--text2)", fontWeight: 400, marginTop: 1 }}>{t.date}</div>}
-                          </td>
-                          <td style={{ fontFamily: "'JetBrains Mono',monospace", fontSize: 11, whiteSpace: "nowrap" }}>{t.time}</td>
-                          <td style={{ fontWeight: 600 }}>
-                            {classNames}
-                            {isShared && <span style={{ marginLeft: 5, fontSize: 10, background: "rgba(99,102,241,0.15)", color: "var(--accent)", borderRadius: 3, padding: "1px 5px" }}>combined</span>}
-                          </td>
-                          <td>{mod?.name}</td>
-                          <td style={{ fontSize: 11, color: "var(--text2)" }}>
-                            {(() => { const lmId = getLecturerForModuleClass(db.lecturerModules, t.moduleId, t.classId); return lmId ? (db.users.find(u => u.id === lmId)?.name || "—") : "—"; })()}
-                          </td>
-                          <td>
-                            {t.room ? (
-                              <span style={{ background: "var(--surface2)", borderRadius: 4, padding: "2px 8px", fontSize: 11 }}>
-                                <i className="fa-solid fa-door-open" style={{ marginRight: 4, fontSize: 9, opacity: 0.7 }} />
-                                {t.room}
-                              </span>
-                            ) : <span style={{ color: "var(--text2)", fontSize: 11 }}>—</span>}
-                          </td>
-                          {role === "admin" && (
-                            <td>
-                              <button className="btn btn-outline btn-sm" onClick={() => handleEditSlot(t)}>
-                                <i className="fa-solid fa-pen" />
-                              </button>
+                  {(() => {
+                    const [yr, mo] = filterMonth.split('-').map(Number);
+                    const daysInMonth = new Date(yr, mo, 0).getDate();
+                    const allRows: React.ReactNode[] = [];
+                    for (let d = 1; d <= daysInMonth; d++) {
+                      const dateObj = new Date(yr, mo - 1, d);
+                      const dayName = dateObj.toLocaleDateString('en-GB', { weekday: 'long' });
+                      if (!days.includes(dayName)) continue;
+                      const isoDate = `${yr}-${String(mo).padStart(2,'0')}-${String(d).padStart(2,'0')}`;
+                      const dateSlots = slots.filter(t => {
+                        if (t.date) return t.date === isoDate;
+                        return t.day === dayName;
+                      }).sort((a, b) => a.time.localeCompare(b.time));
+                      if (!dateSlots.length) continue;
+                      const dateLabel = dateObj.toLocaleDateString('en-GB', { weekday: 'short', day: 'numeric', month: 'short' });
+                      const seenSessions = new Set<string>();
+                      let isFirst = true;
+                      for (const t of dateSlots) {
+                        if (t.sessionId) {
+                          if (seenSessions.has(t.sessionId)) continue;
+                          seenSessions.add(t.sessionId);
+                        }
+                        const sharedSlots = t.sessionId
+                          ? db.timetable.filter((s: any) => s.sessionId === t.sessionId)
+                          : [t];
+                        const classNames = sharedSlots
+                          .map((s: any) => db.classes.find((c: any) => c.id === s.classId)?.name)
+                          .filter(Boolean).join(" + ");
+                        const mod = db.modules.find((m: any) => m.id === t.moduleId);
+                        const isShared = sharedSlots.length > 1;
+                        const lmId = getLecturerForModuleClass(db.lecturerModules, t.moduleId, t.classId);
+                        allRows.push(
+                          <tr key={`${t.id}-${isoDate}`}>
+                            <td style={{ fontWeight: 600, color: "var(--accent)", whiteSpace: "nowrap" }}>
+                              {isFirst ? dateLabel : ""}
                             </td>
-                          )}
-                        </tr>
-                      );
-                    });
-                  })}
-                  {slots.length === 0 && (
-                    <tr><td colSpan={role === "admin" ? 7 : 6} style={{ textAlign: "center", color: "var(--text2)", padding: 32 }}>No timetable slots found.</td></tr>
-                  )}
+                            <td style={{ fontFamily: "'JetBrains Mono',monospace", fontSize: 11, whiteSpace: "nowrap" }}>{t.time}</td>
+                            <td style={{ fontWeight: 600 }}>
+                              {classNames}
+                              {isShared && <span style={{ marginLeft: 5, fontSize: 10, background: "rgba(99,102,241,0.15)", color: "var(--accent)", borderRadius: 3, padding: "1px 5px" }}>combined</span>}
+                            </td>
+                            <td>{mod?.name}</td>
+                            <td style={{ fontSize: 11, color: "var(--text2)" }}>
+                              {lmId ? (db.users.find((u: any) => u.id === lmId)?.name || "—") : "—"}
+                            </td>
+                            <td>
+                              {t.room ? (
+                                <span style={{ background: "var(--surface2)", borderRadius: 4, padding: "2px 8px", fontSize: 11 }}>
+                                  <i className="fa-solid fa-door-open" style={{ marginRight: 4, fontSize: 9, opacity: 0.7 }} />
+                                  {t.room}
+                                </span>
+                              ) : <span style={{ color: "var(--text2)", fontSize: 11 }}>—</span>}
+                            </td>
+                            {role === "admin" && (
+                              <td>
+                                <button className="btn btn-outline btn-sm" onClick={() => handleEditSlot(t)}>
+                                  <i className="fa-solid fa-pen" />
+                                </button>
+                              </td>
+                            )}
+                          </tr>
+                        );
+                        isFirst = false;
+                      }
+                    }
+                    if (!allRows.length) return (
+                      <tr><td colSpan={role === "admin" ? 7 : 6} style={{ textAlign: "center", color: "var(--text2)", padding: 32 }}>No timetable slots found.</td></tr>
+                    );
+                    return allRows;
+                  })()}
                 </tbody>
               </table>
             </div>
@@ -932,7 +954,7 @@ function TimetableForm({
     const excludeSessionId = (initialValues as any).sessionId;
     const others = db.timetable.filter((t: any) =>
       t.day === next.day &&
-      (!excludeSessionId || t.session_id !== excludeSessionId)
+      (!excludeSessionId || t.sessionId !== excludeSessionId)
     );
 
     // Room conflict — allowed if same module (shared lecture)
