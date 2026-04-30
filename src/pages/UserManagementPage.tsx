@@ -209,9 +209,11 @@ export default function UserManagementPage() {
             // Update profile
             const { error: profErr } = await supabase.from('profiles').update({ name, email, dept, code }).eq('user_id', u.user_id);
             if (profErr) { toast(profErr.message, 'error'); return; }
-            // Upsert role — handles both new (unknown) users and existing ones
-            const { error: roleErr } = await supabase.from('user_roles')
-              .upsert({ user_id: u.user_id, role: role as any }, { onConflict: 'user_id' });
+            // Update role if a row exists, otherwise insert (user_roles has no single-column unique on user_id)
+            const { data: existingRole } = await supabase.from('user_roles').select('id').eq('user_id', u.user_id).single();
+            const { error: roleErr } = existingRole
+              ? await supabase.from('user_roles').update({ role: role as any }).eq('user_id', u.user_id)
+              : await supabase.from('user_roles').insert({ user_id: u.user_id, role: role as any });
             if (roleErr) { toast(roleErr.message, 'error'); return; }
             toast('User updated!', 'success'); closeModal(); loadUsers(); reloadDb();
           }}>Save Changes</button>

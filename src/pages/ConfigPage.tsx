@@ -828,6 +828,8 @@ export default function ConfigPage() {
                     className="btn btn-primary"
                     style={{ marginTop: 12 }}
                     onClick={async () => {
+                      const configId = db.config?.id;
+                      if (!configId) { toast("Config record not found", "error"); return; }
                       const { error } = await supabase
                         .from("school_config")
                         .update({
@@ -836,7 +838,7 @@ export default function ConfigPage() {
                           semester_start_date: startDate || null,
                           semester_end_date: endDate || null,
                         } as any)
-                        .eq("id", 1);
+                        .eq("id", configId);
                       if (error) { toast(error.message, "error"); return; }
                       toast("Academic year settings saved!", "success");
                       closeModal();

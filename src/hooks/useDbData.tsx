@@ -73,6 +73,7 @@ export function useDbData() {
 
       const initialDb: DB = {
         config: {
+          id: (config as any)?.id,
           schoolName: config?.school_name || "Boswa CIB",
           currentYear: config?.current_year || 2026,
           currentSemester: config?.current_semester || 1,

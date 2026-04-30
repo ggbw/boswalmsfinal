@@ -195,6 +195,7 @@ export interface StudentModuleOverride {
 
 export interface DB {
   config: {
+    id?: string;
     schoolName: string;
     currentYear: number;
     currentSemester: number;

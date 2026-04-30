@@ -475,6 +475,15 @@ export default function AdmissionsPage() {
             className="btn btn-primary"
             style={{ marginTop: 16, width: "100%" }}
             onClick={async () => {
+              // Validate before saving
+              if (wlRegStart && wlRegEnd && wlRegStart > wlRegEnd) {
+                toast("Registration start date must be before end date", "error"); return;
+              }
+              if (wlUniformOpen && wlUniformClose && wlUniformOpen > wlUniformClose) {
+                toast("Uniform fitting open date must be before close date", "error"); return;
+              }
+              const configId = (db as any).config?.id;
+              if (!configId) { toast("Config record not found", "error"); return; }
               const { error } = await supabase
                 .from("school_config")
                 .update({
@@ -491,14 +500,7 @@ export default function AdmissionsPage() {
                   wl_induction: wlInduction || null,
                   wl_classes_start: wlClassesStart || null,
                 } as any)
-                .eq("id", 1);
-              // Validate event date order
-              if (wlRegStart && wlRegEnd && wlRegStart > wlRegEnd) {
-                toast("Registration start date must be before end date", "error"); return;
-              }
-              if (wlUniformOpen && wlUniformClose && wlUniformOpen > wlUniformClose) {
-                toast("Uniform fitting open date must be before close date", "error"); return;
-              }
+                .eq("id", configId);
               if (error) { toast(error.message, "error"); return; }
               toast("Letter settings saved!", "success");
               closeModal();

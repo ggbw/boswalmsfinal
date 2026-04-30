@@ -470,9 +470,13 @@ export default function TimetablePage() {
     time: string,
     moduleId?: string,
     excludeSessionId?: string,
+    date?: string,
   ): ConflictResult | null => {
     const others = db.timetable.filter((t) =>
-      t.day === day && (!excludeSessionId || t.sessionId !== excludeSessionId)
+      t.day === day &&
+      // If both slots have a specific date they must match; otherwise (at least one is recurring) same weekday is enough
+      (!date || !t.date || date === t.date) &&
+      (!excludeSessionId || t.sessionId !== excludeSessionId)
     );
 
     // 1. Room double-booking — only a conflict if DIFFERENT module
@@ -523,7 +527,7 @@ export default function TimetablePage() {
           const sessionId = classIds.length > 1 ? "sess_" + Date.now() : null;
           const errors: string[] = [];
           for (const cid of classIds) {
-            const conflict = checkConflicts(cid, roomName, day, time, moduleId);
+            const conflict = checkConflicts(cid, roomName, day, time, moduleId, undefined, date);
             if (conflict) {
               toast(`⚠️ ${conflict.message}`, "error");
               await sendDoubleBookingNotification(conflict.message, "addition");
@@ -954,6 +958,8 @@ function TimetableForm({
     const excludeSessionId = (initialValues as any).sessionId;
     const others = db.timetable.filter((t: any) =>
       t.day === next.day &&
+      // If both slots have a specific date they must match; otherwise (at least one is recurring) same weekday is enough
+      (!next.date || !t.date || next.date === t.date) &&
       (!excludeSessionId || t.sessionId !== excludeSessionId)
     );
 

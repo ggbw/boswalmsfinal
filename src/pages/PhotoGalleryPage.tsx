@@ -27,6 +27,8 @@ export default function PhotoGalleryPage() {
   const [lightboxUrl, setLightboxUrl] = useState<string | null>(null);
   const [uploading, setUploading] = useState(false);
   const [deleteConfirm, setDeleteConfirm] = useState<string | null>(null);
+  const [folderPrompt, setFolderPrompt] = useState<FileList | null>(null);
+  const [folderNameInput, setFolderNameInput] = useState("");
   const fileInputRef = useRef<HTMLInputElement>(null);
   const profileInputRef = useRef<HTMLInputElement>(null);
 
@@ -49,6 +51,7 @@ export default function PhotoGalleryPage() {
         const { data: inner } = await supabase.storage.from("student-photos").list(folder.name, { limit: 200 });
         if (!inner || inner.length === 0) return;
 
+        const subfolders = inner.filter((f) => !f.name.includes("."));
         const photoFiles = inner.filter(
           (f) => f.name.endsWith(".webp") && !f.name.startsWith("thumb_") && !f.name.startsWith("profile_"),
         );
@@ -59,6 +62,24 @@ export default function PhotoGalleryPage() {
           const { data } = supabase.storage.from("student-photos").getPublicUrl(`${folder.name}/${f.name}`);
           return data.publicUrl;
         });
+
+        // Load photos from named subfolders
+        await Promise.all(
+          subfolders.map(async (sub) => {
+            const { data: subFiles } = await supabase.storage
+              .from("student-photos")
+              .list(`${folder.name}/${sub.name}`, { limit: 200 });
+            if (!subFiles) return;
+            subFiles
+              .filter((f) => f.name.endsWith(".webp") && !f.name.startsWith("thumb_") && !f.name.startsWith("profile_"))
+              .forEach((f) => {
+                const { data } = supabase.storage
+                  .from("student-photos")
+                  .getPublicUrl(`${folder.name}/${sub.name}/${f.name}`);
+                galleryUrls.push(data.publicUrl);
+              });
+          }),
+        );
 
         allPhotos[folder.name] = galleryUrls;
 
@@ -122,17 +143,18 @@ export default function PhotoGalleryPage() {
   const hasProfilePhoto = !!profilePhotoUrl;
 
   // Upload gallery photos (admin/lecturer only)
-  const handleUpload = async (files: FileList) => {
+  const handleUpload = async (files: FileList, subfolder?: string) => {
     if (!selectedStudentId || !selectedStudent) return;
     setUploading(true);
     let success = 0;
+    const folderPath = subfolder ? `${selectedStudentId}/${subfolder}` : selectedStudentId;
 
     for (const file of Array.from(files)) {
       try {
         const [compressed, thumb] = await Promise.all([compressImage(file), createThumbnail(file)]);
         const ts = Date.now() + Math.floor(Math.random() * 1000);
-        const photoPath = `${selectedStudentId}/${ts}.webp`;
-        const thumbPath = `${selectedStudentId}/thumb_${ts}.webp`;
+        const photoPath = `${folderPath}/${ts}.webp`;
+        const thumbPath = `${folderPath}/thumb_${ts}.webp`;
 
         const [r1, r2] = await Promise.all([
           supabase.storage
@@ -348,6 +370,57 @@ export default function PhotoGalleryPage() {
           </div>
         )}
 
+        {/* Folder name prompt */}
+        {folderPrompt && (
+          <div
+            style={{
+              position: "fixed", inset: 0, zIndex: 900,
+              background: "rgba(0,0,0,0.7)",
+              display: "flex", alignItems: "center", justifyContent: "center",
+            }}
+          >
+            <div className="card" style={{ padding: 28, maxWidth: 400, width: "90%" }}>
+              <div style={{ fontWeight: 700, fontSize: 15, marginBottom: 6, color: "var(--text1)" }}>
+                Upload Photos
+              </div>
+              <div style={{ fontSize: 12, color: "var(--text2)", marginBottom: 14 }}>
+                Optionally enter a folder name to organise these photos (e.g. "Graduation", "Practical 3"). Leave blank to upload to the root folder.
+              </div>
+              <input
+                className="form-input"
+                placeholder="Folder name (optional)"
+                value={folderNameInput}
+                onChange={(e) => setFolderNameInput(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter") {
+                    const name = folderNameInput.trim();
+                    const files = folderPrompt;
+                    setFolderPrompt(null);
+                    handleUpload(files, name || undefined);
+                  }
+                }}
+                autoFocus
+              />
+              <div style={{ display: "flex", gap: 10, marginTop: 16, justifyContent: "flex-end" }}>
+                <button className="btn btn-outline btn-sm" onClick={() => { setFolderPrompt(null); if (fileInputRef.current) fileInputRef.current.value = ""; }}>
+                  Cancel
+                </button>
+                <button
+                  className="btn btn-primary btn-sm"
+                  onClick={() => {
+                    const name = folderNameInput.trim();
+                    const files = folderPrompt;
+                    setFolderPrompt(null);
+                    handleUpload(files, name || undefined);
+                  }}
+                >
+                  Upload
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
+
         <div className="page-header" style={{ display: "flex", alignItems: "center", gap: 12, flexWrap: "wrap" }}>
           {!isStudent && (
             <button className="btn btn-outline btn-sm" onClick={backToFolders}>
@@ -467,7 +540,9 @@ export default function PhotoGalleryPage() {
                   accept="image/*"
                   multiple
                   style={{ display: "none" }}
-                  onChange={(e) => e.target.files && handleUpload(e.target.files)}
+                  onChange={(e) => {
+                    if (e.target.files) { setFolderNameInput(""); setFolderPrompt(e.target.files); }
+                  }}
                 />
                 <button
                   className="btn btn-primary btn-sm"
