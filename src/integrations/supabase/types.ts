@@ -376,6 +376,7 @@ export type Database = {
           id: string
           module_id: string | null
           name: string
+          room: string | null
           start_time: string | null
           status: string | null
           type: string | null
@@ -388,6 +389,7 @@ export type Database = {
           id: string
           module_id?: string | null
           name: string
+          room?: string | null
           start_time?: string | null
           status?: string | null
           type?: string | null
@@ -400,6 +402,7 @@ export type Database = {
           id?: string
           module_id?: string | null
           name?: string
+          room?: string | null
           start_time?: string | null
           status?: string | null
           type?: string | null
@@ -420,6 +423,30 @@ export type Database = {
             referencedColumns: ["id"]
           },
         ]
+      }
+      lecturer_modules: {
+        Row: {
+          class_id: string
+          created_at: string | null
+          id: string
+          lecturer_id: string
+          module_id: string
+        }
+        Insert: {
+          class_id: string
+          created_at?: string | null
+          id: string
+          lecturer_id: string
+          module_id: string
+        }
+        Update: {
+          class_id?: string
+          created_at?: string | null
+          id?: string
+          lecturer_id?: string
+          module_id?: string
+        }
+        Relationships: []
       }
       marks: {
         Row: {
@@ -673,6 +700,7 @@ export type Database = {
       programmes: {
         Row: {
           id: string
+          intake_month: number | null
           level: number | null
           name: string
           semesters: number
@@ -682,6 +710,7 @@ export type Database = {
         }
         Insert: {
           id: string
+          intake_month?: number | null
           level?: number | null
           name: string
           semesters?: number
@@ -691,6 +720,7 @@ export type Database = {
         }
         Update: {
           id?: string
+          intake_month?: number | null
           level?: number | null
           name?: string
           semesters?: number
@@ -734,6 +764,10 @@ export type Database = {
           current_year: number
           id: string
           school_name: string
+          semester_end_date: string | null
+          semester_start_date: string | null
+          transcript_issuer: string | null
+          transcript_issuer_title: string | null
         }
         Insert: {
           current_semester?: number
@@ -741,6 +775,10 @@ export type Database = {
           current_year?: number
           id?: string
           school_name?: string
+          semester_end_date?: string | null
+          semester_start_date?: string | null
+          transcript_issuer?: string | null
+          transcript_issuer_title?: string | null
         }
         Update: {
           current_semester?: number
@@ -748,6 +786,10 @@ export type Database = {
           current_year?: number
           id?: string
           school_name?: string
+          semester_end_date?: string | null
+          semester_start_date?: string | null
+          transcript_issuer?: string | null
+          transcript_issuer_title?: string | null
         }
         Relationships: []
       }
@@ -961,26 +1003,32 @@ export type Database = {
       timetable: {
         Row: {
           class_id: string | null
+          date: string | null
           day: string
           id: string
           module_id: string | null
           room: string | null
+          session_id: string | null
           time: string
         }
         Insert: {
           class_id?: string | null
+          date?: string | null
           day: string
           id: string
           module_id?: string | null
           room?: string | null
+          session_id?: string | null
           time: string
         }
         Update: {
           class_id?: string | null
+          date?: string | null
           day?: string
           id?: string
           module_id?: string | null
           room?: string | null
+          session_id?: string | null
           time?: string
         }
         Relationships: [
