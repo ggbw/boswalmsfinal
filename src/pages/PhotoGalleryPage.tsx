@@ -33,6 +33,9 @@ export default function PhotoGalleryPage() {
   const [selectedCustomFolder, setSelectedCustomFolder] = useState<string | null>(null);
   const [createFolderModal, setCreateFolderModal] = useState(false);
   const [newFolderName, setNewFolderName] = useState("");
+  const [renameModal, setRenameModal] = useState<{ oldName: string } | null>(null);
+  const [renameInput, setRenameInput] = useState("");
+  const [deleteFolderConfirm, setDeleteFolderConfirm] = useState<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const profileInputRef = useRef<HTMLInputElement>(null);
   const customFileInputRef = useRef<HTMLInputElement>(null);
@@ -285,6 +288,38 @@ export default function PhotoGalleryPage() {
     toast(`Folder "${name}" created!`, "success");
     setCreateFolderModal(false);
     setNewFolderName("");
+    await loadPhotos();
+  };
+
+  const handleRenameFolder = async (oldName: string, newName: string) => {
+    newName = newName.trim();
+    if (!newName || newName === oldName) { setRenameModal(null); return; }
+    // List all files in the old folder
+    const { data: files } = await supabase.storage.from("student-photos").list(oldName, { limit: 500 });
+    if (!files) { toast("Could not list folder contents", "error"); return; }
+    // Copy each file to new folder
+    const errors: string[] = [];
+    for (const f of files) {
+      const { error } = await supabase.storage.from("student-photos").copy(`${oldName}/${f.name}`, `${newName}/${f.name}`);
+      if (error) errors.push(f.name);
+    }
+    if (errors.length) { toast(`Failed to move ${errors.length} file(s)`, "error"); return; }
+    // Delete old folder files
+    await supabase.storage.from("student-photos").remove(files.map((f) => `${oldName}/${f.name}`));
+    toast(`Renamed to "${newName}"`, "success");
+    setRenameModal(null);
+    setRenameInput("");
+    if (selectedCustomFolder === oldName) setSelectedCustomFolder(newName);
+    await loadPhotos();
+  };
+
+  const handleDeleteFolder = async (name: string) => {
+    const { data: files } = await supabase.storage.from("student-photos").list(name, { limit: 500 });
+    if (files && files.length > 0) {
+      await supabase.storage.from("student-photos").remove(files.map((f) => `${name}/${f.name}`));
+    }
+    toast(`Folder "${name}" deleted`, "success");
+    setDeleteFolderConfirm(null);
     await loadPhotos();
   };
 
@@ -938,6 +973,40 @@ export default function PhotoGalleryPage() {
         ))}
       </div>
 
+      {/* Rename folder modal */}
+      {renameModal && (
+        <div style={{ position: "fixed", inset: 0, zIndex: 900, background: "rgba(0,0,0,0.7)", display: "flex", alignItems: "center", justifyContent: "center" }}>
+          <div className="card" style={{ padding: 28, maxWidth: 400, width: "90%" }}>
+            <div style={{ fontWeight: 700, fontSize: 15, marginBottom: 6, color: "var(--text1)" }}>Rename Folder</div>
+            <div style={{ fontSize: 12, color: "var(--text2)", marginBottom: 14 }}>Enter a new name for <strong>"{renameModal.oldName}"</strong>.</div>
+            <input className="form-input" placeholder="New folder name" value={renameInput} autoFocus
+              onChange={(e) => setRenameInput(e.target.value)}
+              onKeyDown={(e) => { if (e.key === "Enter") handleRenameFolder(renameModal.oldName, renameInput); }} />
+            <div style={{ display: "flex", gap: 10, marginTop: 16, justifyContent: "flex-end" }}>
+              <button className="btn btn-outline btn-sm" onClick={() => { setRenameModal(null); setRenameInput(""); }}>Cancel</button>
+              <button className="btn btn-primary btn-sm" onClick={() => handleRenameFolder(renameModal.oldName, renameInput)}>Rename</button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Delete folder confirm modal */}
+      {deleteFolderConfirm && (
+        <div style={{ position: "fixed", inset: 0, zIndex: 900, background: "rgba(0,0,0,0.7)", display: "flex", alignItems: "center", justifyContent: "center" }}>
+          <div className="card" style={{ padding: 28, maxWidth: 380, width: "90%", textAlign: "center" }}>
+            <div style={{ fontSize: 36, marginBottom: 12 }}>🗑️</div>
+            <div style={{ fontWeight: 700, fontSize: 16, marginBottom: 8, color: "var(--text1)" }}>Delete Folder?</div>
+            <div style={{ color: "var(--text2)", fontSize: 13, marginBottom: 20 }}>
+              All photos inside <strong>"{deleteFolderConfirm}"</strong> will be permanently deleted.
+            </div>
+            <div style={{ display: "flex", gap: 10, justifyContent: "center" }}>
+              <button className="btn btn-outline btn-sm" onClick={() => setDeleteFolderConfirm(null)}>Cancel</button>
+              <button className="btn btn-sm" style={{ background: "#dc2626", color: "#fff", border: "none" }} onClick={() => handleDeleteFolder(deleteFolderConfirm)}>Delete</button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Custom folders section */}
       {customFolders.length > 0 && (
         <>
@@ -950,12 +1019,26 @@ export default function PhotoGalleryPage() {
               const thumb = thumbMap[name];
               return (
                 <div key={name} className="card folder-card" onClick={() => { setSelectedCustomFolder(name); setViewMode("custom_folder"); }}
-                  style={{ padding: 0, cursor: "pointer", overflow: "hidden", border: "1px solid var(--accent)" }}>
+                  style={{ padding: 0, cursor: "pointer", overflow: "hidden", border: "1px solid var(--accent)", position: "relative" }}>
+                  {/* Action buttons */}
+                  {canManage && (
+                    <div style={{ position: "absolute", top: 6, right: 6, zIndex: 2, display: "flex", gap: 4 }}
+                      onClick={(e) => e.stopPropagation()}>
+                      <button title="Rename" onClick={() => { setRenameInput(name); setRenameModal({ oldName: name }); }}
+                        style={{ background: "rgba(0,0,0,0.55)", border: "none", color: "#fff", borderRadius: 5, padding: "4px 7px", cursor: "pointer", fontSize: 11 }}>
+                        <i className="fa-solid fa-pen" />
+                      </button>
+                      <button title="Delete folder" onClick={() => setDeleteFolderConfirm(name)}
+                        style={{ background: "rgba(220,38,38,0.75)", border: "none", color: "#fff", borderRadius: 5, padding: "4px 7px", cursor: "pointer", fontSize: 11 }}>
+                        <i className="fa-solid fa-trash" />
+                      </button>
+                    </div>
+                  )}
                   <div style={{ height: 130, background: "var(--bg3)", position: "relative", overflow: "hidden", display: "flex", alignItems: "center", justifyContent: "center" }}>
                     {thumb ? (
                       <img src={thumb} alt={name} style={{ width: "100%", height: "100%", objectFit: "cover" }} />
                     ) : (
-                      <i className="fa-solid fa-folder-open" style={{ fontSize: 40, color: "var(--accent)", opacity: 0.5 }} />
+                      <i className="fa-solid fa-folder-open" style={{ fontSize: 22, color: "var(--accent)", opacity: 0.5 }} />
                     )}
                     {photoCount > 0 && (
                       <div style={{ position: "absolute", bottom: 6, right: 6, background: "rgba(0,0,0,0.75)", color: "#fff", fontSize: 10, fontWeight: 700, padding: "2px 7px", borderRadius: 10, display: "flex", alignItems: "center", gap: 4 }}>
