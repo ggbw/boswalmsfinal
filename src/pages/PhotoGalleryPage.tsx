@@ -4,7 +4,7 @@ import { supabase } from "@/integrations/supabase/client";
 import { compressImage, createThumbnail } from "@/lib/imageCompression";
 import { getLecturerClassIds } from "@/lib/lecturerHelpers";
 
-type ViewMode = "folders" | "student";
+type ViewMode = "folders" | "student" | "custom_folder";
 
 export default function PhotoGalleryPage() {
   const { db, currentUser, toast } = useApp();
@@ -29,8 +29,13 @@ export default function PhotoGalleryPage() {
   const [deleteConfirm, setDeleteConfirm] = useState<string | null>(null);
   const [folderPrompt, setFolderPrompt] = useState<FileList | null>(null);
   const [folderNameInput, setFolderNameInput] = useState("");
+  const [customFolders, setCustomFolders] = useState<string[]>([]);
+  const [selectedCustomFolder, setSelectedCustomFolder] = useState<string | null>(null);
+  const [createFolderModal, setCreateFolderModal] = useState(false);
+  const [newFolderName, setNewFolderName] = useState("");
   const fileInputRef = useRef<HTMLInputElement>(null);
   const profileInputRef = useRef<HTMLInputElement>(null);
+  const customFileInputRef = useRef<HTMLInputElement>(null);
 
   const loadPhotos = async () => {
     setLoading(true);
@@ -42,7 +47,11 @@ export default function PhotoGalleryPage() {
 
     // Folders have no file extension and metadata.size is 0 or null
     // In Supabase storage, folders appear as items with no "." in the name
-    const folders = files.filter((f) => !f.name.includes("."));
+    const studentIds = new Set(db.students.map((s) => s.id));
+    const allFolders = files.filter((f) => !f.name.includes("."));
+    const folders = allFolders.filter((f) => studentIds.has(f.name));
+    const customFolderNames = allFolders.filter((f) => !studentIds.has(f.name)).map((f) => f.name);
+    setCustomFolders(customFolderNames);
     const allPhotos: Record<string, string[]> = {};
     const thumbs: Record<string, string> = {};
 
@@ -262,6 +271,42 @@ export default function PhotoGalleryPage() {
     toast(`Downloaded ${photos.length} photo(s)`, "success");
   };
 
+  const handleCreateFolder = async () => {
+    const name = newFolderName.trim();
+    if (!name) { toast("Enter a folder name", "error"); return; }
+    // Create folder by uploading a hidden placeholder file
+    const placeholder = new Blob([""], { type: "text/plain" });
+    const { error } = await supabase.storage
+      .from("student-photos")
+      .upload(`${name}/.keep`, placeholder, { upsert: false });
+    if (error && !error.message.includes("already exists")) {
+      toast(error.message, "error"); return;
+    }
+    toast(`Folder "${name}" created!`, "success");
+    setCreateFolderModal(false);
+    setNewFolderName("");
+    await loadPhotos();
+  };
+
+  const handleCustomUpload = async (files: FileList, folderName: string) => {
+    setUploading(true);
+    let success = 0;
+    for (const file of Array.from(files)) {
+      try {
+        const [compressed, thumb] = await Promise.all([compressImage(file), createThumbnail(file)]);
+        const ts = Date.now() + Math.floor(Math.random() * 1000);
+        const [r1, r2] = await Promise.all([
+          supabase.storage.from("student-photos").upload(`${folderName}/${ts}.webp`, compressed, { contentType: "image/webp", upsert: false }),
+          supabase.storage.from("student-photos").upload(`${folderName}/thumb_${ts}.webp`, thumb, { contentType: "image/webp", upsert: false }),
+        ]);
+        if (r1.error || r2.error) { toast(`Failed to upload ${file.name}`, "error"); } else { success++; }
+      } catch { toast(`Error processing ${file.name}`, "error"); }
+    }
+    if (success > 0) { toast(`Uploaded ${success} photo(s)`, "success"); await loadPhotos(); }
+    setUploading(false);
+    if (customFileInputRef.current) customFileInputRef.current.value = "";
+  };
+
   const openStudent = (studentId: string) => {
     setSelectedStudentId(studentId);
     setViewMode("student");
@@ -270,6 +315,7 @@ export default function PhotoGalleryPage() {
   const backToFolders = () => {
     setViewMode("folders");
     setSelectedStudentId(null);
+    setSelectedCustomFolder(null);
     setLightboxUrl(null);
     setDeleteConfirm(null);
   };
@@ -282,6 +328,99 @@ export default function PhotoGalleryPage() {
         <div style={{ fontSize: 15, fontWeight: 600, color: "var(--text1)" }}>Access Restricted</div>
         <div style={{ fontSize: 13, marginTop: 6 }}>You don't have permission to view the photo gallery.</div>
       </div>
+    );
+  }
+
+  // ── CUSTOM FOLDER VIEW ──────────────────────────────────────────────────────
+  if (viewMode === "custom_folder" && selectedCustomFolder) {
+    const photos = photoMap[selectedCustomFolder] || [];
+    return (
+      <>
+        <style>{`.photo-card:hover .photo-overlay { opacity: 1 !important; }`}</style>
+
+        {lightboxUrl && (
+          <div onClick={() => setLightboxUrl(null)} style={{ position: "fixed", inset: 0, zIndex: 1000, background: "rgba(0,0,0,0.93)", display: "flex", alignItems: "center", justifyContent: "center" }}>
+            <button onClick={() => setLightboxUrl(null)} style={{ position: "absolute", top: 20, right: 20, background: "rgba(255,255,255,0.15)", border: "none", color: "#fff", borderRadius: 8, padding: "8px 14px", cursor: "pointer", fontSize: 18, fontWeight: 700 }}>✕</button>
+            <img src={lightboxUrl} alt="Full size" style={{ maxWidth: "90vw", maxHeight: "90vh", borderRadius: 8, objectFit: "contain" }} onClick={(e) => e.stopPropagation()} />
+          </div>
+        )}
+
+        {deleteConfirm && (
+          <div style={{ position: "fixed", inset: 0, zIndex: 900, background: "rgba(0,0,0,0.7)", display: "flex", alignItems: "center", justifyContent: "center" }}>
+            <div className="card" style={{ padding: 28, maxWidth: 380, width: "90%", textAlign: "center" }}>
+              <div style={{ fontSize: 36, marginBottom: 12 }}>🗑️</div>
+              <div style={{ fontWeight: 700, fontSize: 16, marginBottom: 8 }}>Delete Photo?</div>
+              <div style={{ color: "var(--text2)", fontSize: 13, marginBottom: 20 }}>This cannot be undone.</div>
+              <div style={{ display: "flex", gap: 10, justifyContent: "center" }}>
+                <button className="btn btn-outline btn-sm" onClick={() => setDeleteConfirm(null)}>Cancel</button>
+                <button className="btn btn-sm" style={{ background: "#dc2626", color: "#fff", border: "none" }} onClick={() => handleDelete(deleteConfirm)}>Delete</button>
+              </div>
+            </div>
+          </div>
+        )}
+
+        <div className="page-header" style={{ display: "flex", alignItems: "center", gap: 12, flexWrap: "wrap" }}>
+          <button className="btn btn-outline btn-sm" onClick={backToFolders}>
+            <i className="fa-solid fa-arrow-left" /> Back to Gallery
+          </button>
+          <div>
+            <div className="page-title" style={{ margin: 0 }}>{selectedCustomFolder}</div>
+            <div style={{ fontSize: 12, color: "var(--text2)" }}>Custom folder</div>
+          </div>
+        </div>
+
+        <div className="card" style={{ marginBottom: 16, display: "flex", alignItems: "center", justifyContent: "space-between", flexWrap: "wrap", gap: 12 }}>
+          <div style={{ color: "var(--text2)", fontSize: 13 }}>
+            <i className="fa-solid fa-images" style={{ marginRight: 6, color: "var(--accent)" }} />
+            <strong style={{ color: "var(--text1)" }}>{photos.length}</strong> photo{photos.length !== 1 ? "s" : ""}
+          </div>
+          <div style={{ display: "flex", gap: 8 }}>
+            {photos.length > 0 && (
+              <button className="btn btn-outline btn-sm" onClick={() => handleDownloadAll(photos, selectedCustomFolder)}>
+                <i className="fa-solid fa-download" /> Download All
+              </button>
+            )}
+            {canManage && (
+              <>
+                <input ref={customFileInputRef} type="file" accept="image/*" multiple style={{ display: "none" }}
+                  onChange={(e) => { if (e.target.files) handleCustomUpload(e.target.files, selectedCustomFolder); }} />
+                <button className="btn btn-primary btn-sm" onClick={() => customFileInputRef.current?.click()} disabled={uploading}>
+                  {uploading ? <><i className="fa-solid fa-spinner fa-spin" /> Uploading...</> : <><i className="fa-solid fa-cloud-arrow-up" /> Upload Photos</>}
+                </button>
+              </>
+            )}
+          </div>
+        </div>
+
+        {photos.length === 0 ? (
+          <div className="card" style={{ textAlign: "center", padding: 60, color: "var(--text2)" }}>
+            <div style={{ fontSize: 52, marginBottom: 12 }}>📷</div>
+            <div style={{ fontSize: 15, fontWeight: 600, marginBottom: 6, color: "var(--text1)" }}>No photos yet</div>
+            {canManage && <div style={{ fontSize: 13 }}>Click <strong>Upload Photos</strong> to add photos to this folder.</div>}
+          </div>
+        ) : (
+          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(200px, 1fr))", gap: 12 }}>
+            {photos.map((url, i) => (
+              <div key={i} className="photo-card" style={{ borderRadius: 10, overflow: "hidden", background: "var(--bg3)", aspectRatio: "1", position: "relative", cursor: "pointer", boxShadow: "0 2px 8px rgba(0,0,0,0.25)" }}>
+                <img src={url} alt={`photo ${i + 1}`} style={{ width: "100%", height: "100%", objectFit: "cover", display: "block" }} onClick={() => setLightboxUrl(url)} />
+                <div className="photo-overlay" style={{ position: "absolute", bottom: 0, left: 0, right: 0, background: "linear-gradient(transparent, rgba(0,0,0,0.78))", padding: "28px 8px 8px", display: "flex", gap: 6, justifyContent: "flex-end", opacity: 0, transition: "opacity 0.2s" }}>
+                  <button onClick={(e) => { e.stopPropagation(); setLightboxUrl(url); }} style={{ background: "rgba(255,255,255,0.2)", border: "none", color: "#fff", borderRadius: 6, padding: "5px 9px", cursor: "pointer", fontSize: 12 }}><i className="fa-solid fa-expand" /></button>
+                  <button onClick={(e) => { e.stopPropagation(); handleDownloadPhoto(url, selectedCustomFolder, i); }} style={{ background: "rgba(255,255,255,0.2)", border: "none", color: "#fff", borderRadius: 6, padding: "5px 9px", cursor: "pointer", fontSize: 12 }}><i className="fa-solid fa-download" /></button>
+                  {canManage && <button onClick={(e) => { e.stopPropagation(); setDeleteConfirm(url); }} style={{ background: "rgba(220,38,38,0.8)", border: "none", color: "#fff", borderRadius: 6, padding: "5px 9px", cursor: "pointer", fontSize: 12 }}><i className="fa-solid fa-trash" /></button>}
+                </div>
+              </div>
+            ))}
+            {canManage && (
+              <div onClick={() => customFileInputRef.current?.click()} style={{ borderRadius: 10, border: "2px dashed var(--accent)", aspectRatio: "1", display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", cursor: "pointer", color: "var(--accent)", background: "rgba(99,102,241,0.05)", gap: 8 }}
+                onMouseEnter={(e) => (e.currentTarget.style.background = "rgba(99,102,241,0.14)")}
+                onMouseLeave={(e) => (e.currentTarget.style.background = "rgba(99,102,241,0.05)")}>
+                <i className="fa-solid fa-plus" style={{ fontSize: 28 }} />
+                <span style={{ fontSize: 12, fontWeight: 600 }}>Add Photos</span>
+              </div>
+            )}
+          </div>
+        )}
+      </>
     );
   }
 
@@ -713,8 +852,35 @@ export default function PhotoGalleryPage() {
     <>
       <style>{`.folder-card { transition: transform 0.15s, box-shadow 0.15s; } .folder-card:hover { transform: translateY(-3px) !important; box-shadow: 0 8px 24px rgba(0,0,0,0.4) !important; }`}</style>
 
-      <div className="page-header">
+      {/* Create Folder modal */}
+      {createFolderModal && (
+        <div style={{ position: "fixed", inset: 0, zIndex: 900, background: "rgba(0,0,0,0.7)", display: "flex", alignItems: "center", justifyContent: "center" }}>
+          <div className="card" style={{ padding: 28, maxWidth: 400, width: "90%" }}>
+            <div style={{ fontWeight: 700, fontSize: 15, marginBottom: 6, color: "var(--text1)" }}>Create New Folder</div>
+            <div style={{ fontSize: 12, color: "var(--text2)", marginBottom: 14 }}>Enter a name for the new folder (e.g. "Graduation 2026", "Practical Week 3").</div>
+            <input
+              className="form-input"
+              placeholder="Folder name"
+              value={newFolderName}
+              onChange={(e) => setNewFolderName(e.target.value)}
+              onKeyDown={(e) => { if (e.key === "Enter") handleCreateFolder(); }}
+              autoFocus
+            />
+            <div style={{ display: "flex", gap: 10, marginTop: 16, justifyContent: "flex-end" }}>
+              <button className="btn btn-outline btn-sm" onClick={() => { setCreateFolderModal(false); setNewFolderName(""); }}>Cancel</button>
+              <button className="btn btn-primary btn-sm" onClick={handleCreateFolder}>Create</button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      <div className="page-header" style={{ display: "flex", alignItems: "center", justifyContent: "space-between", flexWrap: "wrap", gap: 8 }}>
         <div className="page-title">Student Photo Gallery</div>
+        {canManage && (
+          <button className="btn btn-outline btn-sm" onClick={() => { setNewFolderName(""); setCreateFolderModal(true); }}>
+            <i className="fa-solid fa-folder-plus" /> Create Folder
+          </button>
+        )}
       </div>
 
       <div className="card" style={{ marginBottom: 16 }}>
@@ -771,6 +937,47 @@ export default function PhotoGalleryPage() {
           </div>
         ))}
       </div>
+
+      {/* Custom folders section */}
+      {customFolders.length > 0 && (
+        <>
+          <div style={{ fontWeight: 700, fontSize: 13, color: "var(--text2)", marginBottom: 8, marginTop: 4, textTransform: "uppercase", letterSpacing: 1 }}>
+            <i className="fa-solid fa-folder-open" style={{ marginRight: 6, color: "var(--accent)" }} /> Custom Folders
+          </div>
+          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(170px, 1fr))", gap: 14, marginBottom: 24 }}>
+            {customFolders.map((name) => {
+              const photoCount = photoMap[name]?.length || 0;
+              const thumb = thumbMap[name];
+              return (
+                <div key={name} className="card folder-card" onClick={() => { setSelectedCustomFolder(name); setViewMode("custom_folder"); }}
+                  style={{ padding: 0, cursor: "pointer", overflow: "hidden", border: "1px solid var(--accent)" }}>
+                  <div style={{ height: 130, background: "var(--bg3)", position: "relative", overflow: "hidden", display: "flex", alignItems: "center", justifyContent: "center" }}>
+                    {thumb ? (
+                      <img src={thumb} alt={name} style={{ width: "100%", height: "100%", objectFit: "cover" }} />
+                    ) : (
+                      <i className="fa-solid fa-folder-open" style={{ fontSize: 40, color: "var(--accent)", opacity: 0.5 }} />
+                    )}
+                    {photoCount > 0 && (
+                      <div style={{ position: "absolute", bottom: 6, right: 6, background: "rgba(0,0,0,0.75)", color: "#fff", fontSize: 10, fontWeight: 700, padding: "2px 7px", borderRadius: 10, display: "flex", alignItems: "center", gap: 4 }}>
+                        <i className="fa-solid fa-images" style={{ fontSize: 8 }} /> {photoCount}
+                      </div>
+                    )}
+                  </div>
+                  <div style={{ padding: "10px 12px 12px", textAlign: "center" }}>
+                    <div style={{ fontSize: 13, fontWeight: 700, color: "var(--text1)", marginBottom: 6, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{name}</div>
+                    <div style={{ fontSize: 10, color: "var(--text2)", display: "flex", alignItems: "center", justifyContent: "center", gap: 4 }}>
+                      <i className="fa-solid fa-folder-open" style={{ color: "var(--accent)" }} /> Click to open
+                    </div>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+          <div style={{ fontWeight: 700, fontSize: 13, color: "var(--text2)", marginBottom: 8, textTransform: "uppercase", letterSpacing: 1 }}>
+            <i className="fa-solid fa-users" style={{ marginRight: 6 }} /> Student Folders
+          </div>
+        </>
+      )}
 
       {loading ? (
         <div className="card" style={{ textAlign: "center", padding: 60, color: "var(--text2)" }}>
