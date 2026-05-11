@@ -24,6 +24,68 @@ import MappingPage from '@/pages/MappingPage';
 import UserManagementPage from '@/pages/UserManagementPage';
 import PhotoGalleryPage from '@/pages/PhotoGalleryPage';
 import NotesPage from '@/pages/NotesPage';
+import HRComingSoonPage from '@/pages/hr/HRComingSoonPage';
+import EmployeesPage from '@/pages/hr/EmployeesPage';
+import EmployeeFormPage from '@/pages/hr/EmployeeFormPage';
+import EmployeeDetailPage from '@/pages/hr/EmployeeDetailPage';
+import HrDepartmentsPage from '@/pages/hr/HrDepartmentsPage';
+import PayComponentsPage from '@/pages/hr/PayComponentsPage';
+import LeaveTypesPage from '@/pages/hr/LeaveTypesPage';
+import LoanTypesPage from '@/pages/hr/LoanTypesPage';
+import LeavesPage from '@/pages/hr/LeavesPage';
+import LoansPage from '@/pages/hr/LoansPage';
+import HRDashboardPage from '@/pages/hr/HRDashboardPage';
+import HRConfigPage from '@/pages/hr/HRConfigPage';
+import ContractsPage from '@/pages/hr/ContractsPage';
+import ContractDetailPage from '@/pages/hr/ContractDetailPage';
+import ContractTemplatesPage from '@/pages/hr/ContractTemplatesPage';
+import PayslipsPage from '@/pages/hr/PayslipsPage';
+import PayslipDetailPage from '@/pages/hr/PayslipDetailPage';
+import PayslipBatchPage from '@/pages/hr/PayslipBatchPage';
+import HRReportsPage from '@/pages/hr/HRReportsPage';
+import HRDocumentsPage from '@/pages/hr/HRDocumentsPage';
+import HRAttendancePage from '@/pages/hr/HRAttendancePage';
+import HRUserManagementPage from '@/pages/hr/HRUserManagementPage';
+import DocumentSettingsPage from '@/pages/hr/DocumentSettingsPage';
+import MyLeavesPage from '@/pages/hr/self-service/MyLeavesPage';
+import MyLoansPage from '@/pages/hr/self-service/MyLoansPage';
+import MyPayslipsPage from '@/pages/hr/self-service/MyPayslipsPage';
+import MyEmployeeFilePage from '@/pages/hr/self-service/MyEmployeeFilePage';
+
+const HR_PAGE_IDS = [
+  'hr-dashboard',
+  'hr-departments',
+  'hr-payslips',
+  'hr-payslip-detail',
+  'hr-payslip-batch',
+  'hr-payroll-report',
+  'hr-pay-components',
+  'hr-contracts',
+  'hr-contract-detail',
+  'hr-contract-templates',
+  'hr-leaves',
+  'hr-leave-types',
+  'hr-leave-report',
+  'hr-loans',
+  'hr-loan-types',
+  'hr-loan-report',
+  'hr-documents',
+  'hr-document-expiry',
+  'hr-document-settings',
+  'hr-attendance-report',
+  'hr-user-management',
+  'hr-config',
+  'my-payslips',
+  'my-leaves',
+  'my-loans',
+  'my-employee-file',
+  'my-advance-salary',
+] as const;
+
+const hrPlaceholders: Record<string, React.ComponentType> = HR_PAGE_IDS.reduce(
+  (acc, id) => ({ ...acc, [id]: HRComingSoonPage }),
+  {} as Record<string, React.ComponentType>,
+);
 
 const pageComponents: Record<string, React.ComponentType> = {
   dashboard: Dashboard, students: StudentsPage, lecturers: LecturersPage,
@@ -35,12 +97,44 @@ const pageComponents: Record<string, React.ComponentType> = {
   mystudents: MyStudentsPage, mytimetable: MyStudentsPage,
   mymodules: MyModulesPage, mapping: MappingPage,
   usermanagement: UserManagementPage, photogallery: PhotoGalleryPage, notes: NotesPage,
+  ...hrPlaceholders,
+  // Real HR pages override the placeholders
+  'hr-dashboard': HRDashboardPage,
+  'hr-employees': EmployeesPage,
+  'hr-employee-form': EmployeeFormPage,
+  'hr-employee-detail': EmployeeDetailPage,
+  'hr-departments': HrDepartmentsPage,
+  'hr-pay-components': PayComponentsPage,
+  'hr-leave-types': LeaveTypesPage,
+  'hr-loan-types': LoanTypesPage,
+  'hr-leaves': LeavesPage,
+  'hr-loans': LoansPage,
+  'hr-config': HRConfigPage,
+  'hr-contracts': ContractsPage,
+  'hr-contract-detail': ContractDetailPage,
+  'hr-contract-templates': ContractTemplatesPage,
+  'hr-payslips': PayslipsPage,
+  'hr-payslip-detail': PayslipDetailPage,
+  'hr-payslip-batch': PayslipBatchPage,
+  'hr-payroll-report': HRReportsPage,
+  'hr-leave-report': HRReportsPage,
+  'hr-loan-report': HRReportsPage,
+  'hr-documents': HRDocumentsPage,
+  'hr-document-expiry': HRDocumentsPage,
+  'hr-document-settings': DocumentSettingsPage,
+  'hr-attendance-report': HRAttendancePage,
+  'hr-user-management': HRUserManagementPage,
+  'my-leaves': MyLeavesPage,
+  'my-loans': MyLoansPage,
+  'my-payslips': MyPayslipsPage,
+  'my-employee-file': MyEmployeeFilePage,
+  'my-advance-salary': MyLoansPage,
 };
 
 const ROLE_PAGES: Record<string, string[]> = {
-  dashboard:      ['admin','hod','hoy','lecturer','student'],
-  profile:        ['admin','hod','hoy','lecturer','student'],
-  notifications:  ['admin','hod','hoy','lecturer','student'],
+  dashboard:      ['admin','super_admin','hr','manager','employee','hod','hoy','lecturer','student'],
+  profile:        ['admin','super_admin','hr','manager','employee','hod','hoy','lecturer','student'],
+  notifications:  ['admin','super_admin','hr','manager','employee','hod','hoy','lecturer','student'],
   students:       ['admin','hod','hoy','lecturer'],
   lecturers:      ['admin'],
   classes:        ['admin'],
@@ -63,12 +157,50 @@ const ROLE_PAGES: Record<string, string[]> = {
   usermanagement: ['admin'],
   photogallery:   ['admin','hod','hoy','lecturer','student'],
   notes:          ['admin','hod','hoy','lecturer','student'],
+
+  // HR Management — super_admin/hr full access; manager read-only.
+  // 'admin' is intentionally excluded: admin is LMS-only.
+  'hr-dashboard':            ['super_admin','hr','manager'],
+  'hr-employees':            ['super_admin','hr','manager'],
+  'hr-employee-detail':      ['super_admin','hr','manager'],
+  'hr-employee-form':        ['super_admin','hr'],
+  'hr-departments':          ['super_admin','hr'],
+  'hr-payslips':             ['super_admin','hr'],
+  'hr-payslip-detail':       ['super_admin','hr'],
+  'hr-payslip-batch':        ['super_admin','hr'],
+  'hr-payroll-report':       ['super_admin','hr','manager'],
+  'hr-pay-components':       ['super_admin','hr'],
+  'hr-contracts':            ['super_admin','hr'],
+  'hr-contract-detail':      ['super_admin','hr'],
+  'hr-contract-templates':   ['super_admin','hr'],
+  'hr-leaves':               ['super_admin','hr','manager'],
+  'hr-leave-types':          ['super_admin','hr'],
+  'hr-leave-report':         ['super_admin','hr','manager'],
+  'hr-loans':                ['super_admin','hr','manager'],
+  'hr-loan-types':           ['super_admin','hr'],
+  'hr-loan-report':          ['super_admin','hr','manager'],
+  'hr-documents':            ['super_admin','hr'],
+  'hr-document-expiry':      ['super_admin','hr','manager'],
+  'hr-document-settings':    ['super_admin','hr'],
+  'hr-attendance-report':    ['super_admin','hr','manager'],
+  'hr-user-management':      ['super_admin'],
+  'hr-config':               ['super_admin','hr'],
+
+  // Employee self-service — visible to anyone with an HR self-service role.
+  // 'admin' is intentionally excluded: admin is LMS-only.
+  'my-payslips':       ['super_admin','hr','manager','employee','lecturer','hod','hoy'],
+  'my-leaves':         ['super_admin','hr','manager','employee','lecturer','hod','hoy'],
+  'my-loans':          ['super_admin','hr','manager','employee','lecturer','hod','hoy'],
+  'my-employee-file':  ['super_admin','hr','manager','employee','lecturer','hod','hoy'],
+  'my-advance-salary': ['super_admin','hr','manager','employee','lecturer','hod','hoy'],
 };
 
 export default function AppLayout() {
   const { db, activePage, currentUser, toasts, modalContent, closeModal } = useApp();
-  const role = currentUser?.role || 'admin';
-  const allowed = ROLE_PAGES[activePage] ?? ['admin'];
+  // Default to the most restrictive role if none is set, so an unset role
+  // cannot accidentally land on an admin-gated page.
+  const role = currentUser?.role || 'student';
+  const allowed = ROLE_PAGES[activePage] ?? [];
   const PageComponent = allowed.includes(role)
     ? (pageComponents[activePage] || Dashboard)
     : Dashboard;

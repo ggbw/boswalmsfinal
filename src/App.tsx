@@ -1,5 +1,6 @@
 import { AuthProvider, useAuth } from "@/hooks/useAuth";
 import { AppProvider } from "@/context/AppProvider";
+import { FormPersistenceProvider } from "@/context/hr/FormPersistenceContext";
 import LoginScreen from "@/components/LoginScreen";
 import AppLayout from "@/components/AppLayout";
 import PublicApplyPage from "@/pages/PublicApplyPage";
@@ -28,7 +29,7 @@ function AuthGate() {
 
   if (!user || !profile) return <LoginScreen />;
 
-  const staffRoles = ["admin", "hod", "hoy", "lecturer", "student"];
+  const staffRoles = ["admin", "super_admin", "hr", "manager", "employee", "hod", "hoy", "lecturer", "student"];
 
   // Applicants get their own portal — not the full SMS
   if (role === "applicant" || !role || !staffRoles.includes(role)) {
@@ -49,9 +50,18 @@ function AuthGate() {
     studentId: profile.student_id || "",
   };
 
+  const initialPage =
+    role === "hr"
+      ? "hr-dashboard"
+      : role === "manager" || role === "employee"
+        ? "my-employee-file"
+        : "dashboard";
+
   return (
-    <AppProvider authUser={authUser} onSignOut={signOut}>
-      <AppLayout />
+    <AppProvider authUser={authUser} onSignOut={signOut} initialPage={initialPage}>
+      <FormPersistenceProvider>
+        <AppLayout />
+      </FormPersistenceProvider>
     </AppProvider>
   );
 }

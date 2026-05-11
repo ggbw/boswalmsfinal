@@ -1,4 +1,4 @@
-import { useCallback, useState, type ReactNode } from 'react';
+import { useCallback, useReducer, useState, type ReactNode } from 'react';
 import type { User } from '@/data/db';
 import { useDbData } from '@/hooks/useDbData';
 import { AppContext, type AppProviderProps } from '@/context/AppContext';
@@ -9,9 +9,25 @@ interface ToastItem {
   type: string;
 }
 
-export function AppProvider({ children, authUser, onSignOut }: AppProviderProps) {
+interface PageState {
+  activePage: string;
+  pageParams: Record<string, unknown>;
+}
+
+type PageAction = { type: 'navigate'; page: string; params?: Record<string, unknown> };
+
+function pageReducer(state: PageState, action: PageAction): PageState {
+  switch (action.type) {
+    case 'navigate':
+      return { activePage: action.page, pageParams: action.params ?? {} };
+    default:
+      return state;
+  }
+}
+
+export function AppProvider({ children, authUser, onSignOut, initialPage }: AppProviderProps) {
   const { db, loading, reload, setDb } = useDbData();
-  const [activePage, setActivePage] = useState('dashboard');
+  const [pageState, dispatchPage] = useReducer(pageReducer, { activePage: initialPage ?? 'dashboard', pageParams: {} });
   const [toasts, setToasts] = useState<ToastItem[]>([]);
   const [modalContent, setModalContent] = useState<{ title: string; body: ReactNode; size?: string } | null>(null);
 
@@ -19,7 +35,10 @@ export function AppProvider({ children, authUser, onSignOut }: AppProviderProps)
     if (!u) onSignOut();
   };
 
-  const navigate = useCallback((page: string) => setActivePage(page), []);
+  const navigate = useCallback(
+    (page: string, params?: Record<string, unknown>) => dispatchPage({ type: 'navigate', page, params }),
+    [],
+  );
 
   const toast = useCallback((msg: string, type: string = 'info') => {
     const id = Date.now() + Math.random();
@@ -51,7 +70,8 @@ export function AppProvider({ children, authUser, onSignOut }: AppProviderProps)
         setDb,
         currentUser: authUser,
         setCurrentUser,
-        activePage,
+        activePage: pageState.activePage,
+        pageParams: pageState.pageParams,
         navigate,
         toast,
         toasts,

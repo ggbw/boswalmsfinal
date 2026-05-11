@@ -9,7 +9,8 @@ interface AppContextType {
   currentUser: User | null;
   setCurrentUser: (u: User | null) => void;
   activePage: string;
-  navigate: (page: string) => void;
+  pageParams: Record<string, unknown>;
+  navigate: (page: string, params?: Record<string, unknown>) => void;
   toast: (msg: string, type?: string) => void;
   toasts: ToastItem[];
   modalContent: { title: string; body: ReactNode; size?: string } | null;
@@ -24,6 +25,7 @@ export interface AppProviderProps {
   children: ReactNode;
   authUser: User;
   onSignOut: () => void;
+  initialPage?: string;
 }
 
 export function useApp() {
