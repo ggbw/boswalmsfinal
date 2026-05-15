@@ -63,6 +63,25 @@ Deno.serve(async (req: Request) => {
       .eq("user_id", target_user_id)
       .maybeSingle();
 
+    // Persist a session row so the target user's ImpersonationBanner can
+    // detect that the resulting session is an impersonation. Best-effort:
+    // if the table doesn't exist yet (migration not applied) we still
+    // return the action link so the magic-link flow keeps working.
+    let sessionId: string | null = null;
+    try {
+      const { data: sessRow } = await supabaseAdmin
+        .from("impersonation_sessions")
+        .insert({
+          admin_user_id: caller.id,
+          target_user_id,
+        })
+        .select("id")
+        .single();
+      sessionId = (sessRow as { id?: string } | null)?.id ?? null;
+    } catch {
+      // Table missing — banner will not appear, but impersonation still works.
+    }
+
     return new Response(
       JSON.stringify({
         success: true,
@@ -70,6 +89,7 @@ Deno.serve(async (req: Request) => {
         target_email: targetUser.email,
         target_username: targetProfile?.username ?? null,
         target_name: targetProfile?.name ?? null,
+        session_id: sessionId,
       }),
       { headers: { ...corsHeaders, "Content-Type": "application/json" }, status: 200 },
     );

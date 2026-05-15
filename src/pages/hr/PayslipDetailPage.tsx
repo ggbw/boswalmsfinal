@@ -4,6 +4,7 @@ import { useUserRole } from '@/hooks/hr/useUserRole';
 import { useEmployees } from '@/hooks/hr/useEmployees';
 import { computePayslip, fmtMoney, type PayLine } from '@/lib/hr/payrollEngine';
 import { fmtCurrency, fmtDate } from '@/lib/hr/leaveUtils';
+import { calcSeveranceBenefit, splitSeverance } from '@/lib/hr/severanceBenefit';
 import { supabase } from '@/integrations/supabase/client';
 import { nextPayslipReference, type Payslip, type PayslipBreakdownLine } from '@/hooks/hr/usePayslips';
 import WorkedDaysTab from '@/components/hr/payslip/WorkedDaysTab';
@@ -427,6 +428,50 @@ export default function PayslipDetailPage() {
             <input type="number" step="0.01" className="form-input" disabled={!writeOk} value={form.severanceNonTaxable} onChange={(e) => update('severanceNonTaxable', e.target.value)} />
           </div>
         </div>
+        {writeOk && (
+          <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: 4 }}>
+            <button
+              type="button"
+              className="btn btn-sm btn-outline"
+              onClick={() => {
+                const emp = employees.find((e) => e.id === form.employee_id) as
+                  | { join_date?: string | null; exit_date?: string | null }
+                  | undefined;
+                if (!emp?.join_date || !emp?.exit_date) {
+                  toast('Set join date and exit date on the employee record to auto-calculate severance.', 'error');
+                  return;
+                }
+                const wage = Number(form.basic_salary) || 0;
+                if (wage <= 0) {
+                  toast('Set the basic salary first.', 'error');
+                  return;
+                }
+                const result = calcSeveranceBenefit({
+                  contract_wage: wage,
+                  join_date: emp.join_date,
+                  exit_date: emp.exit_date,
+                });
+                if (result.completed_months <= 0) {
+                  toast('No completed months of service — severance is zero.', 'info');
+                  setForm((f) => ({ ...f, severanceTaxable: '0', severanceNonTaxable: '0' }));
+                  return;
+                }
+                const halves = splitSeverance(result.amount);
+                setForm((f) => ({
+                  ...f,
+                  severanceTaxable: String(halves.taxable),
+                  severanceNonTaxable: String(halves.nonTaxable),
+                }));
+                toast(
+                  `Severance auto-calculated: ${result.completed_months} months × ${fmtCurrency(wage / 24)} = ${fmtCurrency(result.amount)}`,
+                  'success',
+                );
+              }}
+            >
+              <i className="fa-solid fa-calculator" /> Auto-calc from exit date
+            </button>
+          </div>
+        )}
       </div>
 
       <div className="tabs">

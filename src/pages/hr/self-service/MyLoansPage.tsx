@@ -1,8 +1,14 @@
-import { useEffect, useState } from 'react';
+import { Fragment, useEffect, useMemo, useState } from 'react';
 import { useApp } from '@/context/AppContext';
 import { useAuth } from '@/hooks/useAuth';
 import { useAdvances, nextAdvanceReference } from '@/hooks/hr/useLoans';
 import { fmtCurrency, fmtDate } from '@/lib/hr/leaveUtils';
+import { useWorkflowAccess } from '@/hooks/hr/useWorkflowAccess';
+import WorkflowStepper from '@/components/hr/workflow/WorkflowStepper';
+import {
+  resolveWorkflowForRequest,
+  startWorkflowInstance,
+} from '@/lib/hr/workflowEngine';
 import { supabase } from '@/integrations/supabase/client';
 
 const statusBadge = (s: string): string => {
@@ -51,6 +57,13 @@ export default function MyLoansPage() {
     notes: '',
   });
 
+  // Workflow-engine awareness — render the WorkflowStepper for engine rows.
+  const requestIdList = useMemo(() => advances.map((a) => a.id), [advances]);
+  const { engineRequestIds } = useWorkflowAccess('loan', requestIdList, user?.id ?? null);
+  const [expanded, setExpanded] = useState<Record<string, boolean>>({});
+  const toggleExpand = (id: string) =>
+    setExpanded((p) => ({ ...p, [id]: !p[id] }));
+
   const handleCreate = async () => {
     if (!employeeId) { toast('No employee record linked to your account', 'error'); return; }
     const total = Number(form.total_amount);
@@ -58,18 +71,40 @@ export default function MyLoansPage() {
     if (total <= 0 || installments <= 0) { toast('Amount and installments must be > 0', 'error'); return; }
     const monthly = Math.round((total / installments) * 100) / 100;
     const reference = await nextAdvanceReference();
-    const { error } = await supabase.from('advance_salaries').insert({
-      reference,
-      employee_id: employeeId,
-      loan_type: form.loan_type,
-      total_amount: total,
-      monthly_installment: monthly,
-      installments,
-      remaining_amount: total,
-      status: 'Submitted',
-      notes: form.notes.trim() || null,
-    });
+    const { data: inserted, error } = await supabase
+      .from('advance_salaries')
+      .insert({
+        reference,
+        employee_id: employeeId,
+        loan_type: form.loan_type,
+        total_amount: total,
+        monthly_installment: monthly,
+        installments,
+        remaining_amount: total,
+        status: 'Submitted',
+        notes: form.notes.trim() || null,
+      })
+      .select('id')
+      .single();
     if (error) { toast(error.message, 'error'); return; }
+    // Fire-and-forget workflow start if a matching workflow is configured.
+    const insertedId = (inserted as { id: string } | null)?.id ?? null;
+    if (insertedId) {
+      const matchedLoanType = loanTypes.find((t) => t.name === form.loan_type);
+      const { data: emp } = await supabase
+        .from('employees')
+        .select('hr_department_id')
+        .eq('id', employeeId)
+        .maybeSingle();
+      void (async () => {
+        const matched = await resolveWorkflowForRequest('loan', {
+          loanTypeId: matchedLoanType?.id ?? null,
+          departmentId: (emp as { hr_department_id?: string | null } | null)?.hr_department_id ?? null,
+          employeeId,
+        });
+        if (matched) await startWorkflowInstance('loan', insertedId, matched.id);
+      })();
+    }
     toast(`Loan ${reference} submitted`, 'success');
     setForm({ loan_type: 'Salary Advance', total_amount: '', installments: '1', notes: '' });
     setCreating(false);
@@ -161,17 +196,41 @@ export default function MyLoansPage() {
                 </tr>
               </thead>
               <tbody>
-                {advances.map((a) => (
-                  <tr key={a.id}>
-                    <td style={{ fontFamily: 'JetBrains Mono, monospace' }}>{a.reference}</td>
-                    <td>{a.loan_type ?? '—'}</td>
-                    <td style={{ textAlign: 'right' }}>{fmtCurrency(a.total_amount)}</td>
-                    <td style={{ textAlign: 'right' }}>{fmtCurrency(a.monthly_installment)}</td>
-                    <td style={{ textAlign: 'right' }}>{fmtCurrency(a.remaining_amount)}</td>
-                    <td>{fmtDate(a.request_date)}</td>
-                    <td><span className={statusBadge(a.status)}>{a.status}</span></td>
-                  </tr>
-                ))}
+                {advances.map((a) => {
+                  const isEngine = engineRequestIds.has(a.id);
+                  return (
+                    <Fragment key={a.id}>
+                      <tr>
+                        <td style={{ fontFamily: 'JetBrains Mono, monospace' }}>{a.reference}</td>
+                        <td>{a.loan_type ?? '—'}</td>
+                        <td style={{ textAlign: 'right' }}>{fmtCurrency(a.total_amount)}</td>
+                        <td style={{ textAlign: 'right' }}>{fmtCurrency(a.monthly_installment)}</td>
+                        <td style={{ textAlign: 'right' }}>{fmtCurrency(a.remaining_amount)}</td>
+                        <td>{fmtDate(a.request_date)}</td>
+                        <td>
+                          <span className={statusBadge(a.status)}>{a.status}</span>
+                          {isEngine && (
+                            <div>
+                              <button
+                                onClick={() => toggleExpand(a.id)}
+                                style={{ fontSize: 10, color: '#2563eb', marginTop: 2, background: 'none', border: 'none', padding: 0, cursor: 'pointer' }}
+                              >
+                                {expanded[a.id] ? 'Hide progress' : 'View progress'}
+                              </button>
+                            </div>
+                          )}
+                        </td>
+                      </tr>
+                      {isEngine && expanded[a.id] && (
+                        <tr>
+                          <td colSpan={7} style={{ background: '#fafbfc', padding: 12 }}>
+                            <WorkflowStepper requestType="loan" requestId={a.id} />
+                          </td>
+                        </tr>
+                      )}
+                    </Fragment>
+                  );
+                })}
               </tbody>
             </table>
           </div>

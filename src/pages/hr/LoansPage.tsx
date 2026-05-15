@@ -1,9 +1,39 @@
-import { useEffect, useState } from 'react';
+import { Fragment, useEffect, useMemo, useState } from 'react';
 import { useApp } from '@/context/AppContext';
+import { useAuth } from '@/hooks/useAuth';
 import { useUserRole } from '@/hooks/hr/useUserRole';
 import { useAdvances, nextAdvanceReference, type AdvanceSalaryWithEmployee } from '@/hooks/hr/useLoans';
 import { useEmployees } from '@/hooks/hr/useEmployees';
 import { fmtCurrency, fmtDate } from '@/lib/hr/leaveUtils';
+import {
+  type ApprovalStage,
+  canActOnStage,
+  COMPANY_SETTING_KEYS,
+  isStageColumnMissingError,
+  loanRequiredStages,
+  LOAN_SUPER_ADMIN_THRESHOLD_AMOUNT,
+  nextStage,
+  stageLabel,
+  stripStageFields,
+} from '@/lib/hr/approvalWorkflow';
+import { getCompanySettingNumber } from '@/lib/hr/companySettings';
+import {
+  notifyRejected,
+  notifyStageApproved,
+  notifySubmitted,
+  type RequestContext,
+} from '@/lib/hr/notificationService';
+import {
+  actOnStage,
+  getActiveInstance,
+  resolveWorkflowForRequest,
+  startWorkflowInstance,
+  notifyWorkflowSubmitted,
+  notifyWorkflowStageApproved,
+  notifyWorkflowRejected,
+} from '@/lib/hr/workflowEngine';
+import { useWorkflowAccess } from '@/hooks/hr/useWorkflowAccess';
+import WorkflowStepper from '@/components/hr/workflow/WorkflowStepper';
 import { supabase } from '@/integrations/supabase/client';
 
 const statusBadge = (s: string): string => {
@@ -16,7 +46,8 @@ const statusBadge = (s: string): string => {
 
 export default function LoansPage() {
   const { toast } = useApp();
-  const { can } = useUserRole();
+  const { user } = useAuth();
+  const { can, isHR, isAdmin, isSuperAdmin } = useUserRole();
   const { employees } = useEmployees();
   const [loanTypes, setLoanTypes] = useState<Array<{ id: string; name: string }>>([]);
   const { advances, loading, refetch } = useAdvances();
@@ -31,6 +62,20 @@ export default function LoansPage() {
   });
 
   const writeOk = can('loans', 'write');
+  const userId = user?.id ?? null;
+  const roleFlags = { isHR, isAdmin, isSuperAdmin };
+
+  // Workflow-engine access lookup — see useWorkflowAccess header.
+  const requestIdList = useMemo(() => advances.map((a) => a.id), [advances]);
+  const { engineRequestIds, actionableRequestIds } = useWorkflowAccess(
+    'loan',
+    requestIdList,
+    userId,
+  );
+
+  const [expanded, setExpanded] = useState<Record<string, boolean>>({});
+  const toggleExpand = (id: string) =>
+    setExpanded((p) => ({ ...p, [id]: !p[id] }));
 
   useEffect(() => {
     void supabase
@@ -40,6 +85,16 @@ export default function LoansPage() {
       .order('name')
       .then(({ data }) => setLoanTypes((data ?? []) as Array<{ id: string; name: string }>));
   }, []);
+
+  const buildLoanCtx = (a: AdvanceSalaryWithEmployee): RequestContext => ({
+    requestType: 'loan',
+    requestId: a.id,
+    requestRef: a.reference,
+    employeeId: a.employee_id ?? '',
+    employeeName: a.employee_name ?? null,
+    typeLabel: a.loan_type ?? 'Loan',
+    summary: `${fmtCurrency(a.total_amount)} · ${a.installments} installment${a.installments === 1 ? '' : 's'}`,
+  });
 
   const handleCreate = async () => {
     if (!form.employee_id || !form.total_amount || !form.installments) {
@@ -52,7 +107,12 @@ export default function LoansPage() {
     const monthly = form.monthly_installment ? Number(form.monthly_installment) : Math.round((total / installments) * 100) / 100;
 
     const reference = await nextAdvanceReference();
-    const { error } = await supabase.from('advance_salaries').insert({
+    const threshold = await getCompanySettingNumber(
+      COMPANY_SETTING_KEYS.LOAN_THRESHOLD,
+      LOAN_SUPER_ADMIN_THRESHOLD_AMOUNT,
+    );
+    const stages = loanRequiredStages(total, threshold);
+    const basePayload: Record<string, unknown> = {
       reference,
       employee_id: form.employee_id,
       loan_type: form.loan_type,
@@ -62,21 +122,209 @@ export default function LoansPage() {
       remaining_amount: total,
       status: 'Submitted',
       notes: form.notes.trim() || null,
-    });
+      current_stage: stages[0],
+      required_stages: stages,
+    };
+
+    let { data: inserted, error } = await supabase
+      .from('advance_salaries')
+      .insert(basePayload)
+      .select('id')
+      .single();
+    if (error && isStageColumnMissingError(error)) {
+      const legacy = stripStageFields(basePayload);
+      const retry = await supabase
+        .from('advance_salaries')
+        .insert(legacy)
+        .select('id')
+        .single();
+      inserted = retry.data;
+      error = retry.error;
+    }
     if (error) { toast(error.message, 'error'); return; }
+
+    const insertedId = (inserted as { id: string } | null)?.id ?? null;
+    const emp = employees.find((e) => e.id === form.employee_id);
+    // workflow_instances.request_id should match advance_salaries.id so the
+    // engine's mirror + lookups work; legacy ctx kept reference for the
+    // notification body.
+    const ctx: RequestContext = {
+      requestType: 'loan',
+      requestId: insertedId ?? reference,
+      requestRef: reference,
+      employeeId: form.employee_id,
+      employeeName: emp?.employee_name ?? null,
+      typeLabel: form.loan_type,
+      summary: `${fmtCurrency(total)} · ${installments} installment${installments === 1 ? '' : 's'}`,
+    };
+
+    // Resolve workflow by loan_type id (advance_salaries.loan_type stores
+    // the name, not the FK — look up the id by name).
+    void (async () => {
+      const matchedLoanType = loanTypes.find((t) => t.name === form.loan_type);
+      if (insertedId) {
+        const matched = await resolveWorkflowForRequest('loan', {
+          loanTypeId: matchedLoanType?.id ?? null,
+          departmentId: emp?.hr_department_id ?? null,
+          employeeId: form.employee_id,
+        });
+        if (matched) {
+          const started = await startWorkflowInstance('loan', insertedId, matched.id);
+          if (started) {
+            void notifyWorkflowSubmitted({
+              ctx,
+              stage: started.firstStage,
+              actorUserId: userId,
+            });
+            return;
+          }
+        }
+      }
+      void notifySubmitted(ctx, stages[0], userId);
+    })();
+
     toast(`Loan ${reference} submitted`, 'success');
     setForm({ employee_id: '', loan_type: 'Salary Advance', total_amount: '', monthly_installment: '', installments: '1', notes: '' });
     setCreating(false);
     void refetch();
   };
 
-  const handleStatus = async (a: AdvanceSalaryWithEmployee, status: AdvanceSalaryWithEmployee['status']) => {
+  const handleApprove = async (a: AdvanceSalaryWithEmployee) => {
+    // Engine path
+    if (engineRequestIds.has(a.id) && userId) {
+      const inst = await getActiveInstance('loan', a.id);
+      if (inst) {
+        const result = await actOnStage({
+          instanceId: inst.id,
+          action: 'approved',
+          userId,
+        });
+        if (!result) {
+          toast('You are not authorised to approve this stage.', 'error');
+          return;
+        }
+        if (result.outcome === 'completed') {
+          await supabase
+            .from('advance_salaries')
+            .update({ status: 'Approved', current_stage: null } as never)
+            .eq('id', a.id);
+        }
+        void notifyWorkflowStageApproved({
+          ctx: buildLoanCtx(a),
+          stage: result.actedStage,
+          nextStage: result.nextStage,
+          actorUserId: userId,
+        });
+        toast(
+          result.outcome === 'completed'
+            ? `Loan ${a.reference} fully approved.`
+            : result.outcome === 'advanced' && result.nextStage
+              ? `Loan ${a.reference} approved — forwarded to ${result.nextStage.stage_name}.`
+              : result.outcome === 'waiting'
+                ? 'Your approval recorded — waiting on remaining approvers.'
+                : 'Approval recorded.',
+          'success',
+        );
+        void refetch();
+        return;
+      }
+    }
+
+    // Legacy path
+    const stages = (a.required_stages ?? null) as ApprovalStage[] | null;
+    const currentStage = (a.current_stage ?? null) as ApprovalStage | null;
+    if (currentStage && !canActOnStage(currentStage, roleFlags)) {
+      toast(`Only ${stageLabel(currentStage)} can approve this stage.`, 'error');
+      return;
+    }
+    const next = nextStage(stages, currentStage);
+    const updates: Record<string, unknown> = next
+      ? { current_stage: next }
+      : { status: 'Approved', current_stage: null };
+
+    let { error } = await supabase.from('advance_salaries').update(updates).eq('id', a.id);
+    if (error && isStageColumnMissingError(error)) {
+      const legacy = stripStageFields({ status: 'Approved' });
+      ({ error } = await supabase.from('advance_salaries').update(legacy).eq('id', a.id));
+    }
+    if (error) { toast(error.message, 'error'); return; }
+
+    void notifyStageApproved(
+      buildLoanCtx(a),
+      (currentStage ?? 'hr') as ApprovalStage,
+      next,
+      userId,
+    );
+    toast(
+      next ? `Loan ${a.reference} approved — forwarded to ${stageLabel(next)}.` : `Loan ${a.reference} fully approved.`,
+      'success',
+    );
+    void refetch();
+  };
+
+  const handleReject = async (a: AdvanceSalaryWithEmployee) => {
+    const reason = window.prompt('Reason for rejection:')?.trim() ?? '';
+    if (!reason) { toast('A rejection reason is required.', 'error'); return; }
+
+    // Engine path
+    if (engineRequestIds.has(a.id) && userId) {
+      const inst = await getActiveInstance('loan', a.id);
+      if (inst) {
+        const result = await actOnStage({
+          instanceId: inst.id,
+          action: 'rejected',
+          userId,
+          comment: reason,
+        });
+        if (!result) {
+          toast('You are not authorised to reject this stage.', 'error');
+          return;
+        }
+        await supabase
+          .from('advance_salaries')
+          .update({ status: 'Rejected', rejection_reason: reason } as never)
+          .eq('id', a.id);
+        void notifyWorkflowRejected({
+          ctx: buildLoanCtx(a),
+          stage: result.actedStage,
+          actorUserId: userId,
+          reason,
+        });
+        toast(`Loan ${a.reference} rejected.`, 'info');
+        void refetch();
+        return;
+      }
+    }
+
+    // Legacy path
+    const currentStage = (a.current_stage ?? null) as ApprovalStage | null;
+    if (currentStage && !canActOnStage(currentStage, roleFlags)) {
+      toast(`Only ${stageLabel(currentStage)} can reject this stage.`, 'error');
+      return;
+    }
+    const payload: Record<string, unknown> = {
+      status: 'Rejected',
+      rejection_reason: reason,
+    };
+    let { error } = await supabase.from('advance_salaries').update(payload).eq('id', a.id);
+    if (error && isStageColumnMissingError(error)) {
+      const legacy = stripStageFields(payload);
+      ({ error } = await supabase.from('advance_salaries').update(legacy).eq('id', a.id));
+    }
+    if (error) { toast(error.message, 'error'); return; }
+
+    void notifyRejected(buildLoanCtx(a), (currentStage ?? 'hr') as ApprovalStage, userId, reason);
+    toast(`Loan ${a.reference} rejected.`, 'info');
+    void refetch();
+  };
+
+  const handleComplete = async (a: AdvanceSalaryWithEmployee) => {
     const { error } = await supabase
       .from('advance_salaries')
-      .update({ status })
+      .update({ status: 'Completed' })
       .eq('id', a.id);
     if (error) { toast(error.message, 'error'); return; }
-    toast(`Loan ${a.reference} → ${status}`, 'info');
+    toast(`Loan ${a.reference} marked completed.`, 'info');
     void refetch();
   };
 
@@ -210,39 +458,69 @@ export default function LoansPage() {
                 </tr>
               </thead>
               <tbody>
-                {advances.map((a) => (
-                  <tr key={a.id}>
-                    <td style={{ fontFamily: 'JetBrains Mono, monospace' }}>{a.reference}</td>
-                    <td>
-                      <div className="td-name">{a.employee_name ?? '—'}</div>
-                      <div style={{ fontSize: 10, color: 'var(--text3)' }}>{a.employee_code}</div>
-                    </td>
-                    <td>{a.loan_type ?? '—'}</td>
-                    <td style={{ textAlign: 'right' }}>{fmtCurrency(a.total_amount)}</td>
-                    <td style={{ textAlign: 'right' }}>{fmtCurrency(a.monthly_installment)}</td>
-                    <td>{a.installments}</td>
-                    <td style={{ textAlign: 'right' }}>{fmtCurrency(a.remaining_amount)}</td>
-                    <td>{fmtDate(a.request_date)}</td>
-                    <td><span className={statusBadge(a.status)}>{a.status}</span></td>
-                    <td style={{ textAlign: 'right', whiteSpace: 'nowrap' }}>
-                      {writeOk && a.status === 'Submitted' && (
-                        <>
-                          <button className="btn btn-green btn-sm" onClick={() => void handleStatus(a, 'Approved')} style={{ marginRight: 4 }} title="Approve">
-                            <i className="fa-solid fa-check" />
-                          </button>
-                          <button className="btn btn-danger btn-sm" onClick={() => void handleStatus(a, 'Rejected')} title="Reject">
-                            <i className="fa-solid fa-xmark" />
-                          </button>
-                        </>
+                {advances.map((a) => {
+                  const isEngine = engineRequestIds.has(a.id);
+                  const canActOnRow = isEngine
+                    ? actionableRequestIds.has(a.id)
+                    : canActOnStage((a.current_stage ?? null) as ApprovalStage | null, roleFlags);
+                  return (
+                    <Fragment key={a.id}>
+                      <tr>
+                        <td style={{ fontFamily: 'JetBrains Mono, monospace' }}>{a.reference}</td>
+                        <td>
+                          <div className="td-name">{a.employee_name ?? '—'}</div>
+                          <div style={{ fontSize: 10, color: 'var(--text3)' }}>{a.employee_code}</div>
+                        </td>
+                        <td>{a.loan_type ?? '—'}</td>
+                        <td style={{ textAlign: 'right' }}>{fmtCurrency(a.total_amount)}</td>
+                        <td style={{ textAlign: 'right' }}>{fmtCurrency(a.monthly_installment)}</td>
+                        <td>{a.installments}</td>
+                        <td style={{ textAlign: 'right' }}>{fmtCurrency(a.remaining_amount)}</td>
+                        <td>{fmtDate(a.request_date)}</td>
+                        <td>
+                          <span className={statusBadge(a.status)}>{a.status}</span>
+                          {a.status === 'Submitted' && a.current_stage && (
+                            <div style={{ fontSize: 10, color: 'var(--text3)', marginTop: 2 }}>
+                              {isEngine ? 'In workflow' : `Awaiting ${stageLabel(a.current_stage as ApprovalStage)}`}
+                            </div>
+                          )}
+                          {isEngine && (
+                            <button
+                              onClick={() => toggleExpand(a.id)}
+                              style={{ fontSize: 10, color: '#2563eb', marginTop: 2, background: 'none', border: 'none', padding: 0, cursor: 'pointer' }}
+                            >
+                              {expanded[a.id] ? 'Hide progress' : 'View progress'}
+                            </button>
+                          )}
+                        </td>
+                        <td style={{ textAlign: 'right', whiteSpace: 'nowrap' }}>
+                          {writeOk && a.status === 'Submitted' && canActOnRow && (
+                            <>
+                              <button className="btn btn-green btn-sm" onClick={() => void handleApprove(a)} style={{ marginRight: 4 }} title="Approve">
+                                <i className="fa-solid fa-check" />
+                              </button>
+                              <button className="btn btn-danger btn-sm" onClick={() => void handleReject(a)} title="Reject">
+                                <i className="fa-solid fa-xmark" />
+                              </button>
+                            </>
+                          )}
+                          {writeOk && a.status === 'Approved' && (
+                            <button className="btn btn-outline btn-sm" onClick={() => void handleComplete(a)} title="Mark completed">
+                              <i className="fa-solid fa-flag-checkered" />
+                            </button>
+                          )}
+                        </td>
+                      </tr>
+                      {isEngine && expanded[a.id] && (
+                        <tr>
+                          <td colSpan={10} style={{ background: '#fafbfc', padding: 12 }}>
+                            <WorkflowStepper requestType="loan" requestId={a.id} />
+                          </td>
+                        </tr>
                       )}
-                      {writeOk && a.status === 'Approved' && (
-                        <button className="btn btn-outline btn-sm" onClick={() => void handleStatus(a, 'Completed')} title="Mark completed">
-                          <i className="fa-solid fa-flag-checkered" />
-                        </button>
-                      )}
-                    </td>
-                  </tr>
-                ))}
+                    </Fragment>
+                  );
+                })}
               </tbody>
             </table>
           </div>

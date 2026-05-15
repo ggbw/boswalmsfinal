@@ -1,0 +1,298 @@
+/**
+ * Attendance configuration page (Phase 5 — scoped).
+ *
+ * Edits the singleton `attendance_settings` row and shows the registered
+ * biometric devices from `attendance_devices`. These two tables are added by
+ * migration 20260514000004_attendance_devices_and_settings.sql.
+ *
+ * Device registration itself is intentionally read-only here — devices are
+ * meant to be added by the sync edge function on first contact, not typed in
+ * by hand. The "Add device manually" affordance is a small admin convenience
+ * for environments without a working sync function yet.
+ */
+
+import { useCallback, useEffect, useState } from 'react';
+import { useApp } from '@/context/AppContext';
+import { useUserRole } from '@/hooks/hr/useUserRole';
+import { supabase } from '@/integrations/supabase/client';
+
+interface AttendanceSettings {
+  id: number;
+  work_start_time: string;
+  grace_period_minutes: number;
+  updated_at: string | null;
+}
+
+interface AttendanceDevice {
+  id: number;
+  device_serial: string;
+  device_name: string | null;
+  location: string | null;
+  is_active: boolean;
+  first_seen: string | null;
+  last_seen: string | null;
+  last_sync: string | null;
+}
+
+const fmtDateTime = (s: string | null): string => {
+  if (!s) return '—';
+  try {
+    return new Date(s).toLocaleString('en-GB', { dateStyle: 'short', timeStyle: 'short' });
+  } catch {
+    return s;
+  }
+};
+
+export default function AttendanceSettingsPage() {
+  const { toast, navigate } = useApp();
+  const { can } = useUserRole();
+  const writeOk = can('attendance', 'write');
+
+  const [settings, setSettings] = useState<AttendanceSettings | null>(null);
+  const [devices, setDevices] = useState<AttendanceDevice[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
+
+  const [workStartTime, setWorkStartTime] = useState('08:00');
+  const [graceMinutes, setGraceMinutes] = useState(15);
+
+  // Add-device form
+  const [addingDevice, setAddingDevice] = useState(false);
+  const [deviceForm, setDeviceForm] = useState({ device_serial: '', device_name: '', location: '' });
+
+  const refetch = useCallback(async () => {
+    setLoading(true);
+    const [{ data: sett }, { data: devs }] = await Promise.all([
+      supabase.from('attendance_settings').select('*').eq('id', 1).maybeSingle(),
+      supabase.from('attendance_devices').select('*').order('device_serial'),
+    ]);
+    const s = (sett as AttendanceSettings | null) ?? null;
+    setSettings(s);
+    if (s) {
+      setWorkStartTime(s.work_start_time);
+      setGraceMinutes(s.grace_period_minutes);
+    }
+    setDevices((devs ?? []) as AttendanceDevice[]);
+    setLoading(false);
+  }, []);
+
+  useEffect(() => {
+    void refetch();
+  }, [refetch]);
+
+  const handleSaveSettings = async () => {
+    setSaving(true);
+    const { error } = await supabase
+      .from('attendance_settings')
+      .upsert(
+        {
+          id: 1,
+          work_start_time: workStartTime,
+          grace_period_minutes: graceMinutes,
+          updated_at: new Date().toISOString(),
+        },
+        { onConflict: 'id' },
+      );
+    setSaving(false);
+    if (error) { toast(error.message, 'error'); return; }
+    toast('Attendance settings saved', 'success');
+    void refetch();
+  };
+
+  const handleAddDevice = async () => {
+    const serial = deviceForm.device_serial.trim();
+    if (!serial) { toast('Device serial is required', 'error'); return; }
+    const { error } = await supabase.from('attendance_devices').insert({
+      device_serial: serial,
+      device_name: deviceForm.device_name.trim() || null,
+      location: deviceForm.location.trim() || null,
+      is_active: true,
+    });
+    if (error) { toast(error.message, 'error'); return; }
+    toast(`Device ${serial} added`, 'success');
+    setDeviceForm({ device_serial: '', device_name: '', location: '' });
+    setAddingDevice(false);
+    void refetch();
+  };
+
+  const handleToggleDevice = async (d: AttendanceDevice) => {
+    const { error } = await supabase
+      .from('attendance_devices')
+      .update({ is_active: !d.is_active })
+      .eq('id', d.id);
+    if (error) { toast(error.message, 'error'); return; }
+    toast(`Device ${d.device_serial} ${d.is_active ? 'deactivated' : 'activated'}`, 'info');
+    void refetch();
+  };
+
+  if (loading) {
+    return <div className="card" style={{ padding: 32, textAlign: 'center', color: 'var(--text2)' }}>Loading…</div>;
+  }
+
+  return (
+    <>
+      <div className="page-header">
+        <div>
+          <div className="page-title">Attendance Settings</div>
+          <div className="page-sub">HR Management · Device registry &amp; late-detection</div>
+        </div>
+        <button className="btn btn-outline btn-sm" onClick={() => navigate('hr-attendance-report')}>
+          <i className="fa-solid fa-arrow-left" /> Back to Attendance
+        </button>
+      </div>
+
+      <div className="card" style={{ marginBottom: 16 }}>
+        <div className="card-title"><span>Work Hours &amp; Late Detection</span></div>
+        <p style={{ fontSize: 11, color: 'var(--text2)', marginTop: -4, marginBottom: 12 }}>
+          Punches arriving more than the grace period after the work start time are flagged late on attendance reports.
+        </p>
+        <div className="form-row cols2">
+          <div className="form-group">
+            <label>Work Start Time</label>
+            <input
+              type="time"
+              className="form-input"
+              disabled={!writeOk}
+              value={workStartTime}
+              onChange={(e) => setWorkStartTime(e.target.value)}
+            />
+          </div>
+          <div className="form-group">
+            <label>Grace Period (minutes)</label>
+            <input
+              type="number"
+              min={0}
+              max={120}
+              className="form-input"
+              disabled={!writeOk}
+              value={graceMinutes}
+              onChange={(e) => setGraceMinutes(Math.max(0, Number(e.target.value) || 0))}
+            />
+          </div>
+        </div>
+        {settings?.updated_at && (
+          <div style={{ fontSize: 10, color: 'var(--text3)', marginBottom: 8 }}>
+            Last updated: {fmtDateTime(settings.updated_at)}
+          </div>
+        )}
+        {writeOk && (
+          <div style={{ textAlign: 'right' }}>
+            <button className="btn btn-primary btn-sm" onClick={() => void handleSaveSettings()} disabled={saving}>
+              <i className="fa-solid fa-floppy-disk" /> {saving ? 'Saving…' : 'Save'}
+            </button>
+          </div>
+        )}
+      </div>
+
+      <div className="card" style={{ padding: 0 }}>
+        <div
+          style={{
+            padding: '16px 20px 12px',
+            borderBottom: '1px solid var(--border)',
+            display: 'flex',
+            justifyContent: 'space-between',
+            alignItems: 'center',
+          }}
+        >
+          <div style={{ fontSize: 13, fontWeight: 600 }}>
+            Registered Devices
+            <span style={{ marginLeft: 8, fontSize: 11, color: 'var(--text2)', fontWeight: 400 }}>
+              · {devices.length} {devices.length === 1 ? 'device' : 'devices'}
+            </span>
+          </div>
+          {writeOk && (
+            <button className="btn btn-primary btn-sm" onClick={() => setAddingDevice((c) => !c)}>
+              <i className="fa-solid fa-plus" /> {addingDevice ? 'Cancel' : 'Add Device'}
+            </button>
+          )}
+        </div>
+        {addingDevice && (
+          <div style={{ padding: 16, borderBottom: '1px solid var(--border)' }}>
+            <div className="form-row cols3">
+              <div className="form-group">
+                <label>Serial *</label>
+                <input
+                  className="form-input"
+                  value={deviceForm.device_serial}
+                  onChange={(e) => setDeviceForm({ ...deviceForm, device_serial: e.target.value })}
+                  placeholder="e.g. DS-K1T804AMF-..."
+                />
+              </div>
+              <div className="form-group">
+                <label>Name</label>
+                <input
+                  className="form-input"
+                  value={deviceForm.device_name}
+                  onChange={(e) => setDeviceForm({ ...deviceForm, device_name: e.target.value })}
+                  placeholder="Main Entrance"
+                />
+              </div>
+              <div className="form-group">
+                <label>Location</label>
+                <input
+                  className="form-input"
+                  value={deviceForm.location}
+                  onChange={(e) => setDeviceForm({ ...deviceForm, location: e.target.value })}
+                  placeholder="Reception"
+                />
+              </div>
+            </div>
+            <div style={{ textAlign: 'right' }}>
+              <button className="btn btn-primary btn-sm" onClick={() => void handleAddDevice()}>
+                <i className="fa-solid fa-check" /> Add
+              </button>
+            </div>
+          </div>
+        )}
+        {devices.length === 0 ? (
+          <div style={{ padding: 32, textAlign: 'center', color: 'var(--text2)' }}>
+            No devices registered yet.
+          </div>
+        ) : (
+          <div className="table-wrap">
+            <table>
+              <thead>
+                <tr>
+                  <th>Serial</th>
+                  <th>Name</th>
+                  <th>Location</th>
+                  <th>Last Seen</th>
+                  <th>Last Sync</th>
+                  <th>Status</th>
+                  <th style={{ textAlign: 'right' }}>Actions</th>
+                </tr>
+              </thead>
+              <tbody>
+                {devices.map((d) => (
+                  <tr key={d.id}>
+                    <td style={{ fontFamily: 'JetBrains Mono, monospace', fontSize: 11 }}>{d.device_serial}</td>
+                    <td>{d.device_name ?? '—'}</td>
+                    <td>{d.location ?? '—'}</td>
+                    <td style={{ fontSize: 11 }}>{fmtDateTime(d.last_seen)}</td>
+                    <td style={{ fontSize: 11 }}>{fmtDateTime(d.last_sync)}</td>
+                    <td>
+                      <span className={`badge ${d.is_active ? 'badge-active' : 'badge-inactive'}`}>
+                        {d.is_active ? 'Active' : 'Inactive'}
+                      </span>
+                    </td>
+                    <td style={{ textAlign: 'right' }}>
+                      {writeOk && (
+                        <button
+                          className={`btn btn-sm ${d.is_active ? 'btn-outline' : 'btn-green'}`}
+                          onClick={() => void handleToggleDevice(d)}
+                        >
+                          <i className={`fa-solid ${d.is_active ? 'fa-toggle-on' : 'fa-toggle-off'}`} />{' '}
+                          {d.is_active ? 'Deactivate' : 'Activate'}
+                        </button>
+                      )}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </div>
+    </>
+  );
+}

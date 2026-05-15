@@ -18,12 +18,32 @@ export default function PayslipsPage() {
   const [search, setSearch] = useState('');
   const [statusFilter, setStatusFilter] = useState<string>('all');
 
+  // Month filter is keyed off period_to (not period_from): a cycle that runs
+  // 25-Mar → 24-Apr is the April payslip, so the "month paid for" is the end of
+  // the cycle. (motho2 commit 99f6d50)
+  const monthOptions = useMemo(() => {
+    const months = new Set<string>();
+    for (const p of payslips) {
+      if (p.period_to) months.add(String(p.period_to).slice(0, 7));
+    }
+    const sorted = Array.from(months).sort().reverse();
+    return [{ value: 'all', label: 'All Periods' }, ...sorted.map((ym) => {
+      const [y, m] = ym.split('-');
+      const label = new Date(Number(y), Number(m) - 1, 1)
+        .toLocaleDateString('en-BW', { month: 'long', year: 'numeric' });
+      return { value: ym, label };
+    })];
+  }, [payslips]);
+
+  const [monthFilter, setMonthFilter] = useState<string>('all');
+
   const writeOk = can('payslips', 'write');
 
   const filtered = useMemo(() => {
     const q = search.trim().toLowerCase();
     return payslips.filter((p) => {
       if (statusFilter !== 'all' && p.status !== statusFilter) return false;
+      if (monthFilter !== 'all' && String(p.period_to ?? '').slice(0, 7) !== monthFilter) return false;
       if (!q) return true;
       return (
         (p.reference ?? '').toLowerCase().includes(q) ||
@@ -31,7 +51,7 @@ export default function PayslipsPage() {
         (p.employee_code ?? '').toLowerCase().includes(q)
       );
     });
-  }, [payslips, search, statusFilter]);
+  }, [payslips, search, statusFilter, monthFilter]);
 
   const handleDelete = async (p: PayslipWithEmployee) => {
     if (!window.confirm(`Delete payslip ${p.reference}?`)) return;
@@ -117,6 +137,11 @@ export default function PayslipsPage() {
           <div style={{ fontSize: 13, fontWeight: 600 }}>Payslip List</div>
           <div style={{ display: 'flex', gap: 8 }}>
             <input className="search-input" placeholder="Search reference / employee…" value={search} onChange={(e) => setSearch(e.target.value)} style={{ width: 240 }} />
+            <select className="filter-select" value={monthFilter} onChange={(e) => setMonthFilter(e.target.value)}>
+              {monthOptions.map((o) => (
+                <option key={o.value} value={o.value}>{o.label}</option>
+              ))}
+            </select>
             <select className="filter-select" value={statusFilter} onChange={(e) => setStatusFilter(e.target.value)}>
               <option value="all">All</option>
               <option value="draft">Draft</option>

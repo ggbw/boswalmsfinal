@@ -1,9 +1,15 @@
-import { useEffect, useMemo, useState } from 'react';
+import { Fragment, useEffect, useMemo, useState } from 'react';
 import { useApp } from '@/context/AppContext';
 import { useAuth } from '@/hooks/useAuth';
 import { useLeaveRequests, useLeaveTypes } from '@/hooks/hr/useLeaves';
 import { calcLeaveDays, BOTSWANA_HOLIDAYS_2026 } from '@/lib/hr/payrollEngine';
 import { fmtDate } from '@/lib/hr/leaveUtils';
+import { useWorkflowAccess } from '@/hooks/hr/useWorkflowAccess';
+import WorkflowStepper from '@/components/hr/workflow/WorkflowStepper';
+import {
+  resolveWorkflowForRequest,
+  startWorkflowInstance,
+} from '@/lib/hr/workflowEngine';
 import { supabase } from '@/integrations/supabase/client';
 
 const statusBadge = (s: string): string => {
@@ -47,20 +53,49 @@ export default function MyLeavesPage() {
     return calcLeaveDays(form.start_date, form.end_date, BOTSWANA_HOLIDAYS_2026);
   }, [form.start_date, form.end_date]);
 
+  // Workflow-engine awareness — when a workflow is configured, show the
+  // employee a "View progress" link that expands the WorkflowStepper.
+  const requestIdList = useMemo(() => requests.map((r) => r.id), [requests]);
+  const { engineRequestIds } = useWorkflowAccess('leave', requestIdList, user?.id ?? null);
+  const [expanded, setExpanded] = useState<Record<string, boolean>>({});
+  const toggleExpand = (id: string) =>
+    setExpanded((p) => ({ ...p, [id]: !p[id] }));
+
   const handleCreate = async () => {
     if (!employeeId) { toast('No employee record linked to your account', 'error'); return; }
     if (!form.leave_type_id || !form.start_date || !form.end_date) { toast('Please fill required fields', 'error'); return; }
     if (computedDays <= 0) { toast('End date must be on or after start date', 'error'); return; }
-    const { error } = await supabase.from('leave_requests').insert({
-      employee_id: employeeId,
-      leave_type_id: form.leave_type_id,
-      start_date: form.start_date,
-      end_date: form.end_date,
-      number_of_days: computedDays,
-      reason: form.reason.trim() || null,
-      status: 'pending',
-    });
+    const { data: inserted, error } = await supabase
+      .from('leave_requests')
+      .insert({
+        employee_id: employeeId,
+        leave_type_id: form.leave_type_id,
+        start_date: form.start_date,
+        end_date: form.end_date,
+        number_of_days: computedDays,
+        reason: form.reason.trim() || null,
+        status: 'pending',
+      })
+      .select('id')
+      .single();
     if (error) { toast(error.message, 'error'); return; }
+    // Fire-and-forget workflow start if a matching workflow is configured.
+    const insertedId = (inserted as { id: string } | null)?.id ?? null;
+    if (insertedId) {
+      const { data: emp } = await supabase
+        .from('employees')
+        .select('hr_department_id')
+        .eq('id', employeeId)
+        .maybeSingle();
+      void (async () => {
+        const matched = await resolveWorkflowForRequest('leave', {
+          leaveTypeId: form.leave_type_id,
+          departmentId: (emp as { hr_department_id?: string | null } | null)?.hr_department_id ?? null,
+          employeeId,
+        });
+        if (matched) await startWorkflowInstance('leave', insertedId, matched.id);
+      })();
+    }
     toast('Leave request submitted', 'success');
     setForm({ leave_type_id: '', start_date: '', end_date: '', reason: '' });
     setCreating(false);
@@ -163,22 +198,46 @@ export default function MyLeavesPage() {
                 </tr>
               </thead>
               <tbody>
-                {requests.map((r) => (
-                  <tr key={r.id}>
-                    <td>{r.leave_type_name ?? '—'}</td>
-                    <td>{fmtDate(r.start_date)} → {fmtDate(r.end_date)}</td>
-                    <td>{r.number_of_days}</td>
-                    <td><span className={statusBadge(r.status)}>{r.status}</span></td>
-                    <td style={{ maxWidth: 200 }}>{r.approver_comment ?? '—'}</td>
-                    <td style={{ textAlign: 'right' }}>
-                      {r.status === 'pending' && (
-                        <button className="btn btn-danger btn-sm" onClick={() => void handleCancel(r.id)}>
-                          <i className="fa-solid fa-ban" /> Cancel
-                        </button>
+                {requests.map((r) => {
+                  const isEngine = engineRequestIds.has(r.id);
+                  return (
+                    <Fragment key={r.id}>
+                      <tr>
+                        <td>{r.leave_type_name ?? '—'}</td>
+                        <td>{fmtDate(r.start_date)} → {fmtDate(r.end_date)}</td>
+                        <td>{r.number_of_days}</td>
+                        <td>
+                          <span className={statusBadge(r.status)}>{r.status}</span>
+                          {isEngine && (
+                            <div>
+                              <button
+                                onClick={() => toggleExpand(r.id)}
+                                style={{ fontSize: 10, color: '#2563eb', marginTop: 2, background: 'none', border: 'none', padding: 0, cursor: 'pointer' }}
+                              >
+                                {expanded[r.id] ? 'Hide progress' : 'View progress'}
+                              </button>
+                            </div>
+                          )}
+                        </td>
+                        <td style={{ maxWidth: 200 }}>{r.approver_comment ?? '—'}</td>
+                        <td style={{ textAlign: 'right' }}>
+                          {r.status === 'pending' && (
+                            <button className="btn btn-danger btn-sm" onClick={() => void handleCancel(r.id)}>
+                              <i className="fa-solid fa-ban" /> Cancel
+                            </button>
+                          )}
+                        </td>
+                      </tr>
+                      {isEngine && expanded[r.id] && (
+                        <tr>
+                          <td colSpan={6} style={{ background: '#fafbfc', padding: 12 }}>
+                            <WorkflowStepper requestType="leave" requestId={r.id} />
+                          </td>
+                        </tr>
                       )}
-                    </td>
-                  </tr>
-                ))}
+                    </Fragment>
+                  );
+                })}
               </tbody>
             </table>
           </div>

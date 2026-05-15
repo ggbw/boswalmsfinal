@@ -45,12 +45,20 @@ import PayslipBatchPage from '@/pages/hr/PayslipBatchPage';
 import HRReportsPage from '@/pages/hr/HRReportsPage';
 import HRDocumentsPage from '@/pages/hr/HRDocumentsPage';
 import HRAttendancePage from '@/pages/hr/HRAttendancePage';
+import AttendanceSettingsPage from '@/pages/hr/AttendanceSettingsPage';
+import WorkflowsPage from '@/pages/hr/WorkflowsPage';
+import WorkflowEditorPage from '@/pages/hr/WorkflowEditorPage';
+import EmployeeGroupsPage from '@/pages/hr/EmployeeGroupsPage';
 import HRUserManagementPage from '@/pages/hr/HRUserManagementPage';
 import DocumentSettingsPage from '@/pages/hr/DocumentSettingsPage';
 import MyLeavesPage from '@/pages/hr/self-service/MyLeavesPage';
 import MyLoansPage from '@/pages/hr/self-service/MyLoansPage';
 import MyPayslipsPage from '@/pages/hr/self-service/MyPayslipsPage';
 import MyEmployeeFilePage from '@/pages/hr/self-service/MyEmployeeFilePage';
+import ForcePasswordChange from '@/components/hr/ForcePasswordChange';
+import NotificationBell from '@/components/hr/NotificationBell';
+import ImpersonationBanner from '@/components/hr/ImpersonationBanner';
+import { useAuth } from '@/hooks/useAuth';
 
 const HR_PAGE_IDS = [
   'hr-dashboard',
@@ -73,6 +81,10 @@ const HR_PAGE_IDS = [
   'hr-document-expiry',
   'hr-document-settings',
   'hr-attendance-report',
+  'hr-attendance-settings',
+  'hr-workflows',
+  'hr-workflow-editor',
+  'hr-employee-groups',
   'hr-user-management',
   'hr-config',
   'my-payslips',
@@ -123,6 +135,10 @@ const pageComponents: Record<string, React.ComponentType> = {
   'hr-document-expiry': HRDocumentsPage,
   'hr-document-settings': DocumentSettingsPage,
   'hr-attendance-report': HRAttendancePage,
+  'hr-attendance-settings': AttendanceSettingsPage,
+  'hr-workflows': WorkflowsPage,
+  'hr-workflow-editor': WorkflowEditorPage,
+  'hr-employee-groups': EmployeeGroupsPage,
   'hr-user-management': HRUserManagementPage,
   'my-leaves': MyLeavesPage,
   'my-loans': MyLoansPage,
@@ -183,6 +199,10 @@ const ROLE_PAGES: Record<string, string[]> = {
   'hr-document-expiry':      ['super_admin','hr','manager'],
   'hr-document-settings':    ['super_admin','hr'],
   'hr-attendance-report':    ['super_admin','hr','manager'],
+  'hr-attendance-settings':  ['super_admin','hr'],
+  'hr-workflows':            ['super_admin'],
+  'hr-workflow-editor':      ['super_admin'],
+  'hr-employee-groups':      ['super_admin'],
   'hr-user-management':      ['super_admin'],
   'hr-config':               ['super_admin','hr'],
 
@@ -197,6 +217,12 @@ const ROLE_PAGES: Record<string, string[]> = {
 
 export default function AppLayout() {
   const { db, activePage, currentUser, toasts, modalContent, closeModal } = useApp();
+  const { user, profile } = useAuth();
+  // First-login password reset. Inert when the profile column is absent
+  // (older schemas) because the read coerces to false.
+  const mustChangePassword = Boolean(
+    (profile as { must_change_password?: boolean } | null)?.must_change_password,
+  );
   // Default to the most restrictive role if none is set, so an unset role
   // cannot accidentally land on an admin-gated page.
   const role = currentUser?.role || 'student';
@@ -209,15 +235,17 @@ export default function AppLayout() {
   return (
     <div style={{ display: 'flex', height: '100vh', overflow: 'hidden' }}>
       <Sidebar />
-      <div className="main-area">
+      <div className="main-area" style={{ display: 'flex', flexDirection: 'column', minWidth: 0 }}>
+        <ImpersonationBanner />
         <div className="topbar">
           <div className="breadcrumb">
             <span>Boswa CIB</span>
             <span style={{ color: 'var(--border)' }}>›</span>
             <span className="current">{activePage.charAt(0).toUpperCase() + activePage.slice(1).replace(/([A-Z])/g, ' $1')}</span>
           </div>
-          <div className="topbar-right">
+          <div className="topbar-right" style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
             <span className="tb-badge">{db.config.currentYear} · Semester {db.config.currentSemester}</span>
+            <NotificationBell />
           </div>
         </div>
         <div className="content-area">
@@ -243,6 +271,12 @@ export default function AppLayout() {
             <div>{modalContent.body}</div>
           </div>
         </div>
+      )}
+
+      {/* First-login password reset (full-screen blocking modal). Renders only
+          when profile.must_change_password === true; inert otherwise. */}
+      {mustChangePassword && user?.id && (
+        <ForcePasswordChange userId={user.id} onDone={() => { /* refreshProfile inside flips the flag */ }} />
       )}
     </div>
   );

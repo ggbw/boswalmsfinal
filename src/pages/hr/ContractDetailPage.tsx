@@ -1,10 +1,12 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useApp } from '@/context/AppContext';
 import { useUserRole } from '@/hooks/hr/useUserRole';
 import { usePayComponents } from '@/hooks/hr/usePayComponents';
 import { useContractTemplates } from '@/hooks/hr/useContracts';
 import { fmtCurrency } from '@/lib/hr/leaveUtils';
 import { supabase } from '@/integrations/supabase/client';
+
+const UNION_CODE = 'UNION';
 
 interface ContractRow {
   id: string;
@@ -35,7 +37,7 @@ export default function ContractDetailPage() {
   const { can } = useUserRole();
   const contractId = pageParams.contractId as string | undefined;
   const writeOk = can('contracts', 'write');
-  const { components } = usePayComponents();
+  const { components, refetch: refetchComponents } = usePayComponents();
   const { templates } = useContractTemplates();
 
   const [contract, setContract] = useState<ContractRow | null>(null);
@@ -43,6 +45,19 @@ export default function ContractDetailPage() {
   const [lines, setLines] = useState<LineRow[]>([]);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
+  const [unionAmount, setUnionAmount] = useState<string>('');
+  const [unionSaving, setUnionSaving] = useState(false);
+
+  const unionComp = useMemo(() => components.find((c) => c.code === UNION_CODE), [components]);
+  const unionLine = useMemo(
+    () => (unionComp ? lines.find((l) => l.component_def_id === unionComp.id) : undefined),
+    [lines, unionComp],
+  );
+
+  // Keep the input in sync with whatever the DB / refetch produced.
+  useEffect(() => {
+    setUnionAmount(unionLine ? String(unionLine.amount ?? '') : '');
+  }, [unionLine?.id, unionLine?.amount]);
 
   const refetch = useCallback(async () => {
     if (!contractId) return;
@@ -125,6 +140,64 @@ export default function ContractDetailPage() {
     setLines((l) => l.filter((x) => x.id !== lineId));
   };
 
+  // Find-or-create the UNION pay_component_def and upsert its contract_lines row.
+  // Mirrors motho2 commit a9cda5e: UNION is a first-class deduction with its own
+  // input, separate from the generic deductions table.
+  const persistUnion = async () => {
+    if (!contract) return;
+    const parsed = parseFloat(unionAmount) || 0;
+    const initial = unionLine ? Number(unionLine.amount ?? 0) : 0;
+    if (parsed === initial) return; // no-op
+    setUnionSaving(true);
+    try {
+      if (unionLine) {
+        await updateLine(unionLine.id, { amount: parsed });
+        return;
+      }
+      if (parsed <= 0) return; // nothing to insert
+      let defId = unionComp?.id;
+      if (!defId) {
+        const { data: newDef, error: defErr } = await supabase
+          .from('pay_component_defs')
+          .insert({
+            name: 'Union Deduction',
+            code: UNION_CODE,
+            category: 'deduction',
+            component_type: 'fixed',
+            is_active: true,
+            is_taxable: false,
+            is_statutory: false,
+            sequence: 99,
+          })
+          .select('id')
+          .single();
+        if (defErr) { toast(defErr.message, 'error'); return; }
+        defId = (newDef as { id: string } | null)?.id;
+        // Refresh the components cache so the new def is visible to derived
+        // lookups (unionComp) on the next render.
+        await refetchComponents();
+      }
+      if (!defId) return;
+      const maxSeq = lines.reduce((m, l) => Math.max(m, l.sequence ?? 0), 0);
+      const { data: inserted, error: insErr } = await supabase
+        .from('contract_lines')
+        .insert({
+          contract_id: contract.id,
+          component_def_id: defId,
+          amount: parsed,
+          sequence: maxSeq + 1,
+          is_active: true,
+          is_earning: false,
+        })
+        .select('*')
+        .single();
+      if (insErr) { toast(insErr.message, 'error'); return; }
+      if (inserted) setLines((l) => [...l, inserted as LineRow]);
+    } finally {
+      setUnionSaving(false);
+    }
+  };
+
   if (!contractId) {
     return (
       <div className="card" style={{ padding: 32, textAlign: 'center' }}>
@@ -145,9 +218,14 @@ export default function ContractDetailPage() {
   }
 
   const earnings = lines.filter((l) => l.is_earning);
-  const deductions = lines.filter((l) => !l.is_earning);
+  // UNION is rendered in its own card below, so hide it from the generic
+  // deductions table to avoid double-display / accidental edits.
+  const deductions = lines.filter(
+    (l) => !l.is_earning && (!unionComp || l.component_def_id !== unionComp.id),
+  );
   const totalEarnings = earnings.reduce((s, l) => s + Number(l.amount), 0);
-  const totalDeductions = deductions.reduce((s, l) => s + Number(l.amount), 0);
+  const unionValue = unionLine ? Number(unionLine.amount ?? 0) : 0;
+  const totalDeductions = deductions.reduce((s, l) => s + Number(l.amount), 0) + unionValue;
 
   const renderLineTable = (rows: LineRow[], title: string, isEarning: boolean) => (
     <div className="card" style={{ padding: 0 }}>
@@ -341,6 +419,34 @@ export default function ContractDetailPage() {
       <div className="two-col">
         {renderLineTable(earnings, 'Earnings', true)}
         {renderLineTable(deductions, 'Deductions', false)}
+      </div>
+
+      <div className="card" style={{ marginTop: 16 }}>
+        <div className="card-title">
+          <span>Union Deduction</span>
+          <span style={{ fontSize: 10, color: 'var(--text3)', fontFamily: 'JetBrains Mono, monospace' }}>UNION</span>
+        </div>
+        <div className="form-row cols3">
+          <div className="form-group">
+            <label>Amount</label>
+            <input
+              type="number"
+              step="0.01"
+              min="0"
+              disabled={!writeOk || unionSaving}
+              className="form-input"
+              value={unionAmount}
+              placeholder="0.00"
+              onChange={(e) => setUnionAmount(e.target.value)}
+              onBlur={() => void persistUnion()}
+            />
+          </div>
+          <div className="form-group" style={{ alignSelf: 'end', color: 'var(--text2)', fontSize: 12 }}>
+            {unionValue > 0
+              ? `Current: ${fmtCurrency(unionValue)}`
+              : 'Not set — leave at 0 to disable.'}
+          </div>
+        </div>
       </div>
     </>
   );

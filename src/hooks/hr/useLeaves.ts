@@ -24,6 +24,12 @@ export interface LeaveRequest {
   approver_comment: string | null;
   approved_at: string | null;
   created_at: string;
+  // Multi-stage approval (see migration 20260514000002_approval_stages.sql).
+  // Nullable on pre-multi-stage rows; the approval code tolerates missing
+  // columns via approvalWorkflow.isStageColumnMissingError().
+  current_stage: string | null;
+  required_stages: string[] | null;
+  rejection_reason: string | null;
 }
 
 export interface LeaveRequestWithJoins extends LeaveRequest {

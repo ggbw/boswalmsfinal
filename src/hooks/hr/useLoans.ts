@@ -14,6 +14,10 @@ export interface AdvanceSalary {
   status: 'Draft' | 'Submitted' | 'Approved' | 'Rejected' | 'Completed';
   notes: string | null;
   created_at: string;
+  // Multi-stage approval (see migration 20260514000002_approval_stages.sql).
+  current_stage: string | null;
+  required_stages: string[] | null;
+  rejection_reason: string | null;
 }
 
 export interface AdvanceSalaryWithEmployee extends AdvanceSalary {

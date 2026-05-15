@@ -21,6 +21,7 @@ interface AuthContextType {
   loading: boolean;
   signIn: (email: string, password: string) => Promise<{ error: string | null }>;
   signOut: () => Promise<void>;
+  refreshProfile: () => Promise<void>;
 }
 
 const AuthContext = createContext<AuthContextType | null>(null);
@@ -92,8 +93,16 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     setRole(null);
   };
 
+  // Re-fetch the current profile + role. Used after first-login password
+  // changes and similar flows that mutate the row without re-authenticating.
+  const refreshProfile = async () => {
+    const uid = session?.user?.id;
+    if (!uid) return;
+    await fetchProfileAndRole(uid);
+  };
+
   return (
-    <AuthContext.Provider value={{ user, session, profile, role, loading, signIn, signOut }}>
+    <AuthContext.Provider value={{ user, session, profile, role, loading, signIn, signOut, refreshProfile }}>
       {children}
     </AuthContext.Provider>
   );

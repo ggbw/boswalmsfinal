@@ -60,6 +60,20 @@ export function useUserRole() {
     return false;
   };
 
+  // Visibility derivations. Motho2 features (PayslipList, EmployeeList,
+  // Sidebar pending badges, LoansAdmin, etc.) gate manager/expat rows behind
+  // these flags. HR and above can see manager/expat records; everyone else
+  // sees only "regular" employees.
+  const canSeeManagers = isAdmin || isHR;
+  const canSeeExpats = isAdmin || isHR;
+  // Pay-component master data is admin-only — HR can view but not configure.
+  const canEditPayComponents = isAdmin;
+
+  // Read first-login flag off the profile when present; default to false so
+  // pages without the column behave as today.
+  const mustChangePassword = Boolean((profile as { must_change_password?: boolean } | null)?.must_change_password);
+  const customRoleName = (profile as { custom_role_name?: string } | null)?.custom_role_name ?? null;
+
   // Compatibility shape with motho2's RoleContext consumers
   return {
     user,
@@ -67,13 +81,20 @@ export function useUserRole() {
     role: role ?? null,
     appRole: role ?? null,
     customRoleId: null as string | null,
+    customRoleName,
     isEmployeeRole: isEmployee,
-    mustChangePassword: false,
+    mustChangePassword,
     isSuperAdmin,
     isAdmin,
     isHR,
     isManager,
     isEmployee,
+    canSeeManagers,
+    canSeeExpats,
+    canEditPayComponents,
+    // Fine-grained HR access scope is not modeled in boswalmsfinal; leave null
+    // so motho2 consumers that read it get a defined-but-empty value.
+    hrAccessScope: null as null,
     can,
     loading: false,
   };

@@ -1,5 +1,48 @@
 import { useEffect, useState } from "react";
 import { useApp } from "@/context/AppContext";
+import { useUserRole } from "@/hooks/hr/useUserRole";
+import { supabase } from "@/integrations/supabase/client";
+
+// Counts of pending HR approvals shown as badges next to the Leaves / Loans
+// menu items. Returns zeros when the user lacks HR access — the query is
+// skipped entirely so non-HR roles don't poke at HR tables. Filters out
+// manager-owned rows when canSeeManagers is false (mirrors motho2 b879f3f).
+function useHrPendingCounts(isHR: boolean, canSeeManagers: boolean): HrPendingCounts {
+  const [counts, setCounts] = useState<HrPendingCounts>({ pendingLeaves: 0, pendingLoans: 0 });
+  useEffect(() => {
+    if (!isHR) {
+      setCounts({ pendingLeaves: 0, pendingLoans: 0 });
+      return;
+    }
+    let alive = true;
+    void (async () => {
+      const [leavesRes, loansRes] = await Promise.all([
+        supabase
+          .from('leave_requests')
+          .select('id, employees!leave_requests_employee_id_fkey(employee_type)')
+          .eq('status', 'pending'),
+        supabase
+          .from('advance_salaries')
+          .select('id, employees(employee_type)')
+          .eq('status', 'Submitted'),
+      ]);
+      if (!alive) return;
+      const visible = (rows: unknown[]): unknown[] =>
+        canSeeManagers
+          ? rows
+          : rows.filter((r) => {
+              const emp = (r as { employees?: { employee_type?: string } }).employees;
+              return (emp?.employee_type ?? 'regular') !== 'manager';
+            });
+      setCounts({
+        pendingLeaves: visible((leavesRes.data ?? []) as unknown[]).length,
+        pendingLoans:  visible((loansRes.data  ?? []) as unknown[]).length,
+      });
+    })();
+    return () => { alive = false; };
+  }, [isHR, canSeeManagers]);
+  return counts;
+}
 
 interface NavItem {
   id: string;
@@ -13,7 +56,12 @@ interface NavSection {
   items: NavItem[];
 }
 
-const HR_MANAGEMENT_SECTION: NavSection = {
+interface HrPendingCounts {
+  pendingLeaves: number;
+  pendingLoans: number;
+}
+
+const buildHrManagementSection = (pending: HrPendingCounts): NavSection => ({
   section: "HR Management",
   items: [
     { id: "hr-dashboard", label: "HR Dashboard", icon: "fa-solid fa-chart-line" },
@@ -50,7 +98,12 @@ const HR_MANAGEMENT_SECTION: NavSection = {
       label: "Leaves",
       icon: "fa-solid fa-calendar-days",
       children: [
-        { id: "hr-leaves", label: "Leaves", icon: "fa-solid fa-calendar-days" },
+        {
+          id: "hr-leaves",
+          label: "Leaves",
+          icon: "fa-solid fa-calendar-days",
+          badge: pending.pendingLeaves > 0 ? pending.pendingLeaves : undefined,
+        },
         { id: "hr-leave-types", label: "Leave Types", icon: "fa-solid fa-list-check" },
         { id: "hr-leave-report", label: "Leave Report", icon: "fa-solid fa-file-export" },
       ],
@@ -60,7 +113,12 @@ const HR_MANAGEMENT_SECTION: NavSection = {
       label: "Loans",
       icon: "fa-solid fa-credit-card",
       children: [
-        { id: "hr-loans", label: "Loans / Advances", icon: "fa-solid fa-hand-holding-dollar" },
+        {
+          id: "hr-loans",
+          label: "Loans / Advances",
+          icon: "fa-solid fa-hand-holding-dollar",
+          badge: pending.pendingLoans > 0 ? pending.pendingLoans : undefined,
+        },
         { id: "hr-loan-types", label: "Loan Types", icon: "fa-solid fa-tags" },
         { id: "hr-loan-report", label: "Loan Report", icon: "fa-solid fa-file-export" },
       ],
@@ -75,18 +133,28 @@ const HR_MANAGEMENT_SECTION: NavSection = {
         { id: "hr-document-settings", label: "Document Settings", icon: "fa-solid fa-sliders" },
       ],
     },
-    { id: "hr-attendance-report", label: "HR Attendance", icon: "fa-solid fa-clipboard-user" },
+    {
+      id: "hr-group-attendance",
+      label: "Attendance",
+      icon: "fa-solid fa-clipboard-user",
+      children: [
+        { id: "hr-attendance-report", label: "Attendance Records", icon: "fa-solid fa-clipboard-user" },
+        { id: "hr-attendance-settings", label: "Devices & Settings", icon: "fa-solid fa-sliders" },
+      ],
+    },
     {
       id: "hr-group-admin",
       label: "Administration",
       icon: "fa-solid fa-gear",
       children: [
         { id: "hr-user-management", label: "HR User Management", icon: "fa-solid fa-user-shield" },
+        { id: "hr-workflows", label: "Workflow Management", icon: "fa-solid fa-diagram-project" },
+        { id: "hr-employee-groups", label: "Employee Groups", icon: "fa-solid fa-people-group" },
         { id: "hr-config", label: "HR Configuration", icon: "fa-solid fa-gear" },
       ],
     },
   ],
-};
+});
 
 const SELF_SERVICE_SECTION: NavSection = {
   section: "Self Service",
@@ -98,7 +166,8 @@ const SELF_SERVICE_SECTION: NavSection = {
   ],
 };
 
-function getNavConfig(role: string, db: any): NavSection[] {
+function getNavConfig(role: string, db: any, hrPending: HrPendingCounts): NavSection[] {
+  const HR_MANAGEMENT_SECTION = buildHrManagementSection(hrPending);
   const adminLmsSections: NavSection[] = [
     {
       section: "Main",
@@ -283,8 +352,10 @@ function hasActiveDescendant(item: NavItem, activeId: string): boolean {
 
 export default function Sidebar() {
   const { db, currentUser, activePage, navigate, setCurrentUser } = useApp();
+  const { isHR, canSeeManagers } = useUserRole();
   const role = currentUser?.role || "admin";
-  const navConfig = getNavConfig(role, db);
+  const hrPending = useHrPendingCounts(isHR, canSeeManagers);
+  const navConfig = getNavConfig(role, db, hrPending);
 
   const [expanded, setExpanded] = useState<Record<string, boolean>>({});
 

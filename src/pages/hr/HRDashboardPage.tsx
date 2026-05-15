@@ -3,6 +3,7 @@ import { useApp } from '@/context/AppContext';
 import { useUserRole } from '@/hooks/hr/useUserRole';
 import { supabase } from '@/integrations/supabase/client';
 import { fmtCurrency, fmtDate } from '@/lib/hr/leaveUtils';
+import { scanExpiringDocuments, type ExpiringDocument } from '@/lib/hr/documentAlerts';
 
 interface Stats {
   totalEmployees: number;
@@ -20,7 +21,20 @@ interface Stats {
     end_date: string;
     status: string;
   }>;
+  expiringDocs: ExpiringDocument[];
 }
+
+const expiryBadge = (cls: ExpiringDocument['expiry_class']) => {
+  if (cls === 'expired') return 'badge badge-fail';
+  if (cls === '7_day_warning') return 'badge badge-pending';
+  return 'badge badge-inactive';
+};
+
+const expiryLabel = (cls: ExpiringDocument['expiry_class']) => {
+  if (cls === 'expired') return 'Expired';
+  if (cls === '7_day_warning') return 'Urgent';
+  return 'Soon';
+};
 
 const statusBadge = (s: string) => {
   if (s === 'approved') return 'badge badge-active';
@@ -39,7 +53,7 @@ export default function HRDashboardPage() {
     let active = true;
     void (async () => {
       const today = new Date().toISOString().slice(0, 10);
-      const [empRes, leaveRes, loanRes, holidayRes, recentRes] = await Promise.all([
+      const [empRes, leaveRes, loanRes, holidayRes, recentRes, expiringDocs] = await Promise.all([
         supabase.from('employees').select('id, status, basic_salary'),
         supabase.from('leave_requests').select('id, status'),
         supabase.from('advance_salaries').select('id, status, remaining_amount'),
@@ -51,6 +65,9 @@ export default function HRDashboardPage() {
           )
           .order('created_at', { ascending: false })
           .limit(5),
+        // Tolerate failures here — employee_documents may not exist in older
+        // environments; the dashboard should still render the rest.
+        scanExpiringDocuments().catch(() => [] as ExpiringDocument[]),
       ]);
       if (!active) return;
 
@@ -78,6 +95,7 @@ export default function HRDashboardPage() {
           end_date: r.end_date as string,
           status: r.status as string,
         })),
+        expiringDocs,
       });
       setLoading(false);
     })();
@@ -230,6 +248,54 @@ export default function HRDashboardPage() {
                 </div>
               )}
             </div>
+          </div>
+
+          <div className="card" style={{ marginTop: 16 }}>
+            <div className="card-title">
+              <span>
+                Expiring Documents
+                {stats.expiringDocs.length > 0 && (
+                  <span style={{ marginLeft: 8, fontSize: 11, color: 'var(--text2)' }}>
+                    · {stats.expiringDocs.length} {stats.expiringDocs.length === 1 ? 'alert' : 'alerts'}
+                  </span>
+                )}
+              </span>
+              <button className="btn btn-sm btn-outline" onClick={() => navigate('hr-document-expiry')}>
+                View all
+              </button>
+            </div>
+            {stats.expiringDocs.length === 0 ? (
+              <div style={{ textAlign: 'center', padding: 24, color: 'var(--text2)', fontSize: 12 }}>
+                No expiring documents.
+              </div>
+            ) : (
+              <div className="table-wrap">
+                <table>
+                  <thead>
+                    <tr>
+                      <th>Employee</th>
+                      <th>Document</th>
+                      <th>Expires</th>
+                      <th style={{ textAlign: 'right' }}>Days Left</th>
+                      <th>Status</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {stats.expiringDocs.slice(0, 8).map((d) => (
+                      <tr key={d.id}>
+                        <td className="td-name">{d.employee_name}</td>
+                        <td>{d.document_type}</td>
+                        <td>{fmtDate(d.expiry_date)}</td>
+                        <td style={{ textAlign: 'right' }}>
+                          {d.days_left < 0 ? `${Math.abs(d.days_left)} overdue` : d.days_left}
+                        </td>
+                        <td><span className={expiryBadge(d.expiry_class)}>{expiryLabel(d.expiry_class)}</span></td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
           </div>
         </>
       )}
