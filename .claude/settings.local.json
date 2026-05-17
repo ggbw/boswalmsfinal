@@ -1,0 +1,13 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(grep -l \"hr_attendance\\\\|attendance_devices\\\\|ENABLE ROW LEVEL\" D:/PROJECTS/Github/boswalmsfinal/supabase/migrations/*.sql)",
+      "Bash(npx tsc:*)",
+      "Bash(node_modules/.bin/tsc --noEmit)",
+      "Bash(bun --version)",
+      "Read(//c/Program Files/nodejs//**)",
+      "Bash(npm --version)",
+      "Bash(npm install:*)"
+    ]
+  }
+}

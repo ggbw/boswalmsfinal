@@ -1,1 +1,10 @@
 project_id = "flplvvybmzqapklcftbq"
+
+[functions.hikvision-attendance]
+verify_jwt = false
+
+[functions.ingest-attendance]
+verify_jwt = false
+
+[functions.hik-attendance]
+verify_jwt = false

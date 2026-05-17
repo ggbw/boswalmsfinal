@@ -44,7 +44,9 @@ import PayslipDetailPage from '@/pages/hr/PayslipDetailPage';
 import PayslipBatchPage from '@/pages/hr/PayslipBatchPage';
 import HRReportsPage from '@/pages/hr/HRReportsPage';
 import HRDocumentsPage from '@/pages/hr/HRDocumentsPage';
-import HRAttendancePage from '@/pages/hr/HRAttendancePage';
+import HRAttendanceReportPage from '@/pages/hr/HRAttendanceReportPage';
+import HRLiveAttendancePage from '@/pages/hr/HRLiveAttendancePage';
+import HRAttendanceRecordsPage from '@/pages/hr/HRAttendanceRecordsPage';
 import AttendanceSettingsPage from '@/pages/hr/AttendanceSettingsPage';
 import WorkflowsPage from '@/pages/hr/WorkflowsPage';
 import WorkflowEditorPage from '@/pages/hr/WorkflowEditorPage';
@@ -81,6 +83,8 @@ const HR_PAGE_IDS = [
   'hr-document-expiry',
   'hr-document-settings',
   'hr-attendance-report',
+  'hr-attendance-live',
+  'hr-attendance-records',
   'hr-attendance-settings',
   'hr-workflows',
   'hr-workflow-editor',
@@ -134,7 +138,9 @@ const pageComponents: Record<string, React.ComponentType> = {
   'hr-documents': HRDocumentsPage,
   'hr-document-expiry': HRDocumentsPage,
   'hr-document-settings': DocumentSettingsPage,
-  'hr-attendance-report': HRAttendancePage,
+  'hr-attendance-report': HRAttendanceReportPage,
+  'hr-attendance-live': HRLiveAttendancePage,
+  'hr-attendance-records': HRAttendanceRecordsPage,
   'hr-attendance-settings': AttendanceSettingsPage,
   'hr-workflows': WorkflowsPage,
   'hr-workflow-editor': WorkflowEditorPage,
@@ -199,6 +205,8 @@ const ROLE_PAGES: Record<string, string[]> = {
   'hr-document-expiry':      ['super_admin','hr','manager'],
   'hr-document-settings':    ['super_admin','hr'],
   'hr-attendance-report':    ['super_admin','hr','manager'],
+  'hr-attendance-live':      ['super_admin','hr','manager'],
+  'hr-attendance-records':   ['super_admin','hr','manager'],
   'hr-attendance-settings':  ['super_admin','hr'],
   'hr-workflows':            ['super_admin'],
   'hr-workflow-editor':      ['super_admin'],

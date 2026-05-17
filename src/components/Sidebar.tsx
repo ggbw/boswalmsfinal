@@ -138,7 +138,9 @@ const buildHrManagementSection = (pending: HrPendingCounts): NavSection => ({
       label: "Attendance",
       icon: "fa-solid fa-clipboard-user",
       children: [
-        { id: "hr-attendance-report", label: "Attendance Records", icon: "fa-solid fa-clipboard-user" },
+        { id: "hr-attendance-live",    label: "Live Dashboard",    icon: "fa-solid fa-display" },
+        { id: "hr-attendance-report",  label: "Attendance Report", icon: "fa-solid fa-clipboard-user" },
+        { id: "hr-attendance-records", label: "Raw Punches",       icon: "fa-solid fa-list" },
         { id: "hr-attendance-settings", label: "Devices & Settings", icon: "fa-solid fa-sliders" },
       ],
     },

@@ -32,6 +32,7 @@ interface AttendanceDevice {
   first_seen: string | null;
   last_seen: string | null;
   last_sync: string | null;
+  api_key: string | null;
 }
 
 const fmtDateTime = (s: string | null): string => {
@@ -58,7 +59,11 @@ export default function AttendanceSettingsPage() {
 
   // Add-device form
   const [addingDevice, setAddingDevice] = useState(false);
-  const [deviceForm, setDeviceForm] = useState({ device_serial: '', device_name: '', location: '' });
+  const [deviceForm, setDeviceForm] = useState({ device_serial: '', device_name: '', location: '', api_key: '' });
+
+  // Inline edit state — tracks which device row is being edited
+  const [editingId, setEditingId] = useState<number | null>(null);
+  const [editForm, setEditForm] = useState({ device_name: '', location: '', api_key: '' });
 
   const refetch = useCallback(async () => {
     setLoading(true);
@@ -106,12 +111,33 @@ export default function AttendanceSettingsPage() {
       device_serial: serial,
       device_name: deviceForm.device_name.trim() || null,
       location: deviceForm.location.trim() || null,
+      api_key: deviceForm.api_key.trim() || null,
       is_active: true,
     });
     if (error) { toast(error.message, 'error'); return; }
     toast(`Device ${serial} added`, 'success');
-    setDeviceForm({ device_serial: '', device_name: '', location: '' });
+    setDeviceForm({ device_serial: '', device_name: '', location: '', api_key: '' });
     setAddingDevice(false);
+    void refetch();
+  };
+
+  const startEdit = (d: AttendanceDevice) => {
+    setEditingId(d.id);
+    setEditForm({ device_name: d.device_name ?? '', location: d.location ?? '', api_key: d.api_key ?? '' });
+  };
+
+  const handleSaveEdit = async (d: AttendanceDevice) => {
+    const { error } = await supabase
+      .from('attendance_devices')
+      .update({
+        device_name: editForm.device_name.trim() || null,
+        location: editForm.location.trim() || null,
+        api_key: editForm.api_key.trim() || null,
+      })
+      .eq('id', d.id);
+    if (error) { toast(error.message, 'error'); return; }
+    toast('Device updated', 'success');
+    setEditingId(null);
     void refetch();
   };
 
@@ -237,6 +263,17 @@ export default function AttendanceSettingsPage() {
                 />
               </div>
             </div>
+            <div className="form-group">
+              <label>API Key <span style={{ fontWeight: 400, color: 'var(--text2)' }}>(optional — Hik-Connect bearer token for this device)</span></label>
+              <input
+                className="form-input"
+                type="password"
+                value={deviceForm.api_key}
+                onChange={(e) => setDeviceForm({ ...deviceForm, api_key: e.target.value })}
+                placeholder="Leave blank to use global HIK_CONNECT credentials"
+                autoComplete="new-password"
+              />
+            </div>
             <div style={{ textAlign: 'right' }}>
               <button className="btn btn-primary btn-sm" onClick={() => void handleAddDevice()}>
                 <i className="fa-solid fa-check" /> Add
@@ -256,6 +293,7 @@ export default function AttendanceSettingsPage() {
                   <th>Serial</th>
                   <th>Name</th>
                   <th>Location</th>
+                  <th>API Key</th>
                   <th>Last Seen</th>
                   <th>Last Sync</th>
                   <th>Status</th>
@@ -263,31 +301,96 @@ export default function AttendanceSettingsPage() {
                 </tr>
               </thead>
               <tbody>
-                {devices.map((d) => (
-                  <tr key={d.id}>
-                    <td style={{ fontFamily: 'JetBrains Mono, monospace', fontSize: 11 }}>{d.device_serial}</td>
-                    <td>{d.device_name ?? '—'}</td>
-                    <td>{d.location ?? '—'}</td>
-                    <td style={{ fontSize: 11 }}>{fmtDateTime(d.last_seen)}</td>
-                    <td style={{ fontSize: 11 }}>{fmtDateTime(d.last_sync)}</td>
-                    <td>
-                      <span className={`badge ${d.is_active ? 'badge-active' : 'badge-inactive'}`}>
-                        {d.is_active ? 'Active' : 'Inactive'}
-                      </span>
-                    </td>
-                    <td style={{ textAlign: 'right' }}>
-                      {writeOk && (
-                        <button
-                          className={`btn btn-sm ${d.is_active ? 'btn-outline' : 'btn-green'}`}
-                          onClick={() => void handleToggleDevice(d)}
-                        >
-                          <i className={`fa-solid ${d.is_active ? 'fa-toggle-on' : 'fa-toggle-off'}`} />{' '}
-                          {d.is_active ? 'Deactivate' : 'Activate'}
-                        </button>
-                      )}
-                    </td>
-                  </tr>
-                ))}
+                {devices.map((d) => {
+                  const isEditing = editingId === d.id;
+                  return (
+                    <tr key={d.id}>
+                      <td style={{ fontFamily: 'JetBrains Mono, monospace', fontSize: 11 }}>{d.device_serial}</td>
+                      <td>
+                        {isEditing ? (
+                          <input
+                            className="form-input"
+                            style={{ minWidth: 120 }}
+                            value={editForm.device_name}
+                            onChange={(e) => setEditForm({ ...editForm, device_name: e.target.value })}
+                          />
+                        ) : (d.device_name ?? '—')}
+                      </td>
+                      <td>
+                        {isEditing ? (
+                          <input
+                            className="form-input"
+                            style={{ minWidth: 100 }}
+                            value={editForm.location}
+                            onChange={(e) => setEditForm({ ...editForm, location: e.target.value })}
+                          />
+                        ) : (d.location ?? '—')}
+                      </td>
+                      <td>
+                        {isEditing ? (
+                          <input
+                            className="form-input"
+                            type="password"
+                            style={{ minWidth: 160 }}
+                            value={editForm.api_key}
+                            onChange={(e) => setEditForm({ ...editForm, api_key: e.target.value })}
+                            placeholder="Enter key (blank = keep current)"
+                            autoComplete="new-password"
+                          />
+                        ) : (
+                          d.api_key
+                            ? <span className="badge badge-active" title="API key set"><i className="fa-solid fa-key" /> Set</span>
+                            : <span style={{ color: 'var(--text3)', fontSize: 11 }}>Global creds</span>
+                        )}
+                      </td>
+                      <td style={{ fontSize: 11 }}>{fmtDateTime(d.last_seen)}</td>
+                      <td style={{ fontSize: 11 }}>{fmtDateTime(d.last_sync)}</td>
+                      <td>
+                        <span className={`badge ${d.is_active ? 'badge-active' : 'badge-fail'}`}>
+                          {d.is_active ? 'Active' : 'Inactive'}
+                        </span>
+                      </td>
+                      <td style={{ textAlign: 'right', whiteSpace: 'nowrap' }}>
+                        {writeOk && (
+                          <div style={{ display: 'inline-flex', gap: 6 }}>
+                            {isEditing ? (
+                              <>
+                                <button
+                                  className="btn btn-primary btn-sm"
+                                  onClick={() => void handleSaveEdit(d)}
+                                >
+                                  <i className="fa-solid fa-check" /> Save
+                                </button>
+                                <button
+                                  className="btn btn-outline btn-sm"
+                                  onClick={() => setEditingId(null)}
+                                >
+                                  Cancel
+                                </button>
+                              </>
+                            ) : (
+                              <>
+                                <button
+                                  className="btn btn-outline btn-sm"
+                                  onClick={() => startEdit(d)}
+                                >
+                                  <i className="fa-solid fa-pen" /> Edit
+                                </button>
+                                <button
+                                  className={`btn btn-sm ${d.is_active ? 'btn-outline' : 'btn-outline'}`}
+                                  onClick={() => void handleToggleDevice(d)}
+                                >
+                                  <i className={`fa-solid ${d.is_active ? 'fa-toggle-on' : 'fa-toggle-off'}`} />{' '}
+                                  {d.is_active ? 'Deactivate' : 'Activate'}
+                                </button>
+                              </>
+                            )}
+                          </div>
+                        )}
+                      </td>
+                    </tr>
+                  );
+                })}
               </tbody>
             </table>
           </div>

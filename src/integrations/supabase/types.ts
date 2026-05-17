@@ -308,6 +308,132 @@ export type Database = {
           },
         ]
       }
+      attendance_devices: {
+        Row: {
+          api_key: string | null
+          device_ip: string | null
+          device_name: string | null
+          device_password: string | null
+          device_port: number | null
+          device_serial: string
+          device_user: string | null
+          first_seen: string | null
+          id: number
+          is_active: boolean | null
+          last_seen: string | null
+          last_sync: string | null
+          location: string | null
+        }
+        Insert: {
+          api_key?: string | null
+          device_ip?: string | null
+          device_name?: string | null
+          device_password?: string | null
+          device_port?: number | null
+          device_serial: string
+          device_user?: string | null
+          first_seen?: string | null
+          id?: number
+          is_active?: boolean | null
+          last_seen?: string | null
+          last_sync?: string | null
+          location?: string | null
+        }
+        Update: {
+          api_key?: string | null
+          device_ip?: string | null
+          device_name?: string | null
+          device_password?: string | null
+          device_port?: number | null
+          device_serial?: string
+          device_user?: string | null
+          first_seen?: string | null
+          id?: number
+          is_active?: boolean | null
+          last_seen?: string | null
+          last_sync?: string | null
+          location?: string | null
+        }
+        Relationships: []
+      }
+      attendance_records: {
+        Row: {
+          data_source: string | null
+          department: string | null
+          device_name: string | null
+          device_serial: string
+          employee_id: string
+          first_name: string | null
+          full_name: string | null
+          id: number
+          imported_at: string | null
+          last_name: string | null
+          punch_at: string
+          punch_date: string
+          punch_state: string | null
+          punch_time: string
+          raw_row: Json | null
+          weekday: string | null
+        }
+        Insert: {
+          data_source?: string | null
+          department?: string | null
+          device_name?: string | null
+          device_serial: string
+          employee_id: string
+          first_name?: string | null
+          full_name?: string | null
+          id?: number
+          imported_at?: string | null
+          last_name?: string | null
+          punch_at: string
+          punch_date: string
+          punch_state?: string | null
+          punch_time: string
+          raw_row?: Json | null
+          weekday?: string | null
+        }
+        Update: {
+          data_source?: string | null
+          department?: string | null
+          device_name?: string | null
+          device_serial?: string
+          employee_id?: string
+          first_name?: string | null
+          full_name?: string | null
+          id?: number
+          imported_at?: string | null
+          last_name?: string | null
+          punch_at?: string
+          punch_date?: string
+          punch_state?: string | null
+          punch_time?: string
+          raw_row?: Json | null
+          weekday?: string | null
+        }
+        Relationships: []
+      }
+      attendance_settings: {
+        Row: {
+          grace_period_minutes: number
+          id: number
+          updated_at: string | null
+          work_start_time: string
+        }
+        Insert: {
+          grace_period_minutes?: number
+          id?: number
+          updated_at?: string | null
+          work_start_time?: string
+        }
+        Update: {
+          grace_period_minutes?: number
+          id?: number
+          updated_at?: string | null
+          work_start_time?: string
+        }
+        Relationships: []
+      }
       classes: {
         Row: {
           cal_year: number
