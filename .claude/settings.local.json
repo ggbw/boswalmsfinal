@@ -7,7 +7,17 @@
       "Bash(bun --version)",
       "Read(//c/Program Files/nodejs//**)",
       "Bash(npm --version)",
-      "Bash(npm install:*)"
+      "Bash(npm install:*)",
+      "Bash(node:*)",
+      "Bash(grep -l employee D:/PROJECTS/Github/boswalmsfinal/supabase/migrations/*.sql)",
+      "Bash(grep -r \"employees\\\\|hr_contract\\\\|contract\\\\|employment\" D:/PROJECTS/Github/boswalmsfinal/src/ --include=*.ts --include=*.tsx -l)",
+      "Bash(grep -h \"employees\\\\|UNIQUE\\\\|PRIMARY\" \"D:/PROJECTS/Github/boswalmsfinal/supabase/migrations/\"*.sql)",
+      "Bash(grep -A 30 'CREATE TABLE.*employees' D:/PROJECTS/Github/boswalmsfinal/supabase/migrations/*.sql)",
+      "Bash(grep -rn \"employee_code\\\\|UNIQUE.*employee\\\\|contracts.*UNIQUE\\\\|ON CONFLICT\" \"D:/PROJECTS/Github/boswalmsfinal/supabase/migrations/\"*.sql)",
+      "Bash(grep:*)",
+      "Bash(for f:*)",
+      "Bash(do if:*)",
+      "Bash(then echo:*)"
     ]
   }
 }
