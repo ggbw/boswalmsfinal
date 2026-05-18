@@ -61,10 +61,12 @@ export default function HRLeaveReportPage() {
           .select('*, employees(employee_name, branch_name, department), leave_types(name, code, color)')
           .eq('year', year),
         (supabase.from('leave_requests') as any)
-          .select('*, employees!leave_requests_employee_id_fkey(employee_name, branch_name, department), leave_types(name, code, color)')
+          .select('*, employees(employee_name, branch_name, department), leave_types(name, code, color)')
           .order('created_at', { ascending: false }),
       ]);
-      if (ltRes.error) toast(ltRes.error.message, 'error');
+      if (ltRes.error)    toast(`Leave types: ${ltRes.error.message}`, 'error');
+      if (allocRes.error) toast(`Allocations: ${allocRes.error.message}`, 'error');
+      if (reqRes.error)   toast(`Requests: ${reqRes.error.message}`, 'error');
       setLeaveTypes((ltRes.data ?? []) as LeaveType[]);
       setAllocations((allocRes.data ?? []) as Allocation[]);
       setRequests((reqRes.data ?? []) as Request[]);
@@ -173,12 +175,13 @@ export default function HRLeaveReportPage() {
       fill: { fgColor: { rgb: '0D9488' }, patternType: 'solid' },
       alignment: { horizontal: 'center' },
     };
-    const headers = ['Employee', 'Type', 'From', 'To', 'Days', 'Branch', 'Department'];
+    const headers = ['Employee', 'Type', 'Status', 'From', 'To', 'Days', 'Branch', 'Department'];
     const aoa: any[][] = [
       headers,
       ...filtered.map(r => [
         r.employees?.employee_name ?? '',
         r.leave_types?.name ?? '',
+        r.status ?? '',
         r.start_date ? new Date(r.start_date).toLocaleDateString('en-GB') : '',
         r.end_date   ? new Date(r.end_date).toLocaleDateString('en-GB') : '',
         r.num_days ?? r.number_of_days ?? '',
@@ -187,7 +190,7 @@ export default function HRLeaveReportPage() {
       ]),
     ];
     const ws = XLSX.utils.aoa_to_sheet(aoa);
-    ws['!cols'] = [{ wch: 26 }, { wch: 20 }, { wch: 14 }, { wch: 14 }, { wch: 8 }, { wch: 18 }, { wch: 18 }];
+    ws['!cols'] = [{ wch: 26 }, { wch: 20 }, { wch: 12 }, { wch: 14 }, { wch: 14 }, { wch: 8 }, { wch: 18 }, { wch: 18 }];
     for (let c = 0; c < headers.length; c++) {
       const ref = XLSX.utils.encode_cell({ r: 0, c });
       if ((ws as any)[ref]) (ws as any)[ref].s = headerStyle;
@@ -383,12 +386,12 @@ export default function HRLeaveReportPage() {
               <table>
                 <thead>
                   <tr>
-                    {['Ref','Employee','Type','From','To','Days','Branch','Department'].map(h => <th key={h}>{h}</th>)}
+                    {['Ref','Employee','Type','Status','From','To','Days','Branch','Department'].map(h => <th key={h}>{h}</th>)}
                   </tr>
                 </thead>
                 <tbody>
                   {filtered.length === 0 && (
-                    <tr><td colSpan={8} style={{ textAlign: 'center', padding: 32, color: 'var(--text2)' }}>No leave records for selected filters.</td></tr>
+                    <tr><td colSpan={9} style={{ textAlign: 'center', padding: 32, color: 'var(--text2)' }}>No leave records for selected filters.</td></tr>
                   )}
                   {filtered.slice(reqStart, reqEnd).map(r => (
                     <tr key={r.id}>
@@ -398,6 +401,11 @@ export default function HRLeaveReportPage() {
                         <span style={{ display: 'inline-flex', alignItems: 'center', gap: 5 }}>
                           <span style={{ width: 8, height: 8, borderRadius: 2, background: r.leave_types?.color ?? '#0D9488' }} />
                           {r.leave_types?.name ?? '—'}
+                        </span>
+                      </td>
+                      <td>
+                        <span className={r.status === 'approved' ? 'badge badge-active' : r.status === 'rejected' ? 'badge badge-fail' : 'badge badge-pending'}>
+                          {r.status}
                         </span>
                       </td>
                       <td>{fmtDate(r.start_date)}</td>
