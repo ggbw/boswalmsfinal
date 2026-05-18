@@ -43,6 +43,7 @@ export default function HRLeaveReportPage() {
   const [allocations, setAllocations] = useState<Allocation[]>([]);
   const [requests, setRequests]       = useState<Request[]>([]);
   const [loading, setLoading]         = useState(true);
+  const [statusFilter, setStatusFilter] = useState('all');
 
   // Pagination
   const [balPage, setBalPage]         = useState(1);
@@ -50,7 +51,7 @@ export default function HRLeaveReportPage() {
   const [reqPage, setReqPage]         = useState(1);
   const [reqPageSize, setReqPageSize] = useState(25);
 
-  // Load
+  // Load — fetch ALL leave requests (not just approved) so records are never empty
   useEffect(() => {
     setLoading(true);
     void (async () => {
@@ -61,7 +62,7 @@ export default function HRLeaveReportPage() {
           .eq('year', year),
         (supabase.from('leave_requests') as any)
           .select('*, employees!leave_requests_employee_id_fkey(employee_name, branch_name, department), leave_types(name, code, color)')
-          .eq('status', 'approved'),
+          .order('created_at', { ascending: false }),
       ]);
       if (ltRes.error) toast(ltRes.error.message, 'error');
       setLeaveTypes((ltRes.data ?? []) as LeaveType[]);
@@ -71,19 +72,26 @@ export default function HRLeaveReportPage() {
     })();
   }, [year, toast]);
 
-  // Derived filter options
-  const branches    = useMemo(() => [...new Set(requests.map(r => r.employees?.branch_name).filter(Boolean))] as string[], [requests]);
-  const departments = useMemo(() => [...new Set(requests.map(r => r.employees?.department).filter(Boolean))] as string[], [requests]);
+  // Derive branches & depts from allocations (always populated) + requests
+  const branches    = useMemo(() => [...new Set([
+    ...allocations.map((a: any) => a.employees?.branch_name),
+    ...requests.map(r => r.employees?.branch_name),
+  ].filter(Boolean))] as string[], [allocations, requests]);
+  const departments = useMemo(() => [...new Set([
+    ...allocations.map((a: any) => a.employees?.department),
+    ...requests.map(r => r.employees?.department),
+  ].filter(Boolean))] as string[], [allocations, requests]);
 
   // Filter requests
   const filtered = useMemo(() => requests.filter(r => {
+    if (statusFilter !== 'all' && r.status !== statusFilter) return false;
     if (month > 0 && r.start_date?.slice(5, 7) !== String(month).padStart(2, '0')) return false;
     if (branchFilter !== 'all' && r.employees?.branch_name !== branchFilter) return false;
     if (deptFilter !== 'all' && r.employees?.department !== deptFilter) return false;
     if (typeFilter !== 'all' && r.leave_type_id !== typeFilter) return false;
     if (empSearch && !(r.employees?.employee_name ?? '').toLowerCase().includes(empSearch.toLowerCase())) return false;
     return true;
-  }), [requests, month, branchFilter, deptFilter, typeFilter, empSearch]);
+  }), [requests, statusFilter, month, branchFilter, deptFilter, typeFilter, empSearch]);
 
   // Monthly trend
   const trendData = useMemo(() => MONTH_NAMES.map((m, mi) => {
@@ -139,19 +147,18 @@ export default function HRLeaveReportPage() {
   useEffect(() => { setBalPage(1); }, [year, empSearch, balPageSize]);
   useEffect(() => { setReqPage(1); }, [year, month, branchFilter, deptFilter, typeFilter, empSearch, reqPageSize]);
 
-  // Print
-  const reportRef = useRef<HTMLDivElement>(null);
+  const balRef = useRef<HTMLDivElement>(null);
   const handlePrint = () => {
-    const el = reportRef.current;
+    const el = balRef.current;
     if (!el) return;
-    const prev = reqPageSize;
-    setReqPage(1); setReqPageSize(100000);
+    const prevSize = balPageSize;
+    setBalPage(1); setBalPageSize(100000);
     el.classList.add('printing-now');
     document.body.classList.add('printing-section');
     const restore = () => {
       el.classList.remove('printing-now');
       document.body.classList.remove('printing-section');
-      setReqPageSize(prev);
+      setBalPageSize(prevSize);
       window.removeEventListener('afterprint', restore);
     };
     window.addEventListener('afterprint', restore);
@@ -275,7 +282,7 @@ export default function HRLeaveReportPage() {
       ) : (
         <>
           {/* Section 1 — Employee Balance Summary */}
-          <div className="card" style={{ padding: 0, marginBottom: 16 }}>
+          <div ref={balRef} className="card" style={{ padding: 0, marginBottom: 16 }}>
             <div style={{ padding: '14px 20px 12px', borderBottom: '1px solid var(--border)', fontSize: 13, fontWeight: 600 }}>
               Employee Leave Balances — {year}
             </div>
@@ -361,10 +368,16 @@ export default function HRLeaveReportPage() {
             </div>
           )}
 
-          {/* Section 4 — Approved Leave Records */}
-          <div ref={reportRef} className="card" style={{ padding: 0 }}>
-            <div style={{ padding: '14px 20px 12px', borderBottom: '1px solid var(--border)', fontSize: 13, fontWeight: 600 }}>
-              Leave Records ({filtered.length} approved)
+          {/* Section 4 — Leave Records */}
+          <div className="card" style={{ padding: 0 }}>
+            <div style={{ padding: '14px 20px 12px', borderBottom: '1px solid var(--border)', display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap' }}>
+              <span style={{ fontSize: 13, fontWeight: 600 }}>Leave Records ({filtered.length})</span>
+              <select className="filter-select" value={statusFilter} onChange={e => setStatusFilter(e.target.value)} style={{ marginLeft: 'auto', fontSize: 12 }}>
+                <option value="all">All Statuses</option>
+                <option value="pending">Pending</option>
+                <option value="approved">Approved</option>
+                <option value="rejected">Rejected</option>
+              </select>
             </div>
             <div className="table-wrap">
               <table>
@@ -375,7 +388,7 @@ export default function HRLeaveReportPage() {
                 </thead>
                 <tbody>
                   {filtered.length === 0 && (
-                    <tr><td colSpan={8} style={{ textAlign: 'center', padding: 32, color: 'var(--text2)' }}>No approved leaves for selected filters.</td></tr>
+                    <tr><td colSpan={8} style={{ textAlign: 'center', padding: 32, color: 'var(--text2)' }}>No leave records for selected filters.</td></tr>
                   )}
                   {filtered.slice(reqStart, reqEnd).map(r => (
                     <tr key={r.id}>
