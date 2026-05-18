@@ -212,7 +212,7 @@ function getNavConfig(role: string, db: any, hrPending: HrPendingCounts): NavSec
 
   const configs: Record<string, NavSection[]> = {
     admin: adminLmsSections,
-    super_admin: [...adminLmsSections, HR_MANAGEMENT_SECTION, SELF_SERVICE_SECTION],
+    super_admin: [...adminLmsSections, HR_MANAGEMENT_SECTION],
     hod: [
       { section: "Main", items: [{ id: "dashboard", label: "Dashboard", icon: "fa-solid fa-gauge" }] },
       {
