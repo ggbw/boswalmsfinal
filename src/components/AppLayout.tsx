@@ -43,6 +43,7 @@ import PayslipsPage from '@/pages/hr/PayslipsPage';
 import PayslipDetailPage from '@/pages/hr/PayslipDetailPage';
 import PayslipBatchPage from '@/pages/hr/PayslipBatchPage';
 import HRReportsPage from '@/pages/hr/HRReportsPage';
+import HRLeaveReportPage from '@/pages/hr/HRLeaveReportPage';
 import HRDocumentsPage from '@/pages/hr/HRDocumentsPage';
 import HRAttendanceReportPage from '@/pages/hr/HRAttendanceReportPage';
 import HRLiveAttendancePage from '@/pages/hr/HRLiveAttendancePage';
@@ -133,7 +134,7 @@ const pageComponents: Record<string, React.ComponentType> = {
   'hr-payslip-detail': PayslipDetailPage,
   'hr-payslip-batch': PayslipBatchPage,
   'hr-payroll-report': HRReportsPage,
-  'hr-leave-report': HRReportsPage,
+  'hr-leave-report': HRLeaveReportPage,
   'hr-loan-report': HRReportsPage,
   'hr-documents': HRDocumentsPage,
   'hr-document-expiry': HRDocumentsPage,

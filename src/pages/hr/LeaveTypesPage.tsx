@@ -17,21 +17,31 @@ interface LeaveType {
 interface FormState {
   id: string | null;
   name: string;
+  code: string;
   max_days: string;
   requires_approval: boolean;
   carry_forward: boolean;
   color: string;
   is_active: boolean;
+  is_paid: boolean;
+  requires_certificate: boolean;
+  description: string;
+  min_days_notice: string;
 }
 
 const empty: FormState = {
   id: null,
   name: '',
+  code: '',
   max_days: '0',
   requires_approval: true,
   carry_forward: false,
   color: '#0D9488',
   is_active: true,
+  is_paid: true,
+  requires_certificate: false,
+  description: '',
+  min_days_notice: '0',
 };
 
 export default function LeaveTypesPage() {
@@ -61,11 +71,16 @@ export default function LeaveTypesPage() {
     setForm({
       id: t.id,
       name: t.name,
+      code: (t as any).code ?? '',
       max_days: String(t.max_days),
       requires_approval: t.requires_approval,
       carry_forward: t.carry_forward,
       color: t.color ?? '#0D9488',
       is_active: t.is_active,
+      is_paid: (t as any).is_paid ?? true,
+      requires_certificate: (t as any).requires_certificate ?? false,
+      description: (t as any).description ?? '',
+      min_days_notice: String((t as any).min_days_notice ?? 0),
     });
 
   const handleSave = async () => {
@@ -73,11 +88,16 @@ export default function LeaveTypesPage() {
     setSaving(true);
     const payload = {
       name: form.name.trim(),
+      code: form.code.trim().toUpperCase() || null,
       max_days: Number(form.max_days) || 0,
       requires_approval: form.requires_approval,
       carry_forward: form.carry_forward,
       color: form.color,
       is_active: form.is_active,
+      is_paid: form.is_paid,
+      requires_certificate: form.requires_certificate,
+      description: form.description.trim() || null,
+      min_days_notice: Number(form.min_days_notice) || 0,
     };
     const { error } = form.id
       ? await supabase.from('leave_types').update(payload).eq('id', form.id)
@@ -169,19 +189,33 @@ export default function LeaveTypesPage() {
               <span>{form.id ? 'Edit Leave Type' : 'New Leave Type'}</span>
               {form.id && <button className="btn btn-outline btn-sm" onClick={() => setForm(empty)}>Cancel edit</button>}
             </div>
-            <div className="form-group">
-              <label>Name *</label>
-              <input className="form-input" value={form.name} onChange={(e) => update('name', e.target.value)} />
-            </div>
             <div className="form-row cols2">
               <div className="form-group">
-                <label>Max Days</label>
-                <input type="number" step="0.01" className="form-input" value={form.max_days} onChange={(e) => update('max_days', e.target.value)} />
+                <label>Name *</label>
+                <input className="form-input" value={form.name} onChange={(e) => update('name', e.target.value)} />
+              </div>
+              <div className="form-group">
+                <label>Code <span style={{ fontSize: 10, color: 'var(--text3)' }}>(e.g. AL, SL)</span></label>
+                <input className="form-input" value={form.code} maxLength={5} placeholder="Auto" onChange={(e) => update('code', e.target.value)} />
+              </div>
+            </div>
+            <div className="form-row cols3">
+              <div className="form-group">
+                <label>Max Days / Year</label>
+                <input type="number" step="0.5" className="form-input" value={form.max_days} onChange={(e) => update('max_days', e.target.value)} />
+              </div>
+              <div className="form-group">
+                <label>Min Notice Days</label>
+                <input type="number" step="1" className="form-input" value={form.min_days_notice} onChange={(e) => update('min_days_notice', e.target.value)} />
               </div>
               <div className="form-group">
                 <label>Color</label>
                 <input type="color" className="form-input" style={{ height: 36, padding: 2 }} value={form.color} onChange={(e) => update('color', e.target.value)} />
               </div>
+            </div>
+            <div className="form-group">
+              <label>Description</label>
+              <textarea rows={2} className="form-textarea" value={form.description} onChange={(e) => update('description', e.target.value)} />
             </div>
             <div style={{ display: 'flex', gap: 16, flexDirection: 'column', marginBottom: 12 }}>
               <label style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 12 }}>
@@ -191,6 +225,14 @@ export default function LeaveTypesPage() {
               <label style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 12 }}>
                 <input type="checkbox" checked={form.carry_forward} onChange={(e) => update('carry_forward', e.target.checked)} />
                 Carry forward unused days
+              </label>
+              <label style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 12 }}>
+                <input type="checkbox" checked={form.is_paid} onChange={(e) => update('is_paid', e.target.checked)} />
+                Paid leave
+              </label>
+              <label style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 12 }}>
+                <input type="checkbox" checked={form.requires_certificate} onChange={(e) => update('requires_certificate', e.target.checked)} />
+                Requires medical certificate
               </label>
               <label style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 12 }}>
                 <input type="checkbox" checked={form.is_active} onChange={(e) => update('is_active', e.target.checked)} />

@@ -17,7 +17,13 @@
       "Bash(grep:*)",
       "Bash(for f:*)",
       "Bash(do if:*)",
-      "Bash(then echo:*)"
+      "Bash(then echo:*)",
+      "Read(//e/E-Downloads/**)",
+      "Bash(ls \"motho2-main \\(3\\).zip\")",
+      "Bash(mkdir -p /tmp/motho2_extract)",
+      "Read(//tmp/**)",
+      "Bash(unzip -o \"/e/E-Downloads/motho2-main \\(3\\).zip\" -d .)",
+      "Bash(find /tmp/motho2_extract/motho2-main -name *.ts -o -name *.tsx)"
     ]
   }
 }
