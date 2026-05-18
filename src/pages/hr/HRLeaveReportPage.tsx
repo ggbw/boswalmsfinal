@@ -107,7 +107,7 @@ export default function HRLeaveReportPage() {
     return row;
   }), [branches, filtered, leaveTypes]);
 
-  // Employee balance summary rows
+  // Employee balance summary rows — respects branch, dept, type and employee search filters
   const empBalRows = useMemo(() => {
     const empMap: Record<string, { id: string; name: string; dept: string; branch: string; allocs: Record<string, Allocation> }> = {};
     for (const a of allocations) {
@@ -115,8 +115,13 @@ export default function HRLeaveReportPage() {
       if (!empMap[id]) empMap[id] = { id, name: a.employees?.employee_name ?? '—', dept: a.employees?.department ?? '—', branch: a.employees?.branch_name ?? '—', allocs: {} };
       empMap[id].allocs[a.leave_type_id] = a;
     }
-    return Object.values(empMap).filter(e => !empSearch || e.name.toLowerCase().includes(empSearch.toLowerCase()));
-  }, [allocations, empSearch]);
+    return Object.values(empMap).filter(e => {
+      if (empSearch && !e.name.toLowerCase().includes(empSearch.toLowerCase())) return false;
+      if (branchFilter !== 'all' && e.branch !== branchFilter) return false;
+      if (deptFilter !== 'all' && e.dept !== deptFilter) return false;
+      return true;
+    });
+  }, [allocations, empSearch, branchFilter, deptFilter]);
 
   // Pagination helpers
   const balTotal      = empBalRows.length;
@@ -212,9 +217,9 @@ export default function HRLeaveReportPage() {
         </div>
       </div>
 
-      {/* Filters */}
+      {/* Filters + Export */}
       <div className="card" style={{ marginBottom: 16 }}>
-        <div style={{ display: 'flex', flexWrap: 'wrap', gap: 12 }}>
+        <div style={{ display: 'flex', flexWrap: 'wrap', gap: 12, alignItems: 'flex-end' }}>
           <div className="form-group" style={{ marginBottom: 0 }}>
             <label style={{ fontSize: 11 }}>Year</label>
             <select className="filter-select" value={year} onChange={e => setYear(Number(e.target.value))}>
@@ -252,6 +257,15 @@ export default function HRLeaveReportPage() {
           <div className="form-group" style={{ marginBottom: 0 }}>
             <label style={{ fontSize: 11 }}>Employee</label>
             <input className="form-input" style={{ padding: '6px 10px', fontSize: 12, width: 160 }} placeholder="Search…" value={empSearch} onChange={e => setEmpSearch(e.target.value)} />
+          </div>
+          {/* Export buttons always visible */}
+          <div style={{ marginLeft: 'auto', display: 'flex', gap: 8, alignItems: 'flex-end' }}>
+            <button className="btn btn-outline btn-sm" onClick={handleExcel} style={{ display: 'flex', alignItems: 'center', gap: 5 }}>
+              <Download size={13} /> Excel
+            </button>
+            <button className="btn btn-outline btn-sm" onClick={handlePrint} style={{ display: 'flex', alignItems: 'center', gap: 5 }}>
+              <Printer size={13} /> Print / PDF
+            </button>
           </div>
         </div>
       </div>
@@ -349,16 +363,8 @@ export default function HRLeaveReportPage() {
 
           {/* Section 4 — Approved Leave Records */}
           <div ref={reportRef} className="card" style={{ padding: 0 }}>
-            <div style={{ padding: '14px 20px 12px', borderBottom: '1px solid var(--border)', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-              <span style={{ fontSize: 13, fontWeight: 600 }}>Leave Records ({filtered.length} approved)</span>
-              <div style={{ display: 'flex', gap: 8 }}>
-                <button className="btn btn-outline btn-sm" onClick={handleExcel} style={{ display: 'flex', alignItems: 'center', gap: 5 }}>
-                  <Download size={13} /> Excel
-                </button>
-                <button className="btn btn-outline btn-sm" onClick={handlePrint} style={{ display: 'flex', alignItems: 'center', gap: 5 }}>
-                  <Printer size={13} /> Print / PDF
-                </button>
-              </div>
+            <div style={{ padding: '14px 20px 12px', borderBottom: '1px solid var(--border)', fontSize: 13, fontWeight: 600 }}>
+              Leave Records ({filtered.length} approved)
             </div>
             <div className="table-wrap">
               <table>
