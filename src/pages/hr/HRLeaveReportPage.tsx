@@ -61,10 +61,12 @@ export default function HRLeaveReportPage() {
           .select('*, employees(employee_name, branch_name, department), leave_types(name, code, color)')
           .eq('year', year),
         (supabase.from('leave_requests') as any)
-          .select('*, employees!leave_requests_employee_id_fkey(employee_name, branch_name, department), leave_types(name, code, color)')
+          .select('*, employees(employee_name, branch_name, department), leave_types(name, code, color)')
           .order('created_at', { ascending: false }),
       ]);
-      if (ltRes.error) toast(ltRes.error.message, 'error');
+      if (ltRes.error)    toast(`Leave types: ${ltRes.error.message}`, 'error');
+      if (allocRes.error) toast(`Allocations: ${allocRes.error.message}`, 'error');
+      if (reqRes.error)   toast(`Requests: ${reqRes.error.message}`, 'error');
       setLeaveTypes((ltRes.data ?? []) as LeaveType[]);
       setAllocations((allocRes.data ?? []) as Allocation[]);
       setRequests((reqRes.data ?? []) as Request[]);
@@ -148,37 +150,75 @@ export default function HRLeaveReportPage() {
   useEffect(() => { setReqPage(1); }, [year, month, branchFilter, deptFilter, typeFilter, empSearch, reqPageSize]);
 
   const balRef = useRef<HTMLDivElement>(null);
-  const handlePrint = () => {
-    const el = balRef.current;
+  const reqRef = useRef<HTMLDivElement>(null);
+
+  const printSection = (ref: React.RefObject<HTMLDivElement>, expandBal: boolean) => {
+    const el = ref.current;
     if (!el) return;
-    const prevSize = balPageSize;
-    setBalPage(1); setBalPageSize(100000);
+    const prevBal = balPageSize;
+    const prevReq = reqPageSize;
+    if (expandBal) { setBalPage(1); setBalPageSize(100000); }
+    else           { setReqPage(1); setReqPageSize(100000); }
     el.classList.add('printing-now');
     document.body.classList.add('printing-section');
     const restore = () => {
       el.classList.remove('printing-now');
       document.body.classList.remove('printing-section');
-      setBalPageSize(prevSize);
+      setBalPageSize(prevBal);
+      setReqPageSize(prevReq);
       window.removeEventListener('afterprint', restore);
     };
     window.addEventListener('afterprint', restore);
     setTimeout(() => window.print(), 150);
   };
 
-  // Excel export
-  const handleExcel = () => {
+  const headerStyle: any = {
+    font: { bold: true, color: { rgb: 'FFFFFF' } },
+    fill: { fgColor: { rgb: '0D9488' }, patternType: 'solid' },
+    alignment: { horizontal: 'center' },
+  };
+
+  const styleRow = (ws: any, rowIdx: number, colCount: number) => {
+    for (let c = 0; c < colCount; c++) {
+      const ref = XLSX.utils.encode_cell({ r: rowIdx, c });
+      if ((ws as any)[ref]) (ws as any)[ref].s = headerStyle;
+    }
+  };
+
+  // Excel — Employee Leave Balances
+  const handleBalExcel = () => {
     const wb = XLSX.utils.book_new();
-    const headerStyle: any = {
-      font: { bold: true, color: { rgb: 'FFFFFF' } },
-      fill: { fgColor: { rgb: '0D9488' }, patternType: 'solid' },
-      alignment: { horizontal: 'center' },
-    };
-    const headers = ['Employee', 'Type', 'From', 'To', 'Days', 'Branch', 'Department'];
+    const typeHeaders = leaveTypes.flatMap(lt => [`${lt.code ?? lt.name} Alloc`, `${lt.code ?? lt.name} Used`, `${lt.code ?? lt.name} Rem`]);
+    const headers = ['Employee', 'Branch', 'Department', ...typeHeaders];
+    const aoa: any[][] = [
+      headers,
+      ...empBalRows.map(e => [
+        e.name, e.branch, e.dept,
+        ...leaveTypes.flatMap(lt => {
+          const a = e.allocs[lt.id];
+          return [a?.allocated_days ?? 0, a?.used_days ?? 0, a?.remaining_days ?? 0];
+        }),
+      ]),
+    ];
+    const ws = XLSX.utils.aoa_to_sheet(aoa);
+    ws['!cols'] = [{ wch: 26 }, { wch: 16 }, { wch: 20 }, ...typeHeaders.map(() => ({ wch: 10 }))];
+    styleRow(ws, 0, headers.length);
+    XLSX.utils.book_append_sheet(wb, ws, 'Leave Balances');
+    const slug = new Date().toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' }).replace(/ /g, '');
+    XLSX.writeFile(wb, `LeaveBalances_${year}_${slug}.xlsx`);
+  };
+
+  // Excel — Leave Records
+  const handleReqExcel = () => {
+    const wb = XLSX.utils.book_new();
+    const headers = ['Ref', 'Employee', 'Type', 'Status', 'From', 'To', 'Days', 'Branch', 'Department'];
     const aoa: any[][] = [
       headers,
       ...filtered.map(r => [
+        r.leave_ref ?? r.id.slice(0, 8),
         r.employees?.employee_name ?? '',
         r.leave_types?.name ?? '',
+        r.status ?? '',
         r.start_date ? new Date(r.start_date).toLocaleDateString('en-GB') : '',
         r.end_date   ? new Date(r.end_date).toLocaleDateString('en-GB') : '',
         r.num_days ?? r.number_of_days ?? '',
@@ -187,14 +227,11 @@ export default function HRLeaveReportPage() {
       ]),
     ];
     const ws = XLSX.utils.aoa_to_sheet(aoa);
-    ws['!cols'] = [{ wch: 26 }, { wch: 20 }, { wch: 14 }, { wch: 14 }, { wch: 8 }, { wch: 18 }, { wch: 18 }];
-    for (let c = 0; c < headers.length; c++) {
-      const ref = XLSX.utils.encode_cell({ r: 0, c });
-      if ((ws as any)[ref]) (ws as any)[ref].s = headerStyle;
-    }
-    XLSX.utils.book_append_sheet(wb, ws, 'Leave Report');
+    ws['!cols'] = [{ wch: 14 }, { wch: 26 }, { wch: 20 }, { wch: 12 }, { wch: 14 }, { wch: 14 }, { wch: 8 }, { wch: 18 }, { wch: 18 }];
+    styleRow(ws, 0, headers.length);
+    XLSX.utils.book_append_sheet(wb, ws, 'Leave Records');
     const slug = new Date().toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' }).replace(/ /g, '');
-    XLSX.writeFile(wb, `LeaveReport_${year}_${slug}.xlsx`);
+    XLSX.writeFile(wb, `LeaveRecords_${year}_${slug}.xlsx`);
   };
 
   const PagerBar = ({ page, totalPages, onPrev, onNext, start, end, total, pageSize, onSizeChange }: any) => (
@@ -265,15 +302,6 @@ export default function HRLeaveReportPage() {
             <label style={{ fontSize: 11 }}>Employee</label>
             <input className="form-input" style={{ padding: '6px 10px', fontSize: 12, width: 160 }} placeholder="Search…" value={empSearch} onChange={e => setEmpSearch(e.target.value)} />
           </div>
-          {/* Export buttons always visible */}
-          <div style={{ marginLeft: 'auto', display: 'flex', gap: 8, alignItems: 'flex-end' }}>
-            <button className="btn btn-outline btn-sm" onClick={handleExcel} style={{ display: 'flex', alignItems: 'center', gap: 5 }}>
-              <Download size={13} /> Excel
-            </button>
-            <button className="btn btn-outline btn-sm" onClick={handlePrint} style={{ display: 'flex', alignItems: 'center', gap: 5 }}>
-              <Printer size={13} /> Print / PDF
-            </button>
-          </div>
         </div>
       </div>
 
@@ -283,8 +311,16 @@ export default function HRLeaveReportPage() {
         <>
           {/* Section 1 — Employee Balance Summary */}
           <div ref={balRef} className="card" style={{ padding: 0, marginBottom: 16 }}>
-            <div style={{ padding: '14px 20px 12px', borderBottom: '1px solid var(--border)', fontSize: 13, fontWeight: 600 }}>
-              Employee Leave Balances — {year}
+            <div style={{ padding: '12px 16px', borderBottom: '1px solid var(--border)', display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
+              <span style={{ fontSize: 13, fontWeight: 600 }}>Employee Leave Balances — {year}</span>
+              <div style={{ marginLeft: 'auto', display: 'flex', gap: 6 }}>
+                <button className="btn btn-outline btn-sm" onClick={handleBalExcel} style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+                  <Download size={12} /> Excel
+                </button>
+                <button className="btn btn-outline btn-sm" onClick={() => printSection(balRef, true)} style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+                  <Printer size={12} /> PDF
+                </button>
+              </div>
             </div>
             <div className="table-wrap">
               <table>
@@ -369,26 +405,34 @@ export default function HRLeaveReportPage() {
           )}
 
           {/* Section 4 — Leave Records */}
-          <div className="card" style={{ padding: 0 }}>
-            <div style={{ padding: '14px 20px 12px', borderBottom: '1px solid var(--border)', display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap' }}>
+          <div ref={reqRef} className="card" style={{ padding: 0 }}>
+            <div style={{ padding: '12px 16px', borderBottom: '1px solid var(--border)', display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
               <span style={{ fontSize: 13, fontWeight: 600 }}>Leave Records ({filtered.length})</span>
-              <select className="filter-select" value={statusFilter} onChange={e => setStatusFilter(e.target.value)} style={{ marginLeft: 'auto', fontSize: 12 }}>
+              <select className="filter-select" value={statusFilter} onChange={e => setStatusFilter(e.target.value)} style={{ fontSize: 12 }}>
                 <option value="all">All Statuses</option>
                 <option value="pending">Pending</option>
                 <option value="approved">Approved</option>
                 <option value="rejected">Rejected</option>
               </select>
+              <div style={{ marginLeft: 'auto', display: 'flex', gap: 6 }}>
+                <button className="btn btn-outline btn-sm" onClick={handleReqExcel} style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+                  <Download size={12} /> Excel
+                </button>
+                <button className="btn btn-outline btn-sm" onClick={() => printSection(reqRef, false)} style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+                  <Printer size={12} /> PDF
+                </button>
+              </div>
             </div>
             <div className="table-wrap">
               <table>
                 <thead>
                   <tr>
-                    {['Ref','Employee','Type','From','To','Days','Branch','Department'].map(h => <th key={h}>{h}</th>)}
+                    {['Ref','Employee','Type','Status','From','To','Days','Branch','Department'].map(h => <th key={h}>{h}</th>)}
                   </tr>
                 </thead>
                 <tbody>
                   {filtered.length === 0 && (
-                    <tr><td colSpan={8} style={{ textAlign: 'center', padding: 32, color: 'var(--text2)' }}>No leave records for selected filters.</td></tr>
+                    <tr><td colSpan={9} style={{ textAlign: 'center', padding: 32, color: 'var(--text2)' }}>No leave records for selected filters.</td></tr>
                   )}
                   {filtered.slice(reqStart, reqEnd).map(r => (
                     <tr key={r.id}>
@@ -398,6 +442,11 @@ export default function HRLeaveReportPage() {
                         <span style={{ display: 'inline-flex', alignItems: 'center', gap: 5 }}>
                           <span style={{ width: 8, height: 8, borderRadius: 2, background: r.leave_types?.color ?? '#0D9488' }} />
                           {r.leave_types?.name ?? '—'}
+                        </span>
+                      </td>
+                      <td>
+                        <span className={r.status === 'approved' ? 'badge badge-active' : r.status === 'rejected' ? 'badge badge-fail' : 'badge badge-pending'}>
+                          {r.status}
                         </span>
                       </td>
                       <td>{fmtDate(r.start_date)}</td>
