@@ -152,14 +152,18 @@ export default function HRLiveAttendancePage() {
     }
   }, [devices, selectedDate, toast]);
 
-  // Load last successful sync
+  // Load last successful sync. The sync_runs table is part of an unshipped
+  // device-sync feature, so swallow "relation does not exist" errors silently
+  // and leave the indicator hidden (the header only renders lastSyncAt when
+  // truthy).
   const loadLastSync = useCallback(async () => {
-    const { data } = await (supabase as any)
+    const { data, error } = await (supabase as any)
       .from('sync_runs')
       .select('finished_at')
       .eq('status', 'success')
       .order('finished_at', { ascending: false })
       .limit(1);
+    if (error) { setLastSyncAt(null); return; }
     setLastSyncAt(data?.[0]?.finished_at ?? null);
   }, []);
 

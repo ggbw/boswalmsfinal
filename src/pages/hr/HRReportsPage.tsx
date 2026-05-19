@@ -44,9 +44,15 @@ interface LoanRow {
 }
 
 export default function HRReportsPage() {
-  const { toast } = useApp();
+  const { toast, activePage } = useApp();
   const { isHR } = useUserRole();
-  const [tab, setTab] = useState<ReportType>('payroll');
+  // Pre-select the tab matching the sidebar entry that opened this page so
+  // "Loan Report" lands on Loans, "Payroll Report" lands on Payroll, etc.
+  const initialTab: ReportType =
+    activePage === 'hr-loan-report'    ? 'loans' :
+    activePage === 'hr-leave-report'   ? 'leaves' :
+                                         'payroll';
+  const [tab, setTab] = useState<ReportType>(initialTab);
   const today = new Date().toISOString().slice(0, 10);
   const monthAgo = new Date(Date.now() - 30 * 24 * 3600 * 1000).toISOString().slice(0, 10);
   const [from, setFrom] = useState(monthAgo);

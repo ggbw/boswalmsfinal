@@ -1,8 +1,8 @@
 {
-  "project": "Boswa CIB - School Management System",
+  "project": "Boswa CIB - HR Management E2E",
   "baseUrl": "http://localhost:8080",
   "startCommand": "npm run dev",
-  "startupWaitSeconds": 10,
+  "startupWaitSeconds": 30,
 
   "testAccounts": {
     "superAdmin": {
@@ -24,130 +24,38 @@
     "errorMessage": ".login-card div[style*='rgba(220,38,38']"
   },
 
+  "sharedContext": {
+    "purpose": "End-to-end smoke test of the HR Management module ONLY. Skip every non-HR area (Students, Lecturers, Modules, Classes, Admissions, Academic Attendance, Exams, Grades, etc.).",
+    "timestampMarker": "Compute ONE timestamp marker at the start of the run using current time in YYYYMMDD_HHmm format (e.g. 20260519_1430). Reuse the SAME marker across every flow in this run so every record we create can be cleaned up together.",
+    "testEmployeeName": "Use 'ZZZ_QA_TEST_<timestamp>' as the full name. The ZZZ prefix sorts it to the bottom of any list so it's easy to find. Remember the assigned employee_code returned by the form (e.g. EMP-0040) and use that SAME employee in all later flows (leave, loan, payslip).",
+    "loginPreference": "Prefer logging in as 'hr'. If a write action fails with an RLS / permission error (Supabase code 42501) or the required button/form isn't visible, log out and retry as 'superAdmin' and note the permission gap in the report.",
+    "cleanupReporting": "At the end of the report add a 'Created records (for manual cleanup)' section listing: the test employee name + code, every leave_ref/loan reference/payslip reference created, and ready-to-run DELETE SQL for each (see the SQL examples in each flow).",
+    "noDelete": "Do NOT attempt to delete any created records from the UI. skipAreas forbids it. The user will clean them up using the SQL in the report."
+  },
+
   "flows": [
     {
-      "name": "Login - valid credentials (super admin)",
-      "account": "superAdmin",
+      "name": "HR - Login as HR user",
+      "account": "hr",
       "steps": [
         "Navigate to baseUrl",
-        "Fill email and password from superAdmin account",
+        "Fill email and password from the 'hr' account",
         "Click Sign In",
-        "Verify redirect away from login screen (no longer see 'Sign In' button)",
-        "Verify no console errors"
+        "Verify redirect away from the login screen (the 'Sign In' button is no longer visible)",
+        "Verify the left sidebar shows an 'HR Management' section with items like HR Dashboard, Employees, Payroll, Contracts, Leaves, Loans, Documents, Attendance, Administration",
+        "Verify no console errors on the dashboard"
       ],
       "severity": "critical"
     },
     {
-      "name": "Login - wrong password",
-      "account": "superAdmin",
+      "name": "HR - Sidebar smoke test (HR section only)",
+      "account": "hr",
       "steps": [
-        "Navigate to baseUrl",
-        "Fill email correctly but use 'wrongpass123' as password",
-        "Click Sign In",
-        "Verify error message appears in the red error box",
-        "Verify user stays on login screen"
-      ],
-      "severity": "high"
-    },
-    {
-      "name": "Login - empty fields",
-      "steps": [
-        "Navigate to baseUrl",
-        "Click Sign In without entering email or password",
-        "Verify form validation (no crash, sensible feedback)"
-      ],
-      "severity": "medium"
-    },
-    {
-      "name": "Login - Enter key submission",
-      "account": "superAdmin",
-      "steps": [
-        "Navigate to baseUrl",
-        "Fill email, fill password, press Enter in the password field",
-        "Verify login proceeds the same as clicking the button"
-      ],
-      "severity": "low"
-    },
-    {
-      "name": "Apply for Admission link",
-      "steps": [
-        "Navigate to baseUrl",
-        "Click 'Apply for Admission' button",
-        "Verify navigation to /apply page loads without console errors"
-      ],
-      "severity": "high"
-    },
-    {
-      "name": "Sidebar navigation - super admin",
-      "account": "superAdmin",
-      "steps": [
-        "Login as admin",
-        "Click each sidebar menu item one by one (Dashboard, Students, Lecturers, Modules, Classes, Admissions, Attendance, Assignments, Exams, Grades, Results, Timetable, Notes, Reports, Notifications, User Management, Config, HR)",
-        "For each page: wait 2 seconds, screenshot, capture any console errors, note if page is blank or shows error UI"
-      ],
-      "severity": "high"
-    },
-    {
-      "name": "Sidebar navigation - lecturer",
-      "account": "lecturer",
-      "steps": [
-        "Login as lecturer",
-        "Click each visible sidebar item (My Modules, My Students, Attendance, Grades, etc.)",
-        "Verify lecturer-only pages load and admin-only pages are hidden or blocked"
-      ],
-      "severity": "high"
-    },
-    {
-      "name": "Sidebar navigation - student",
-      "account": "student",
-      "steps": [
-        "Login as student",
-        "Click each visible sidebar item (Dashboard, Modules, Grades, Transcripts, Timetable, Profile, etc.)",
-        "Verify student-only pages load; admin/lecturer pages must not be accessible"
-      ],
-      "severity": "high"
-    },
-    {
-      "name": "Logout",
-      "account": "superAdmin",
-      "steps": [
-        "Login as superAdmin",
-        "Find and click the logout button (usually in profile menu or sidebar)",
-        "Verify return to login screen",
-        "Try clicking browser back - should NOT regain access to authenticated pages"
-      ],
-      "severity": "critical"
-    },
-    {
-      "name": "Refresh mid-session",
-      "account": "admin",
-      "steps": [
-        "Login as admin",
-        "Navigate to Students page",
-        "Hard refresh the page (F5)",
-        "Verify session persists and page reloads correctly"
-      ],
-      "severity": "medium"
-    },
-    {
-      "name": "Public applicant flow",
-      "steps": [
-        "Navigate to baseUrl/apply",
-        "Verify the public application page loads",
-        "Try filling and submitting with empty required fields - verify validation",
-        "Do NOT submit a real application (skip the final submit)"
-      ],
-      "severity": "medium"
-    },
-    {
-      "name": "HR module - Employees list",
-      "account": "admin",
-      "steps": [
-        "Login as admin",
-        "Navigate to HR section, then Employees",
-        "Verify the table renders without errors",
-        "Try sorting/filtering if controls exist",
-        "Open one employee detail page - verify no crash"
+        "Login as hr (or superAdmin if hr cannot see HR Management section)",
+        "Click each item under the 'HR Management' sidebar section one by one: HR Dashboard, Employees (under Employees group), HR Departments, Payslips (under Payroll), Payroll Report, Pay Components, Contracts, Contract Templates, Leaves, Leave Types, Leave Report, Loans / Advances, Loan Types, Loan Report, Employee Documents, Document Expiry, Document Settings, Live Dashboard (Attendance), Attendance Report, Raw Punches, Devices & Settings, HR User Management, Workflow Management, Employee Groups, HR Configuration",
+        "For each page: wait 2 seconds, take a screenshot, capture any console errors and any failed network requests (4xx/5xx)",
+        "Note any page that renders blank, shows an error UI, or hangs on a loading spinner",
+        "Skip every non-HR sidebar section (Academic, Operations, Management/LMS items)"
       ],
       "severity": "high"
     },
@@ -156,48 +64,131 @@
       "account": "hr",
       "writesData": true,
       "steps": [
-        "Login as hr (account 'hr' from testAccounts). If hr cannot see an 'Add Employee' button on the Employees page (missing 'employees:write' permission), log out and retry as superAdmin instead.",
+        "Login as hr. If hr cannot see an 'Add Employee' button on the Employees page (missing 'employees:write' permission), log out and retry as superAdmin.",
         "Navigate to HR Management → Employees → Employees (the employees list page)",
-        "Click the 'Add Employee' button at the top right (has user-plus icon and blue background)",
-        "Wait for the 'New Employee' form to load. The 'Employee Code *' field should auto-fill with the next available code (e.g. EMP-0040)",
-        "Compute a unique timestamp marker using the current time, format: YYYYMMDD_HHmm (e.g. 20260518_1430)",
-        "Fill 'Full Name *' with: ZZZ_QA_TEST_<timestamp>   (the ZZZ prefix sorts it to the bottom of any sorted list for easy identification)",
+        "Click the 'Add Employee' button at the top right (user-plus icon, blue background)",
+        "Wait for the 'New Employee' form to load. The 'Employee Code *' field should auto-fill with the next available code (e.g. EMP-0040). REMEMBER this code — every later flow needs it.",
+        "Fill 'Full Name *' with: ZZZ_QA_TEST_<timestamp>  (use the timestamp marker from sharedContext)",
         "Fill 'Job Title' with: QA Test Position - SAFE TO DELETE",
         "Fill 'Email' with: qa-test-<timestamp>@qatest.local",
         "Fill 'Mobile Number' with: +12345678900",
-        "Fill 'Basic Salary' with: 0",
-        "If a 'Status' field is present, set it to 'inactive' so this record does not inflate active counts or payroll estimates",
+        "Fill 'Basic Salary' with: 5000  (non-zero so payslip generation later actually produces lines)",
         "Fill 'Joining Date' with today's date in YYYY-MM-DD format",
-        "Leave other optional fields (bank, department, manager) empty - only Full Name and Employee Code are required per the source code",
-        "Click the blue 'Save' button at the top right of the form (has floppy-disk icon)",
+        "If a 'Status' field is present, leave it as 'active' (we need active+basic_salary>0 for the payslip batch step)",
+        "Leave other optional fields empty",
+        "Click the blue 'Save' button (floppy-disk icon)",
         "Verify a success toast appears reading 'Employee created' AND the page redirects back to the Employees list",
-        "On the Employees list, search for the timestamp marker and verify the new employee appears in the table",
-        "In the report, prominently list under a 'Created records (for manual cleanup)' section: the full name (ZZZ_QA_TEST_<timestamp>), the assigned employee_code, and the SQL to delete it: DELETE FROM employees WHERE employee_code = '<code>';",
-        "Capture any console errors or network 4xx/5xx that fire during save. RLS errors (code 42501) indicate the account lacks permission - report and stop, do not retry indefinitely.",
-        "Do NOT attempt to delete the record - skipAreas forbids deletion. The user will clean it up manually."
+        "Search the Employees list for the timestamp marker and verify the new row appears",
+        "Capture any console errors or network 4xx/5xx that fire during save. RLS errors (Supabase code 42501) mean the account lacks permission — note and stop, do not retry.",
+        "Record for cleanup: name=ZZZ_QA_TEST_<timestamp>, code=<assigned employee_code>, SQL: DELETE FROM employees WHERE employee_code = '<code>';"
+      ],
+      "severity": "critical"
+    },
+    {
+      "name": "HR - Request leave for the test employee (writes real record)",
+      "account": "hr",
+      "writesData": true,
+      "steps": [
+        "Stay logged in as hr (or superAdmin from the previous flow)",
+        "Navigate to HR Management → Leaves → Leaves",
+        "If the page exposes a 'New Leave' / 'Request Leave' / '+ Add' button anywhere on this page, click it. Otherwise navigate to Self Service → My Leaves and use the 'Request Leave' wizard there (the HR user IS an employee in the system).",
+        "If a leave-request wizard opens: select the first available leave type (e.g. Annual Leave), set start_date = today (YYYY-MM-DD), end_date = today + 2 days, fill reason with 'QA E2E test - SAFE TO DELETE <timestamp>', fill handover notes with 'QA test', and submit",
+        "If submission requires choosing an employee (admin form), choose the ZZZ_QA_TEST_<timestamp> employee created in the previous flow",
+        "Verify a success toast / confirmation appears AND a new row shows up in the leave requests table with status 'pending' (or 'submitted')",
+        "Record the leave_ref / id shown on screen for cleanup. SQL example: DELETE FROM leave_requests WHERE leave_ref = '<ref>';  (also note workflow_instance_id if visible — delete child rows first if FK constraints complain)",
+        "Capture any console errors or 4xx/5xx network responses. If RLS (42501) fires, log it and skip — do not retry indefinitely.",
+        "Do NOT approve, reject, or cancel the request — leave it in its initial state for the user to review."
+      ],
+      "severity": "high"
+    },
+    {
+      "name": "HR - Request loan for the test employee (writes real record)",
+      "account": "hr",
+      "writesData": true,
+      "steps": [
+        "Stay logged in as hr (or superAdmin)",
+        "Navigate to HR Management → Loans → Loans / Advances",
+        "Click the 'New Loan' button (blue, plus icon) at the top right. A 'New Loan Request' form should appear inline below the button.",
+        "In the Employee dropdown, pick the ZZZ_QA_TEST_<timestamp> employee created earlier (or the EMP-<code> recorded in sharedContext)",
+        "Loan Type: leave as 'Salary Advance' (the default) or select the first item in the loan_types dropdown",
+        "Total Amount: 1000",
+        "Installments: 2",
+        "Monthly Installment: leave blank (the form auto-computes total / installments)",
+        "Notes: 'QA E2E test - SAFE TO DELETE <timestamp>'",
+        "Click the blue Save / Submit button inside the New Loan Request card",
+        "Verify a success toast appears AND the new loan row shows up in the table above, with the assigned reference (e.g. LN-0001 or ADV-...) and status 'Submitted' (or 'Pending')",
+        "Record the loan reference for cleanup. SQL: DELETE FROM advance_salary WHERE reference = '<ref>';   (table may be advance_salary or loans — use whatever the network insert call targets; capture that URL from devtools)",
+        "Capture any console errors or 4xx/5xx network responses. RLS (42501) → log and skip.",
+        "Do NOT approve, reject, or move the loan forward in the workflow."
+      ],
+      "severity": "high"
+    },
+    {
+      "name": "HR - Generate payslip for the test employee (writes real record)",
+      "account": "hr",
+      "writesData": true,
+      "steps": [
+        "Stay logged in as hr (or superAdmin)",
+        "Navigate to HR Management → Payroll → Payslips",
+        "Verify the Payslips list page renders. If a 'Batch Generate' button is visible (top right, layer-group icon) prefer the batch flow because it auto-computes everything. Otherwise click 'New Payslip'.",
+        "BATCH PATH: click 'Batch Generate'. On the Batch page, the period_from / period_to are pre-filled with the last cycle. Find the ZZZ_QA_TEST_<timestamp> employee row in the eligible list (only active employees with basic_salary > 0 appear — that's why we set salary=5000 in the create-employee flow). Check ONLY that row's checkbox. Verify the preview totals at the top show non-zero gross/net. Click 'Generate' and accept the browser confirm() dialog.",
+        "NEW PAYSLIP PATH (fallback if Batch is hidden): click 'New Payslip'. On the PayslipDetailPage form: select the ZZZ_QA_TEST_<timestamp> employee, accept the default period dates, leave additional earnings/deductions empty, then click Save.",
+        "Verify a success toast appears reading something like 'Generated 1 payslip(s)' or 'Payslip created'",
+        "Navigate back to the Payslips list and search for the timestamp marker or the EMP-<code>. Verify the new payslip row appears with status 'draft' and a reference (e.g. PS-0001).",
+        "Click into the payslip detail page — verify the breakdown renders (earnings, deductions, PAYE, net salary) without console errors",
+        "Record the payslip reference for cleanup. SQL: DELETE FROM payslips WHERE reference = '<ref>';",
+        "Capture any console errors or 4xx/5xx network responses. RLS (42501) → log and skip.",
+        "Do NOT confirm, delete, or download the payslip — leave it in 'draft' status for the user to review."
+      ],
+      "severity": "high"
+    },
+    {
+      "name": "HR - Verify created records appear in dashboards",
+      "account": "hr",
+      "steps": [
+        "Stay logged in as hr (or superAdmin)",
+        "Navigate to HR Management → HR Dashboard. Verify it renders and any 'pending leaves' / 'pending loans' counters reflect the records we just created (count may have increased by 1 — exact number depends on existing pending items, so just verify a sensible number > 0).",
+        "Navigate to Self Service → My Leaves and My Loans pages — verify they load without errors (even if our test records were filed against the test employee rather than the HR user)",
+        "Navigate to HR Management → Leaves → Leave Report and Loans → Loan Report — verify the reports render and that the ZZZ_QA_TEST_<timestamp> records appear when filtered/searched",
+        "Capture any console errors or 4xx/5xx network responses"
+      ],
+      "severity": "medium"
+    },
+    {
+      "name": "HR - Logout",
+      "account": "hr",
+      "steps": [
+        "Find and click the logout control (profile menu, sidebar, or header)",
+        "Verify return to the login screen",
+        "Click browser Back — verify you do NOT regain access to authenticated HR pages"
       ],
       "severity": "high"
     }
   ],
 
   "skipAreas": [
-    "Do not submit the public Apply for Admission form (creates real applicant records)",
-    "Do not delete any students, lecturers, employees, modules, or classes",
-    "Do not change passwords or email addresses on any user",
-    "Do not modify HR payroll, salary, or contract data",
-    "Do not send notifications or emails",
-    "Do not export/download PDFs unless explicitly testing that feature"
+    "Do not test ANY non-HR module (Students, Lecturers, Modules, Classes, Admissions, Academic Attendance, Exams, Grades, Results, Transcripts, Timetable, Notes, Reports, Notifications, User Management, LMS Config, Apply for Admission). Skip them entirely — do not even click into them.",
+    "Do not delete any employees, leave requests, loans, payslips, contracts, departments, or any other HR records. The user will clean up using the SQL in the report.",
+    "Do not approve, reject, or otherwise advance any leave or loan request through its workflow — leave them in their initial submitted/pending state.",
+    "Do not confirm payslips — leave them in 'draft' status.",
+    "Do not change passwords or email addresses on any user.",
+    "Do not modify HR payroll component settings, leave types, loan types, pay components, workflows, or company-level HR configuration.",
+    "Do not send notifications or emails (do not click 'Send' / 'Notify' buttons).",
+    "Do not export/download PDFs unless explicitly testing that feature (skip payslip PDF download).",
+    "Do not submit the public Apply for Admission form."
   ],
 
   "watchFor": [
     "Console errors (red messages in browser devtools)",
-    "Network requests returning 4xx or 5xx",
+    "Network requests returning 4xx or 5xx — especially Supabase /rest/v1/ POST/PATCH/DELETE calls during create flows",
+    "Supabase RLS / permission errors (HTTP 401/403 or response body with code '42501') — flag the role + action so the user can fix policies",
     "Blank pages where content should appear",
     "Broken images (missing logo, broken thumbnails)",
     "Loading spinners that never resolve",
     "Layout breaking (overflowing text, overlapping elements, off-screen content)",
     "Slow responses (>3 seconds for navigation or button clicks)",
-    "Forms that allow obviously invalid input (negative ages, future dates of birth, etc.)"
+    "Forms that accept obviously invalid input (negative salaries, end_date before start_date, etc.)",
+    "Workflow steppers / approval stage widgets that fail to render or show inconsistent stage state"
   ],
 
   "report": {
