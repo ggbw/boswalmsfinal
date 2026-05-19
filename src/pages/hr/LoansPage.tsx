@@ -52,6 +52,19 @@ export default function LoansPage() {
   const [loanTypes, setLoanTypes] = useState<Array<{ id: string; name: string }>>([]);
   const { advances, loading, refetch } = useAdvances();
   const [creating, setCreating] = useState(false);
+  const [search, setSearch] = useState('');
+
+  const filteredAdvances = useMemo(() => {
+    const q = search.trim().toLowerCase();
+    if (!q) return advances;
+    return advances.filter((a) =>
+      (a.employee_name ?? '').toLowerCase().includes(q) ||
+      (a.employee_code ?? '').toLowerCase().includes(q) ||
+      (a.reference ?? '').toLowerCase().includes(q) ||
+      (a.loan_type ?? '').toLowerCase().includes(q) ||
+      (a.status ?? '').toLowerCase().includes(q),
+    );
+  }, [advances, search]);
   const [form, setForm] = useState({
     employee_id: '',
     loan_type: 'Salary Advance',
@@ -433,13 +446,20 @@ export default function LoansPage() {
       )}
 
       <div className="card" style={{ padding: 0 }}>
-        <div style={{ padding: '16px 20px 12px', borderBottom: '1px solid var(--border)', fontSize: 13, fontWeight: 600 }}>
-          All Loans
+        <div style={{ padding: '16px 20px 12px', borderBottom: '1px solid var(--border)', display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+          <div style={{ fontSize: 13, fontWeight: 600 }}>All Loans</div>
+          <input
+            className="search-input"
+            placeholder="Search employee, ref, type…"
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+            style={{ width: 240 }}
+          />
         </div>
         {loading ? (
           <div style={{ padding: 32, textAlign: 'center', color: 'var(--text2)' }}>Loading…</div>
-        ) : advances.length === 0 ? (
-          <div style={{ padding: 32, textAlign: 'center', color: 'var(--text2)' }}>No loans yet.</div>
+        ) : filteredAdvances.length === 0 ? (
+          <div style={{ padding: 32, textAlign: 'center', color: 'var(--text2)' }}>{advances.length === 0 ? 'No loans yet.' : 'No matches.'}</div>
         ) : (
           <div className="table-wrap">
             <table>
@@ -458,7 +478,7 @@ export default function LoansPage() {
                 </tr>
               </thead>
               <tbody>
-                {advances.map((a) => {
+                {filteredAdvances.map((a) => {
                   const isEngine = engineRequestIds.has(a.id);
                   const canActOnRow = isEngine
                     ? actionableRequestIds.has(a.id)

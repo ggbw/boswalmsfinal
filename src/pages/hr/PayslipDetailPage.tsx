@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { useApp } from '@/context/AppContext';
 import { useUserRole } from '@/hooks/hr/useUserRole';
 import { useEmployees } from '@/hooks/hr/useEmployees';
+import { usePayComponents } from '@/hooks/hr/usePayComponents';
 import { computePayslip, fmtMoney, type PayLine } from '@/lib/hr/payrollEngine';
 import { fmtCurrency, fmtDate } from '@/lib/hr/leaveUtils';
 import { calcSeveranceBenefit, splitSeverance } from '@/lib/hr/severanceBenefit';
@@ -87,6 +88,7 @@ export default function PayslipDetailPage() {
   const { navigate, pageParams, toast } = useApp();
   const { can } = useUserRole();
   const { employees } = useEmployees();
+  const { components: payComponents } = usePayComponents();
   const writeOk = can('payslips', 'write');
 
   const payslipId = pageParams.payslipId as string | undefined;
@@ -98,6 +100,22 @@ export default function PayslipDetailPage() {
   const [tab, setTab] = useState<TabKey>('salary');
   const [showPdf, setShowPdf] = useState(false);
   const pdfRef = useRef<HTMLDivElement | null>(null);
+
+  // Employees with at least one active contract — used to gate who can
+  // appear in the create-payslip employee dropdown.
+  const [activeContractEmpIds, setActiveContractEmpIds] = useState<Set<string>>(new Set());
+  useEffect(() => {
+    void supabase
+      .from('contracts')
+      .select('employee_id')
+      .eq('status', 'active')
+      .then(({ data }) => {
+        const ids = ((data ?? []) as Array<{ employee_id: string | null }>)
+          .map((r) => r.employee_id)
+          .filter((v): v is string => !!v);
+        setActiveContractEmpIds(new Set(ids));
+      });
+  }, []);
 
   const [leaveSummary, setLeaveSummary] = useState({
     openingAnnualLeave: 0,
@@ -213,10 +231,64 @@ export default function PayslipDetailPage() {
 
   useEffect(() => {
     if (mode !== 'create' || !form.employee_id) return;
+    let cancelled = false;
     const e = employees.find((x) => x.id === form.employee_id);
-    if (e?.basic_salary) {
-      setForm((f) => ({ ...f, basic_salary: String(e.basic_salary), payslip_name: `Payslip - ${e.employee_name}` }));
-    }
+    const payslipName = e ? `Payslip - ${e.employee_name}` : '';
+    void (async () => {
+      type ContractRow = { id: string; wage: number; status: string };
+      type LineRow = {
+        amount: number;
+        sequence: number;
+        is_earning: boolean;
+        is_active: boolean;
+        pay_component_defs: { name: string | null; code: string | null; is_taxable: boolean | null } | null;
+      };
+      // Prefer an active contract; otherwise pick the most recent so a paused
+      // contract still seeds sensible defaults instead of zeroing the form.
+      const { data: contracts } = await supabase
+        .from('contracts')
+        .select('id, wage, status')
+        .eq('employee_id', form.employee_id)
+        .order('start_date', { ascending: false });
+      const list = (contracts ?? []) as ContractRow[];
+      const contract = list.find((c) => c.status === 'active') ?? list[0] ?? null;
+      const wage = contract?.wage ?? e?.basic_salary ?? 0;
+
+      let earningLines: PayLine[] = [];
+      let deductionLines: PayLine[] = [];
+      if (contract?.id) {
+        const { data: lines } = await supabase
+          .from('contract_lines')
+          .select('amount, sequence, is_earning, is_active, pay_component_defs(name, code, is_taxable)')
+          .eq('contract_id', contract.id)
+          .eq('is_active', true)
+          .order('sequence');
+        const rows = (lines ?? []) as unknown as LineRow[];
+        const mapLine = (l: LineRow): PayLine | null => {
+          const def = l.pay_component_defs;
+          if (!def?.code) return null;
+          return {
+            description: def.name ?? def.code,
+            code: def.code,
+            amount: Number(l.amount) || 0,
+            isTaxable: Boolean(def.is_taxable),
+          };
+        };
+        earningLines = rows.filter((l) => l.is_earning).map(mapLine).filter((l): l is PayLine => l !== null);
+        deductionLines = rows.filter((l) => !l.is_earning).map(mapLine).filter((l): l is PayLine => l !== null);
+      }
+      if (cancelled) return;
+      setForm((f) => ({
+        ...f,
+        basic_salary: String(wage),
+        payslip_name: payslipName || f.payslip_name,
+        // Only seed lines on the very first selection — preserve anything the
+        // user has already typed.
+        earnings: f.earnings.length === 0 ? earningLines : f.earnings,
+        fixedDeductions: f.fixedDeductions.length === 0 ? deductionLines : f.fixedDeductions,
+      }));
+    })();
+    return () => { cancelled = true; };
   }, [form.employee_id, employees, mode]);
 
   const selectedEmployee = useMemo(
@@ -562,8 +634,15 @@ export default function PayslipDetailPage() {
             <label>Employee *</label>
             <select className="form-select" disabled={!writeOk || !!form.id} value={form.employee_id} onChange={(e) => update('employee_id', e.target.value)}>
               <option value="">— Select —</option>
-              {employees.map((e) => <option key={e.id} value={e.id}>{e.employee_name} ({e.employee_code})</option>)}
+              {employees
+                .filter((e) => !!form.id /* editing — always show */ || activeContractEmpIds.has(e.id))
+                .map((e) => <option key={e.id} value={e.id}>{e.employee_name} ({e.employee_code})</option>)}
             </select>
+            {!form.id && activeContractEmpIds.size === 0 && employees.length > 0 && (
+              <div style={{ fontSize: 10, color: 'var(--text3)', marginTop: 2 }}>
+                No employees have an active contract yet — create or activate a contract first.
+              </div>
+            )}
           </div>
           <div className="form-group">
             <label>Status</label>
@@ -684,6 +763,7 @@ export default function PayslipDetailPage() {
           onAddDeduction={() => addLine('fixedDeductions')}
           onRemoveEarning={(idx) => removeLine('earnings', idx)}
           onRemoveDeduction={(idx) => removeLine('fixedDeductions', idx)}
+          payComponents={payComponents}
           writeOk={writeOk}
         />
       )}
@@ -696,6 +776,7 @@ export default function PayslipDetailPage() {
           onEditEarning={(idx, patch) => updateLine('earnings', idx, patch)}
           onEditDeduction={(idx, patch) => updateLine('fixedDeductions', idx, patch)}
           onEditBenefit={(idx, patch) => updateLine('benefits', idx, patch)}
+          payComponents={payComponents}
           writeOk={writeOk}
         />
       )}

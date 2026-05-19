@@ -6,7 +6,7 @@
  * 20260514000006_workflow_management.sql migration).
  */
 
-import { useState } from 'react';
+import { useMemo, useState } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { supabase } from '@/integrations/supabase/client';
 import { useApp } from '@/context/AppContext';
@@ -55,6 +55,7 @@ export default function EmployeeGroupsPage() {
   const [saving, setSaving] = useState(false);
 
   const [activeGroupId, setActiveGroupId] = useState<string | null>(null);
+  const [search, setSearch] = useState('');
 
   const { data: groups = [], isLoading } = useQuery({
     queryKey: ['employee_groups'],
@@ -84,6 +85,14 @@ export default function EmployeeGroupsPage() {
     enabled: !!activeGroupId,
     staleTime: 30 * 1000,
   });
+
+  const filteredGroups = useMemo(() => {
+    const q = search.trim().toLowerCase();
+    if (!q) return groups;
+    return groups.filter((g) =>
+      g.name.toLowerCase().includes(q) || (g.description ?? '').toLowerCase().includes(q),
+    );
+  }, [groups, search]);
 
   const openAdd = () => {
     setEditing(null);
@@ -200,18 +209,25 @@ export default function EmployeeGroupsPage() {
 
       <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
         <div className="bg-white border border-gray-200 rounded-xl overflow-hidden">
-          <div className="px-4 py-3 border-b border-gray-200 text-sm font-semibold text-gray-700">
-            Groups
+          <div className="px-4 py-3 border-b border-gray-200 text-sm font-semibold text-gray-700 flex items-center justify-between gap-2">
+            <span>Groups</span>
+            <input
+              className="text-xs border border-gray-200 rounded-md px-2 py-1 outline-none focus:border-gray-400"
+              placeholder="Search…"
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+              style={{ width: 160 }}
+            />
           </div>
           {isLoading ? (
             <div className="text-center py-12 text-gray-400">Loading…</div>
-          ) : groups.length === 0 ? (
+          ) : filteredGroups.length === 0 ? (
             <div className="text-center py-12 text-gray-400 text-sm">
-              No groups yet.
+              {groups.length === 0 ? 'No groups yet.' : 'No matches.'}
             </div>
           ) : (
             <ul className="divide-y divide-gray-100">
-              {groups.map((g) => (
+              {filteredGroups.map((g) => (
                 <li
                   key={g.id}
                   className={`px-4 py-3 hover:bg-gray-50 cursor-pointer ${

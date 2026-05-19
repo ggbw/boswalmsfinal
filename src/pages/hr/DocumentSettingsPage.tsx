@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useApp } from '@/context/AppContext';
 import { useUserRole } from '@/hooks/hr/useUserRole';
 import { supabase } from '@/integrations/supabase/client';
@@ -38,6 +38,13 @@ export default function DocumentSettingsPage() {
   const [loading, setLoading] = useState(true);
   const [form, setForm] = useState<FormState>(empty);
   const [saving, setSaving] = useState(false);
+  const [search, setSearch] = useState('');
+
+  const filteredSettings = useMemo(() => {
+    const q = search.trim().toLowerCase();
+    if (!q) return settings;
+    return settings.filter((s) => s.document_type.toLowerCase().includes(q));
+  }, [settings, search]);
 
   const writeOk = can('documents', 'write');
 
@@ -161,8 +168,15 @@ export default function DocumentSettingsPage() {
 
       <div className="two-col">
         <div className="card" style={{ padding: 0 }}>
-          <div style={{ padding: '16px 20px 12px', borderBottom: '1px solid var(--border)', fontSize: 13, fontWeight: 600 }}>
-            Document Type Catalog
+          <div style={{ padding: '16px 20px 12px', borderBottom: '1px solid var(--border)', display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+            <div style={{ fontSize: 13, fontWeight: 600 }}>Document Type Catalog</div>
+            <input
+              className="search-input"
+              placeholder="Search…"
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+              style={{ width: 180 }}
+            />
           </div>
           {loading ? (
             <div style={{ padding: 32, textAlign: 'center', color: 'var(--text2)' }}>Loading…</div>
@@ -182,7 +196,7 @@ export default function DocumentSettingsPage() {
                   </tr>
                 </thead>
                 <tbody>
-                  {settings.map((s) => (
+                  {filteredSettings.map((s) => (
                     <tr key={s.id}>
                       <td className="td-name">{s.document_type}</td>
                       <td>

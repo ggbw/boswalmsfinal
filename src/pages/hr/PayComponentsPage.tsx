@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useMemo, useState } from 'react';
 import { useApp } from '@/context/AppContext';
 import { useUserRole } from '@/hooks/hr/useUserRole';
 import { usePayComponents, type PayComponentDef } from '@/hooks/hr/usePayComponents';
@@ -36,6 +36,15 @@ export default function PayComponentsPage() {
   const { components, loading, refetch } = usePayComponents();
   const [form, setForm] = useState<FormState>(empty);
   const [saving, setSaving] = useState(false);
+  const [search, setSearch] = useState('');
+
+  const filteredComponents = useMemo(() => {
+    const q = search.trim().toLowerCase();
+    if (!q) return components;
+    return components.filter((c) =>
+      c.name.toLowerCase().includes(q) || c.code.toLowerCase().includes(q),
+    );
+  }, [components, search]);
 
   const writeOk = can('pay_components', 'write');
 
@@ -108,9 +117,9 @@ export default function PayComponentsPage() {
   };
 
   const grouped = {
-    earning: components.filter((c) => c.category === 'earning'),
-    deduction: components.filter((c) => c.category === 'deduction'),
-    benefit: components.filter((c) => c.category === 'benefit'),
+    earning: filteredComponents.filter((c) => c.category === 'earning'),
+    deduction: filteredComponents.filter((c) => c.category === 'deduction'),
+    benefit: filteredComponents.filter((c) => c.category === 'benefit'),
   };
 
   const renderTable = (items: PayComponentDef[], title: string) => (
@@ -176,6 +185,13 @@ export default function PayComponentsPage() {
           <div className="page-title">Pay Components</div>
           <div className="page-sub">HR Management · {components.length} total</div>
         </div>
+        <input
+          className="search-input"
+          placeholder="Search…"
+          value={search}
+          onChange={(e) => setSearch(e.target.value)}
+          style={{ width: 220 }}
+        />
       </div>
 
       {loading ? (

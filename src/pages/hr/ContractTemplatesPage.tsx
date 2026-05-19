@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useMemo, useState } from 'react';
 import { useApp } from '@/context/AppContext';
 import { useUserRole } from '@/hooks/hr/useUserRole';
 import { useContractTemplates, type ContractTemplate } from '@/hooks/hr/useContracts';
@@ -14,6 +14,13 @@ export default function ContractTemplatesPage() {
     is_active: true,
   });
   const [saving, setSaving] = useState(false);
+  const [search, setSearch] = useState('');
+
+  const filteredTemplates = useMemo(() => {
+    const q = search.trim().toLowerCase();
+    if (!q) return templates;
+    return templates.filter((t) => t.name.toLowerCase().includes(q));
+  }, [templates, search]);
 
   const writeOk = can('contract_templates', 'write');
 
@@ -53,8 +60,15 @@ export default function ContractTemplatesPage() {
 
       <div className="two-col">
         <div className="card" style={{ padding: 0 }}>
-          <div style={{ padding: '16px 20px 12px', borderBottom: '1px solid var(--border)', fontSize: 13, fontWeight: 600 }}>
-            Template List
+          <div style={{ padding: '16px 20px 12px', borderBottom: '1px solid var(--border)', display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+            <div style={{ fontSize: 13, fontWeight: 600 }}>Template List</div>
+            <input
+              className="search-input"
+              placeholder="Search…"
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+              style={{ width: 180 }}
+            />
           </div>
           {loading ? (
             <div style={{ padding: 32, textAlign: 'center', color: 'var(--text2)' }}>Loading…</div>
@@ -71,7 +85,7 @@ export default function ContractTemplatesPage() {
                   </tr>
                 </thead>
                 <tbody>
-                  {templates.map((t) => (
+                  {filteredTemplates.map((t) => (
                     <tr key={t.id} style={{ opacity: t.is_active ? 1 : 0.55 }}>
                       <td className="td-name">{t.name}</td>
                       <td>

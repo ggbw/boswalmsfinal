@@ -105,8 +105,28 @@ export default function ContractDetailPage() {
         template_id: contract.template_id,
       })
       .eq('id', contract.id);
+    if (error) { setSaving(false); toast(error.message, 'error'); return; }
+    // Mirror department / job position onto the employee record so the
+    // change is visible everywhere employees are listed. Only push when the
+    // contract is active — a suspended contract shouldn't rewrite the
+    // employee's current title.
+    if (contract.employee_id && contract.status === 'active') {
+      const empPatch: Record<string, unknown> = {};
+      if (contract.department) empPatch.department = contract.department;
+      if (contract.job_position) empPatch.job_title = contract.job_position;
+      if (Object.keys(empPatch).length > 0) {
+        const { error: empErr } = await supabase
+          .from('employees')
+          .update(empPatch as never)
+          .eq('id', contract.employee_id);
+        if (empErr) {
+          setSaving(false);
+          toast(`Contract saved but employee sync failed: ${empErr.message}`, 'error');
+          return;
+        }
+      }
+    }
     setSaving(false);
-    if (error) { toast(error.message, 'error'); return; }
     toast('Contract saved', 'success');
   };
 

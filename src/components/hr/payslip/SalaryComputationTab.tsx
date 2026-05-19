@@ -1,4 +1,5 @@
 import { fmtMoney, type PayLine } from '@/lib/hr/payrollEngine';
+import type { PayComponentDef } from '@/hooks/hr/usePayComponents';
 
 interface Props {
   basicSalary: number;
@@ -16,7 +17,26 @@ interface Props {
   onAddDeduction: () => void;
   onRemoveEarning: (idx: number) => void;
   onRemoveDeduction: (idx: number) => void;
+  payComponents?: PayComponentDef[];
   writeOk: boolean;
+}
+
+// Picks an entry from the pay-component catalog and copies its description /
+// code / default amount / taxable flag onto the payslip line. The line keeps
+// its own state after that — editing the description here doesn't push back
+// to the catalog.
+function applyComponent(
+  c: PayComponentDef,
+  currentAmount: number,
+): Partial<PayLine> {
+  return {
+    description: c.name,
+    code: c.code,
+    // Only seed the amount if the line is currently blank; preserve any value
+    // the user has already typed.
+    amount: currentAmount > 0 ? currentAmount : Number(c.default_amount ?? 0),
+    isTaxable: c.is_taxable,
+  };
 }
 
 const READONLY_EARNING_CODES = new Set(['BASIC', 'SEVERANCE_BENEFIT_TAX', 'SEVERANCE_BENEFIT_NOTAX']);
@@ -38,8 +58,11 @@ export default function SalaryComputationTab({
   onAddDeduction,
   onRemoveEarning,
   onRemoveDeduction,
+  payComponents = [],
   writeOk,
 }: Props) {
+  const earningOptions = payComponents.filter((c) => c.is_active && c.category !== 'deduction');
+  const deductionOptions = payComponents.filter((c) => c.is_active && c.category === 'deduction');
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
       <div style={{ fontSize: 11, fontWeight: 600, color: 'var(--text2)', textTransform: 'uppercase', letterSpacing: '0.04em' }}>
@@ -61,6 +84,7 @@ export default function SalaryComputationTab({
             <table>
               <thead>
                 <tr>
+                  <th style={{ width: 180 }}>Component</th>
                   <th>Description</th>
                   <th style={{ width: 110 }}>Code</th>
                   <th style={{ width: 130, textAlign: 'right' }}>Amount</th>
@@ -69,6 +93,7 @@ export default function SalaryComputationTab({
               </thead>
               <tbody>
                 <tr>
+                  <td style={{ fontStyle: 'italic', color: 'var(--text3)' }}>Basic Salary</td>
                   <td>Basic Salary</td>
                   <td style={{ fontFamily: 'JetBrains Mono, monospace', fontSize: 11, color: 'var(--text2)' }}>BASIC</td>
                   <td style={{ textAlign: 'right' }}>
@@ -86,8 +111,29 @@ export default function SalaryComputationTab({
                 </tr>
                 {earnings.map((l, idx) => {
                   const ro = READONLY_EARNING_CODES.has(l.code);
+                  const matched = earningOptions.find((c) => c.code === l.code);
                   return (
                     <tr key={idx}>
+                      <td>
+                        <select
+                          className="form-select"
+                          disabled={!writeOk || ro}
+                          value={matched?.id ?? ''}
+                          onChange={(e) => {
+                            const chosen = earningOptions.find((c) => c.id === e.target.value);
+                            if (!chosen) {
+                              onEditEarning(idx, { description: '', code: `CUSTOM_${Date.now()}`, amount: 0, isTaxable: true });
+                              return;
+                            }
+                            onEditEarning(idx, applyComponent(chosen, l.amount));
+                          }}
+                        >
+                          <option value="">— Pick from catalog —</option>
+                          {earningOptions.map((c) => (
+                            <option key={c.id} value={c.id}>{c.name} ({c.code})</option>
+                          ))}
+                        </select>
+                      </td>
                       <td>
                         <input
                           className="form-input"
@@ -129,7 +175,7 @@ export default function SalaryComputationTab({
               </tbody>
               <tfoot>
                 <tr style={{ background: 'rgba(26,127,55,0.08)', fontWeight: 700, color: '#1a7f37' }}>
-                  <td colSpan={2} style={{ fontSize: 12 }}>Gross Salary</td>
+                  <td colSpan={3} style={{ fontSize: 12 }}>Gross Salary</td>
                   <td style={{ textAlign: 'right', fontFamily: 'JetBrains Mono, monospace' }}>{fmtMoney(grossSalary)}</td>
                   <td />
                 </tr>
@@ -152,6 +198,7 @@ export default function SalaryComputationTab({
             <table>
               <thead>
                 <tr>
+                  <th style={{ width: 180 }}>Component</th>
                   <th>Description</th>
                   <th style={{ width: 110 }}>Code</th>
                   <th style={{ width: 130, textAlign: 'right' }}>Amount</th>
@@ -161,55 +208,79 @@ export default function SalaryComputationTab({
               <tbody>
                 {computedDeductions.filter((d) => READONLY_DEDUCTION_CODES.has(d.code)).map((d) => (
                   <tr key={d.code} style={{ background: 'rgba(37,99,235,0.04)' }}>
+                    <td style={{ fontStyle: 'italic', color: 'var(--text3)' }}>Auto-calculated</td>
                     <td>{d.description} <span style={{ marginLeft: 6, fontSize: 10, color: '#2563eb', background: 'rgba(37,99,235,0.12)', padding: '1px 6px', borderRadius: 4 }}>auto</span></td>
                     <td style={{ fontFamily: 'JetBrains Mono, monospace', fontSize: 11, color: 'var(--text2)' }}>{d.code}</td>
                     <td style={{ textAlign: 'right', fontFamily: 'JetBrains Mono, monospace', fontWeight: 600 }}>{fmtMoney(d.amount)}</td>
                     <td />
                   </tr>
                 ))}
-                {fixedDeductions.map((l, idx) => (
-                  <tr key={idx}>
-                    <td>
-                      <input
-                        className="form-input"
-                        disabled={!writeOk}
-                        value={l.description}
-                        onChange={(e) => onEditDeduction(idx, { description: e.target.value })}
-                      />
-                    </td>
-                    <td>
-                      <input
-                        className="form-input"
-                        disabled={!writeOk}
-                        style={{ fontFamily: 'JetBrains Mono, monospace', fontSize: 11 }}
-                        value={l.code}
-                        onChange={(e) => onEditDeduction(idx, { code: e.target.value })}
-                      />
-                    </td>
-                    <td style={{ textAlign: 'right' }}>
-                      <input
-                        type="number"
-                        step="0.01"
-                        className="form-input"
-                        style={{ textAlign: 'right' }}
-                        disabled={!writeOk}
-                        value={l.amount}
-                        onChange={(e) => onEditDeduction(idx, { amount: Number(e.target.value) })}
-                      />
-                    </td>
-                    <td>
-                      {writeOk && (
-                        <button className="btn btn-danger btn-sm" onClick={() => onRemoveDeduction(idx)}>
-                          <i className="fa-solid fa-trash" />
-                        </button>
-                      )}
-                    </td>
-                  </tr>
-                ))}
+                {fixedDeductions.map((l, idx) => {
+                  const matched = deductionOptions.find((c) => c.code === l.code);
+                  return (
+                    <tr key={idx}>
+                      <td>
+                        <select
+                          className="form-select"
+                          disabled={!writeOk}
+                          value={matched?.id ?? ''}
+                          onChange={(e) => {
+                            const chosen = deductionOptions.find((c) => c.id === e.target.value);
+                            if (!chosen) {
+                              onEditDeduction(idx, { description: '', code: `CUSTOM_${Date.now()}`, amount: 0, isTaxable: false });
+                              return;
+                            }
+                            onEditDeduction(idx, applyComponent(chosen, l.amount));
+                          }}
+                        >
+                          <option value="">— Pick from catalog —</option>
+                          {deductionOptions.map((c) => (
+                            <option key={c.id} value={c.id}>{c.name} ({c.code})</option>
+                          ))}
+                        </select>
+                      </td>
+                      <td>
+                        <input
+                          className="form-input"
+                          disabled={!writeOk}
+                          value={l.description}
+                          onChange={(e) => onEditDeduction(idx, { description: e.target.value })}
+                        />
+                      </td>
+                      <td>
+                        <input
+                          className="form-input"
+                          disabled={!writeOk}
+                          style={{ fontFamily: 'JetBrains Mono, monospace', fontSize: 11 }}
+                          value={l.code}
+                          onChange={(e) => onEditDeduction(idx, { code: e.target.value })}
+                        />
+                      </td>
+                      <td style={{ textAlign: 'right' }}>
+                        <input
+                          type="number"
+                          step="0.01"
+                          className="form-input"
+                          style={{ textAlign: 'right' }}
+                          disabled={!writeOk}
+                          value={l.amount}
+                          onChange={(e) => onEditDeduction(idx, { amount: Number(e.target.value) })}
+                        />
+                      </td>
+                      <td>
+                        {writeOk && (
+                          <button className="btn btn-danger btn-sm" onClick={() => onRemoveDeduction(idx)}>
+                            <i className="fa-solid fa-trash" />
+                          </button>
+                        )}
+                      </td>
+                    </tr>
+                  );
+                })}
               </tbody>
               <tfoot>
                 <tr style={{ background: 'rgba(207,34,46,0.08)', fontWeight: 700, color: '#cf222e' }}>
-                  <td colSpan={2} style={{ fontSize: 12 }}>Total Deductions</td>
+                  <td colSpan={3} style={{ fontSize: 12 }}>Total Deductions</td>
                   <td style={{ textAlign: 'right', fontFamily: 'JetBrains Mono, monospace' }}>{fmtMoney(totalDeductions)}</td>
                   <td />
                 </tr>

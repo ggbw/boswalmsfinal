@@ -8,7 +8,7 @@
  * Gated behind super_admin in AppLayout's ROLE_PAGES.
  */
 
-import { useState } from 'react';
+import { useMemo, useState } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { supabase } from '@/integrations/supabase/client';
 import { useApp } from '@/context/AppContext';
@@ -67,6 +67,7 @@ export default function WorkflowsPage() {
   const [requestType, setRequestType] = useState<WorkflowRequestType>('leave');
   const [description, setDescription] = useState('');
   const [isActive, setIsActive] = useState(true);
+  const [search, setSearch] = useState('');
 
   const { data: workflows = [], isLoading: loading } = useQuery({
     queryKey: ['workflows'],
@@ -104,6 +105,17 @@ export default function WorkflowsPage() {
     },
     staleTime: 60 * 1000,
   });
+
+  const filteredWorkflows = useMemo(() => {
+    const q = search.trim().toLowerCase();
+    if (!q) return workflows;
+    return workflows.filter((w) =>
+      w.name.toLowerCase().includes(q) ||
+      w.code.toLowerCase().includes(q) ||
+      (w.description ?? '').toLowerCase().includes(q) ||
+      (w.request_type ?? '').toLowerCase().includes(q),
+    );
+  }, [workflows, search]);
 
   const openAdd = () => {
     setEditing(null);
@@ -224,6 +236,16 @@ export default function WorkflowsPage() {
         </div>
       </div>
 
+      <div style={{ display: 'flex', justifyContent: 'flex-end' }}>
+        <input
+          className="text-xs border border-gray-200 rounded-md px-2 py-1.5 outline-none focus:border-gray-400"
+          placeholder="Search workflows…"
+          value={search}
+          onChange={(e) => setSearch(e.target.value)}
+          style={{ width: 240 }}
+        />
+      </div>
+
       {loading ? (
         <div className="text-center py-12 text-gray-400">Loading…</div>
       ) : (
@@ -244,14 +266,16 @@ export default function WorkflowsPage() {
               </tr>
             </thead>
             <tbody>
-              {workflows.length === 0 && (
+              {filteredWorkflows.length === 0 && (
                 <tr>
                   <td colSpan={8} className="text-center py-10 text-gray-400">
-                    No workflows configured. Click &ldquo;New Workflow&rdquo; to create one.
+                    {workflows.length === 0
+                      ? 'No workflows configured. Click "New Workflow" to create one.'
+                      : 'No matches.'}
                   </td>
                 </tr>
               )}
-              {workflows.map((w, idx) => (
+              {filteredWorkflows.map((w, idx) => (
                 <tr key={w.id} className="border-b border-gray-100 hover:bg-gray-50">
                   <td className="px-3 py-2.5 text-gray-400 text-xs">{idx + 1}</td>
                   <td className="px-3 py-2.5">

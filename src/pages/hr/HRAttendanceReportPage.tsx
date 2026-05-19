@@ -26,6 +26,9 @@ interface AttendanceDevice {
 interface AttendanceSettings {
   work_start_time: string;
   grace_period_minutes: number;
+  saturday_enabled?: boolean | null;
+  saturday_work_start_time?: string | null;
+  saturday_grace_minutes?: number | null;
 }
 
 export interface Punch {
@@ -95,12 +98,25 @@ export function computeLateMinutes(
   morningIn: Date | undefined,
   workStartTime: string,
   gracePeriodMinutes: number,
+  saturdayOverride?: { enabled: boolean; startTime: string | null; graceMinutes: number | null },
 ): number {
   if (!morningIn) return 0;
-  const [h, m] = workStartTime.split(':').map(Number);
+  const isSaturday = morningIn.getDay() === 6;
+  // Saturday handling:
+  //   - explicitly disabled  → never late
+  //   - enabled with overrides → use Saturday start/grace
+  //   - enabled with no override → fall through to weekday defaults
+  if (isSaturday) {
+    if (!saturdayOverride || saturdayOverride.enabled === false) return 0;
+  }
+  const effectiveStart = (isSaturday && saturdayOverride?.startTime) || workStartTime;
+  const effectiveGrace = isSaturday && saturdayOverride?.graceMinutes != null
+    ? saturdayOverride.graceMinutes
+    : gracePeriodMinutes;
+  const [h, m] = effectiveStart.split(':').map(Number);
   const startToday = new Date(morningIn);
   startToday.setHours(h, m, 0, 0);
-  const thresholdMs = startToday.getTime() + gracePeriodMinutes * 60000;
+  const thresholdMs = startToday.getTime() + effectiveGrace * 60000;
   if (morningIn.getTime() <= thresholdMs) return 0;
   return Math.round((morningIn.getTime() - startToday.getTime()) / 60000);
 }
@@ -203,7 +219,7 @@ function buildEmployeeDays(
   for (const [employeeId, { meta, punches: pList }] of byEmployee) {
     pList.sort((a, b) => a.time.getTime() - b.time.getTime());
     const slots   = mapPunchesToSlots(pList);
-    const late    = computeLateMinutes(slots.morningIn, settings.work_start_time, settings.grace_period_minutes);
+    const late    = computeLateMinutes(slots.morningIn, settings.work_start_time, settings.grace_period_minutes, { enabled: Boolean(settings.saturday_enabled), startTime: settings.saturday_work_start_time ?? null, graceMinutes: settings.saturday_grace_minutes ?? null });
     const worked  = computeWorkedMinutes(slots);
     const status  = determineStatus(slots, pList.length);
     rows.push({
@@ -382,7 +398,7 @@ function WeeklyView({
         const pList = punches.map(p => ({ time: new Date(p.punch_at), deviceSerial: p.device_serial }));
         pList.sort((a, b) => a.time.getTime() - b.time.getTime());
         const slots  = mapPunchesToSlots(pList);
-        const late   = computeLateMinutes(slots.morningIn, settings.work_start_time, settings.grace_period_minutes);
+        const late   = computeLateMinutes(slots.morningIn, settings.work_start_time, settings.grace_period_minutes, { enabled: Boolean(settings.saturday_enabled), startTime: settings.saturday_work_start_time ?? null, graceMinutes: settings.saturday_grace_minutes ?? null });
         const worked = computeWorkedMinutes(slots);
         const status = determineStatus(slots, pList.length);
         return { employeeId: empId, name: meta.name, department: meta.dept, slots, punchCount: pList.length, lateMinutes: late, workedMinutes: worked, status, rawPunches: pList.map(p => p.time) };
@@ -526,7 +542,7 @@ function MonthlyView({
         const pList = punches.map(p => ({ time: new Date(p.punch_at), deviceSerial: p.device_serial }));
         pList.sort((a, b) => a.time.getTime() - b.time.getTime());
         const slots  = mapPunchesToSlots(pList);
-        const late   = computeLateMinutes(slots.morningIn, settings.work_start_time, settings.grace_period_minutes);
+        const late   = computeLateMinutes(slots.morningIn, settings.work_start_time, settings.grace_period_minutes, { enabled: Boolean(settings.saturday_enabled), startTime: settings.saturday_work_start_time ?? null, graceMinutes: settings.saturday_grace_minutes ?? null });
         const worked = computeWorkedMinutes(slots);
         const status = determineStatus(slots, pList.length);
         return { employeeId: empId, name: meta.name, department: meta.dept, slots, punchCount: pList.length, lateMinutes: late, workedMinutes: worked, status, rawPunches: pList.map(p => p.time) };
@@ -669,7 +685,7 @@ export default function HRAttendanceReportPage() {
 
     (supabase as any)
       .from('attendance_settings')
-      .select('work_start_time, grace_period_minutes')
+      .select('*')
       .eq('id', 1)
       .single()
       .then(({ data }: any) => { if (data) setSettings(data as AttendanceSettings); });

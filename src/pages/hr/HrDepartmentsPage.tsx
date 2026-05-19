@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useMemo, useState } from 'react';
 import { useApp } from '@/context/AppContext';
 import { useUserRole } from '@/hooks/hr/useUserRole';
 import { useHrDepartments, type HrDepartment } from '@/hooks/hr/useHrDepartments';
@@ -28,6 +28,17 @@ export default function HrDepartmentsPage() {
   const { departments, loading, refetch } = useHrDepartments();
   const [form, setForm] = useState<FormState>(empty);
   const [saving, setSaving] = useState(false);
+  const [search, setSearch] = useState('');
+
+  const filteredDepartments = useMemo(() => {
+    const q = search.trim().toLowerCase();
+    if (!q) return departments;
+    return departments.filter((d) =>
+      d.name.toLowerCase().includes(q) ||
+      (d.manager ?? '').toLowerCase().includes(q) ||
+      (d.parent_department ?? '').toLowerCase().includes(q),
+    );
+  }, [departments, search]);
 
   const update = <K extends keyof FormState>(k: K, v: FormState[K]) =>
     setForm((f) => ({ ...f, [k]: v }));
@@ -103,8 +114,15 @@ export default function HrDepartmentsPage() {
 
       <div className="two-col">
         <div className="card" style={{ padding: 0 }}>
-          <div style={{ padding: '16px 20px 12px', borderBottom: '1px solid var(--border)', fontSize: 13, fontWeight: 600 }}>
-            Department List
+          <div style={{ padding: '16px 20px 12px', borderBottom: '1px solid var(--border)', display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+            <div style={{ fontSize: 13, fontWeight: 600 }}>Department List</div>
+            <input
+              className="search-input"
+              placeholder="Search…"
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+              style={{ width: 180 }}
+            />
           </div>
           {loading ? (
             <div style={{ padding: 32, textAlign: 'center', color: 'var(--text2)' }}>Loading…</div>
@@ -123,7 +141,7 @@ export default function HrDepartmentsPage() {
                   </tr>
                 </thead>
                 <tbody>
-                  {departments.map((d) => (
+                  {filteredDepartments.map((d) => (
                     <tr key={d.id}>
                       <td className="td-name">
                         <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>

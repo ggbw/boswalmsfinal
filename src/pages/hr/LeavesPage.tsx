@@ -66,7 +66,7 @@ interface Allocation {
 }
 
 export default function LeavesPage() {
-  const { toast, showModal, closeModal } = useApp();
+  const { toast, showModal } = useApp();
   const { user } = useAuth();
   const { can, isHR, isAdmin, isSuperAdmin } = useUserRole();
   const { employees } = useEmployees();
@@ -79,10 +79,29 @@ export default function LeavesPage() {
   const [statusFilter, setStatusFilter] = useState('all');
   const [typeFilter, setTypeFilter] = useState('all');
   const [search, setSearch] = useState('');
+  const [applying, setApplying] = useState(false);
+  const [balSearch, setBalSearch] = useState('');
 
   // Requests
   const [requests, setRequests] = useState<LeaveRequestWithJoins[]>([]);
   const [reqLoading, setReqLoading] = useState(true);
+
+  // Employees with an active contract — drives who can be picked when
+  // applying for leave on behalf. Suspended/inactive contracts hide the
+  // employee from the new-leave dropdown.
+  const [activeContractEmpIds, setActiveContractEmpIds] = useState<Set<string>>(new Set());
+  useEffect(() => {
+    void supabase
+      .from('contracts')
+      .select('employee_id')
+      .eq('status', 'active')
+      .then(({ data }) => {
+        const ids = ((data ?? []) as Array<{ employee_id: string | null }>)
+          .map((r) => r.employee_id)
+          .filter((v): v is string => !!v);
+        setActiveContractEmpIds(new Set(ids));
+      });
+  }, []);
 
   // Allocations (balances)
   const [allocations, setAllocations] = useState<Allocation[]>([]);
@@ -451,18 +470,13 @@ export default function LeavesPage() {
       })();
     }
     toast('Leave request created', 'success');
-    closeModal();
+    setApplying(false);
+    setTab('requests');
+    // Reset filters so the freshly-created (pending) row is always visible.
+    setStatusFilter('all');
+    setTypeFilter('all');
+    setSearch('');
     void loadRequests(); void loadAllocations();
-  };
-
-  const openApplyModal = () => {
-    showModal('Apply Leave on Behalf', (
-      <ApplyLeaveForm
-        employees={employees}
-        leaveTypes={leaveTypes}
-        onSubmit={handleApplyOnBehalf}
-      />
-    ), 'large');
   };
 
   // ─── Edit leave dialog ────────────────────────────────────────────────
@@ -559,8 +573,8 @@ export default function LeavesPage() {
         </div>
         <div style={{ display: 'flex', gap: 8 }}>
           {tab === 'requests' && writeOk && (
-            <button className="btn btn-primary btn-sm" onClick={openApplyModal}>
-              <i className="fa-solid fa-plus" /> Apply on Behalf
+            <button className="btn btn-primary btn-sm" onClick={() => setApplying((p) => !p)}>
+              <i className={`fa-solid ${applying ? 'fa-xmark' : 'fa-plus'}`} /> {applying ? 'Cancel' : 'Apply on Behalf'}
             </button>
           )}
         </div>
@@ -643,6 +657,17 @@ export default function LeavesPage() {
       {/* ── REQUESTS TAB ── */}
       {tab === 'requests' && (
         <>
+          {applying && writeOk && (
+            <div className="card" style={{ marginBottom: 16 }}>
+              <div className="card-title"><span>Apply Leave on Behalf</span></div>
+              <ApplyLeaveForm
+                employees={employees.filter((e) => activeContractEmpIds.has(e.id))}
+                leaveTypes={leaveTypes}
+                onSubmit={handleApplyOnBehalf}
+                onCancel={() => setApplying(false)}
+              />
+            </div>
+          )}
           <div style={{ display: 'flex', gap: 8, marginBottom: 16, flexWrap: 'wrap' }}>
             <select className="filter-select" value={statusFilter} onChange={e => setStatusFilter(e.target.value)}>
               <option value="all">All Statuses</option>
@@ -761,8 +786,15 @@ export default function LeavesPage() {
       {/* ── BALANCES TAB ── */}
       {tab === 'balances' && (
         <div className="card" style={{ padding: 0 }}>
-          <div style={{ padding: '14px 20px 12px', borderBottom: '1px solid var(--border)', fontSize: 13, fontWeight: 600 }}>
-            Employee Leave Balances — {year}
+          <div style={{ padding: '14px 20px 12px', borderBottom: '1px solid var(--border)', display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 12, flexWrap: 'wrap' }}>
+            <div style={{ fontSize: 13, fontWeight: 600 }}>Employee Leave Balances — {year}</div>
+            <input
+              className="search-input"
+              placeholder="Search employee…"
+              value={balSearch}
+              onChange={(e) => setBalSearch(e.target.value)}
+              style={{ width: 220, fontSize: 12 }}
+            />
           </div>
           {allocLoading ? (
             <div style={{ padding: 32, textAlign: 'center', color: 'var(--text2)' }}>Loading…</div>
@@ -784,7 +816,14 @@ export default function LeavesPage() {
                   </tr>
                 </thead>
                 <tbody>
-                  {Object.entries(balEmpMap).map(([empId, emp]) => (
+                  {Object.entries(balEmpMap)
+                    .filter((entry) => {
+                      const q = balSearch.trim().toLowerCase();
+                      if (!q) return true;
+                      const emp = entry[1];
+                      return (emp.name ?? '').toLowerCase().includes(q) || (emp.code ?? '').toLowerCase().includes(q);
+                    })
+                    .map(([empId, emp]) => (
                     <tr key={empId}>
                       <td>
                         <div className="td-name">{emp.name}</div>
@@ -903,10 +942,12 @@ function ApplyLeaveForm({
   employees,
   leaveTypes,
   onSubmit,
+  onCancel,
 }: {
   employees: ReturnType<typeof useEmployees>['employees'];
   leaveTypes: ReturnType<typeof useLeaveTypes>['types'];
   onSubmit: (form: ApplyLeaveFormValues, days: number) => Promise<void>;
+  onCancel?: () => void;
 }) {
   const [form, setForm] = useState<ApplyLeaveFormValues>({
     employee_id: '', leave_type_id: '', start_date: '', end_date: '', reason: '', handover_notes: '', admin_notes: '',
@@ -948,7 +989,12 @@ function ApplyLeaveForm({
       <div className="form-group"><label>Reason</label><textarea rows={2} className="form-textarea" value={form.reason} onChange={e => setForm(f => ({ ...f, reason: e.target.value }))} /></div>
       <div className="form-group"><label>Handover Notes</label><textarea rows={2} className="form-textarea" value={form.handover_notes} onChange={e => setForm(f => ({ ...f, handover_notes: e.target.value }))} /></div>
       <div className="form-group"><label>Admin Notes</label><textarea rows={2} className="form-textarea" value={form.admin_notes} onChange={e => setForm(f => ({ ...f, admin_notes: e.target.value }))} /></div>
-      <div style={{ textAlign: 'right' }}>
+      <div style={{ textAlign: 'right', display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
+        {onCancel && (
+          <button className="btn btn-outline btn-sm" onClick={onCancel} disabled={submitting}>
+            Cancel
+          </button>
+        )}
         <button className="btn btn-primary btn-sm" onClick={() => void handle()} disabled={submitting}>
           <i className="fa-solid fa-paper-plane" /> {submitting ? 'Submitting…' : 'Submit'}
         </button>

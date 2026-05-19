@@ -25,6 +25,9 @@ interface AttendanceDevice {
 interface AttendanceSettings {
   work_start_time: string;
   grace_period_minutes: number;
+  saturday_enabled?: boolean | null;
+  saturday_work_start_time?: string | null;
+  saturday_grace_minutes?: number | null;
 }
 
 interface EmployeeSummary {
@@ -164,7 +167,7 @@ export default function HRLiveAttendancePage() {
   useEffect(() => {
     (supabase as any)
       .from('attendance_settings')
-      .select('work_start_time, grace_period_minutes')
+      .select('*')
       .eq('id', 1)
       .single()
       .then(({ data }: any) => { if (data) setSettings(data as AttendanceSettings); });
@@ -212,6 +215,11 @@ export default function HRLiveAttendancePage() {
       new Date(firstPunchIso),
       settings.work_start_time,
       settings.grace_period_minutes,
+      {
+        enabled: Boolean(settings.saturday_enabled),
+        startTime: settings.saturday_work_start_time ?? null,
+        graceMinutes: settings.saturday_grace_minutes ?? null,
+      },
     ) > 0;
   }, [settings]);
 

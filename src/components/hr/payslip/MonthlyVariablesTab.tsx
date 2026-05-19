@@ -1,4 +1,5 @@
 import { type PayLine } from '@/lib/hr/payrollEngine';
+import type { PayComponentDef } from '@/hooks/hr/usePayComponents';
 
 const HOURS_INPUT_CODES = new Set(['OVER1.5', 'OVER2', 'LOSS_HRS', 'OT150', 'OT200']);
 
@@ -13,6 +14,7 @@ interface Props {
   onEditEarning: (idx: number, patch: Partial<PayLine>) => void;
   onEditDeduction: (idx: number, patch: Partial<PayLine>) => void;
   onEditBenefit: (idx: number, patch: Partial<PayLine>) => void;
+  payComponents?: PayComponentDef[];
   writeOk: boolean;
 }
 
@@ -23,8 +25,13 @@ export default function MonthlyVariablesTab({
   onEditEarning,
   onEditDeduction,
   onEditBenefit,
+  payComponents = [],
   writeOk,
 }: Props) {
+  // Use the catalog to surface a "Component" column on the variables table —
+  // makes the link back to pay_component_defs visible even though the line is
+  // already populated.
+  const componentByCode = new Map(payComponents.map((c) => [c.code, c] as const));
   const rows: { line: VariableLine; idx: number; source: 'earning' | 'deduction' | 'benefit' }[] = [];
   earnings.forEach((l, idx) => {
     if (l.isVariable || HOURS_INPUT_CODES.has(l.code)) {
@@ -80,7 +87,12 @@ export default function MonthlyVariablesTab({
                     : { bg: 'rgba(207,34,46,0.13)', fg: '#cf222e' };
                 return (
                   <tr key={`${source}-${idx}`}>
-                    <td>{line.description}</td>
+                    <td>
+                      {line.description}
+                      {componentByCode.has(line.code) && (
+                        <span style={{ marginLeft: 6, fontSize: 9, color: '#2563eb', background: 'rgba(37,99,235,0.12)', padding: '1px 5px', borderRadius: 3 }}>catalog</span>
+                      )}
+                    </td>
                     <td style={{ fontFamily: 'JetBrains Mono, monospace', fontSize: 11, color: 'var(--text2)' }}>{line.code}</td>
                     <td>
                       <span style={{ display: 'inline-block', padding: '2px 8px', borderRadius: 999, fontSize: 10, fontWeight: 600, background: typeColor.bg, color: typeColor.fg }}>

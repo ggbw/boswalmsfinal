@@ -20,6 +20,9 @@ interface AttendanceSettings {
   id: number;
   work_start_time: string;
   grace_period_minutes: number;
+  saturday_enabled?: boolean | null;
+  saturday_work_start_time?: string | null;
+  saturday_grace_minutes?: number | null;
   updated_at: string | null;
 }
 
@@ -56,6 +59,9 @@ export default function AttendanceSettingsPage() {
 
   const [workStartTime, setWorkStartTime] = useState('08:00');
   const [graceMinutes, setGraceMinutes] = useState(15);
+  const [satEnabled, setSatEnabled] = useState(false);
+  const [satStartTime, setSatStartTime] = useState('08:00');
+  const [satGraceMinutes, setSatGraceMinutes] = useState(15);
 
   // Add-device form
   const [addingDevice, setAddingDevice] = useState(false);
@@ -76,6 +82,9 @@ export default function AttendanceSettingsPage() {
     if (s) {
       setWorkStartTime(s.work_start_time);
       setGraceMinutes(s.grace_period_minutes);
+      setSatEnabled(Boolean(s.saturday_enabled));
+      setSatStartTime(s.saturday_work_start_time ?? s.work_start_time);
+      setSatGraceMinutes(s.saturday_grace_minutes ?? s.grace_period_minutes);
     }
     setDevices((devs ?? []) as AttendanceDevice[]);
     setLoading(false);
@@ -87,17 +96,28 @@ export default function AttendanceSettingsPage() {
 
   const handleSaveSettings = async () => {
     setSaving(true);
-    const { error } = await supabase
-      .from('attendance_settings')
-      .upsert(
-        {
-          id: 1,
-          work_start_time: workStartTime,
-          grace_period_minutes: graceMinutes,
-          updated_at: new Date().toISOString(),
-        },
-        { onConflict: 'id' },
-      );
+    const payload: Record<string, unknown> = {
+      id: 1,
+      work_start_time: workStartTime,
+      grace_period_minutes: graceMinutes,
+      saturday_enabled: satEnabled,
+      saturday_work_start_time: satEnabled ? satStartTime : null,
+      saturday_grace_minutes: satEnabled ? satGraceMinutes : null,
+      updated_at: new Date().toISOString(),
+    };
+    // Falls back gracefully on databases that haven't applied the Saturday
+    // columns migration yet: retry stripping the unknown columns.
+    let attempt: Record<string, unknown> = payload;
+    let { error } = await supabase.from('attendance_settings').upsert(attempt as never, { onConflict: 'id' });
+    for (let i = 0; i < 4 && error; i++) {
+      const match = /column\s+"?([a-z_]+)"?\s+of\s+relation|could\s+not\s+find\s+the\s+'([a-z_]+)'\s+column/i.exec(error.message);
+      const missing = match?.[1] ?? match?.[2];
+      if (!missing || !(missing in attempt)) break;
+      const next = { ...attempt };
+      delete next[missing];
+      attempt = next;
+      ({ error } = await supabase.from('attendance_settings').upsert(attempt as never, { onConflict: 'id' }));
+    }
     setSaving(false);
     if (error) { toast(error.message, 'error'); return; }
     toast('Attendance settings saved', 'success');
@@ -196,6 +216,50 @@ export default function AttendanceSettingsPage() {
             />
           </div>
         </div>
+
+        <div style={{ borderTop: '1px dashed var(--border)', paddingTop: 12, marginTop: 4 }}>
+          <label style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 12, fontWeight: 600, marginBottom: 8 }}>
+            <input
+              type="checkbox"
+              disabled={!writeOk}
+              checked={satEnabled}
+              onChange={(e) => setSatEnabled(e.target.checked)}
+            />
+            Treat Saturday as a workday (use these times for Saturday punches)
+          </label>
+          {satEnabled && (
+            <div className="form-row cols2">
+              <div className="form-group">
+                <label>Saturday Work Start Time</label>
+                <input
+                  type="time"
+                  className="form-input"
+                  disabled={!writeOk}
+                  value={satStartTime}
+                  onChange={(e) => setSatStartTime(e.target.value)}
+                />
+              </div>
+              <div className="form-group">
+                <label>Saturday Grace Period (minutes)</label>
+                <input
+                  type="number"
+                  min={0}
+                  max={120}
+                  className="form-input"
+                  disabled={!writeOk}
+                  value={satGraceMinutes}
+                  onChange={(e) => setSatGraceMinutes(Math.max(0, Number(e.target.value) || 0))}
+                />
+              </div>
+            </div>
+          )}
+          {!satEnabled && (
+            <div style={{ fontSize: 11, color: 'var(--text3)' }}>
+              Saturday punches won't be flagged late while Saturday is disabled.
+            </div>
+          )}
+        </div>
+
         {settings?.updated_at && (
           <div style={{ fontSize: 10, color: 'var(--text3)', marginBottom: 8 }}>
             Last updated: {fmtDateTime(settings.updated_at)}
