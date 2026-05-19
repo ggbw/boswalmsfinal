@@ -810,15 +810,43 @@ export type Database = {
         }
         Relationships: []
       }
+      document_types: {
+        Row: {
+          created_at: string
+          description: string | null
+          id: string
+          is_active: boolean
+          name: string
+        }
+        Insert: {
+          created_at?: string
+          description?: string | null
+          id?: string
+          is_active?: boolean
+          name: string
+        }
+        Update: {
+          created_at?: string
+          description?: string | null
+          id?: string
+          is_active?: boolean
+          name?: string
+        }
+        Relationships: []
+      }
       employee_documents: {
         Row: {
+          alert_sent_30: boolean
+          alert_sent_7: boolean
           document_name: string | null
           document_type: string
+          document_type_id: string | null
           employee_id: string | null
           expiry_date: string | null
           file_path: string | null
           file_size: number | null
           id: string
+          is_active: boolean
           issue_date: string | null
           mime_type: string | null
           notes: string | null
@@ -826,13 +854,17 @@ export type Database = {
           uploaded_by: string | null
         }
         Insert: {
+          alert_sent_30?: boolean
+          alert_sent_7?: boolean
           document_name?: string | null
           document_type: string
+          document_type_id?: string | null
           employee_id?: string | null
           expiry_date?: string | null
           file_path?: string | null
           file_size?: number | null
           id?: string
+          is_active?: boolean
           issue_date?: string | null
           mime_type?: string | null
           notes?: string | null
@@ -840,13 +872,17 @@ export type Database = {
           uploaded_by?: string | null
         }
         Update: {
+          alert_sent_30?: boolean
+          alert_sent_7?: boolean
           document_name?: string | null
           document_type?: string
+          document_type_id?: string | null
           employee_id?: string | null
           expiry_date?: string | null
           file_path?: string | null
           file_size?: number | null
           id?: string
+          is_active?: boolean
           issue_date?: string | null
           mime_type?: string | null
           notes?: string | null
@@ -854,6 +890,13 @@ export type Database = {
           uploaded_by?: string | null
         }
         Relationships: [
+          {
+            foreignKeyName: "employee_documents_document_type_id_fkey"
+            columns: ["document_type_id"]
+            isOneToOne: false
+            referencedRelation: "document_types"
+            referencedColumns: ["id"]
+          },
           {
             foreignKeyName: "employee_documents_employee_id_fkey"
             columns: ["employee_id"]
@@ -1355,15 +1398,23 @@ export type Database = {
       }
       leave_requests: {
         Row: {
+          admin_notes: string | null
+          applied_date: string | null
           approved_at: string | null
           approved_by: string | null
+          approved_date: string | null
           approver_comment: string | null
+          certificate_filename: string | null
+          certificate_url: string | null
           created_at: string | null
           current_stage: string | null
           employee_id: string | null
           end_date: string
+          handover_notes: string | null
           id: string
+          leave_ref: string | null
           leave_type_id: string | null
+          num_days: number | null
           number_of_days: number
           reason: string | null
           rejection_reason: string | null
@@ -1372,15 +1423,23 @@ export type Database = {
           status: string | null
         }
         Insert: {
+          admin_notes?: string | null
+          applied_date?: string | null
           approved_at?: string | null
           approved_by?: string | null
+          approved_date?: string | null
           approver_comment?: string | null
+          certificate_filename?: string | null
+          certificate_url?: string | null
           created_at?: string | null
           current_stage?: string | null
           employee_id?: string | null
           end_date: string
+          handover_notes?: string | null
           id?: string
+          leave_ref?: string | null
           leave_type_id?: string | null
+          num_days?: number | null
           number_of_days: number
           reason?: string | null
           rejection_reason?: string | null
@@ -1389,15 +1448,23 @@ export type Database = {
           status?: string | null
         }
         Update: {
+          admin_notes?: string | null
+          applied_date?: string | null
           approved_at?: string | null
           approved_by?: string | null
+          approved_date?: string | null
           approver_comment?: string | null
+          certificate_filename?: string | null
+          certificate_url?: string | null
           created_at?: string | null
           current_stage?: string | null
           employee_id?: string | null
           end_date?: string
+          handover_notes?: string | null
           id?: string
+          leave_ref?: string | null
           leave_type_id?: string | null
+          num_days?: number | null
           number_of_days?: number
           reason?: string | null
           rejection_reason?: string | null
@@ -1439,6 +1506,8 @@ export type Database = {
           id: string
           is_active: boolean | null
           is_paid: boolean | null
+          max_carry_forward_days: number | null
+          max_consecutive_days: number | null
           max_days: number | null
           min_days_notice: number | null
           name: string
@@ -1454,6 +1523,8 @@ export type Database = {
           id?: string
           is_active?: boolean | null
           is_paid?: boolean | null
+          max_carry_forward_days?: number | null
+          max_consecutive_days?: number | null
           max_days?: number | null
           min_days_notice?: number | null
           name: string
@@ -1469,6 +1540,8 @@ export type Database = {
           id?: string
           is_active?: boolean | null
           is_paid?: boolean | null
+          max_carry_forward_days?: number | null
+          max_consecutive_days?: number | null
           max_days?: number | null
           min_days_notice?: number | null
           name?: string
@@ -2192,6 +2265,42 @@ export type Database = {
             referencedColumns: ["id"]
           },
         ]
+      }
+      sync_runs: {
+        Row: {
+          error_message: string | null
+          finished_at: string | null
+          id: number
+          notes: string | null
+          rows_imported: number
+          rows_skipped: number
+          source: string
+          started_at: string
+          status: string
+        }
+        Insert: {
+          error_message?: string | null
+          finished_at?: string | null
+          id?: number
+          notes?: string | null
+          rows_imported?: number
+          rows_skipped?: number
+          source?: string
+          started_at?: string
+          status: string
+        }
+        Update: {
+          error_message?: string | null
+          finished_at?: string | null
+          id?: number
+          notes?: string | null
+          rows_imported?: number
+          rows_skipped?: number
+          source?: string
+          started_at?: string
+          status?: string
+        }
+        Relationships: []
       }
       terms: {
         Row: {
