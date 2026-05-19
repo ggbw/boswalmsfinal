@@ -124,3 +124,14 @@ export function stripStageFields<T extends Record<string, unknown>>(
   delete (copy as Record<string, unknown>).required_stages;
   return copy as Omit<T, 'current_stage' | 'required_stages'>;
 }
+
+// PostgREST raises "Could not find the 'X' column of 'TABLE' in the schema cache"
+// (code PGRST204) when a payload references a column missing from the DB —
+// usually a not-yet-applied migration. Pull the column name out so callers can
+// strip it and retry.
+export function parseMissingColumnError(err: unknown): string | null {
+  const e = err as { code?: string; message?: string } | null;
+  const msg = String(e?.message ?? err ?? '');
+  const m = /Could not find the '([^']+)' column/i.exec(msg);
+  return m ? m[1] : null;
+}

@@ -11,8 +11,13 @@ export default function LoginScreen() {
 
   const handleLogin = async () => {
     setError("");
+    const trimmedEmail = email.trim();
+    if (!trimmedEmail || !password) {
+      setError("Please enter your email and password.");
+      return;
+    }
     setLoading(true);
-    const { error } = await signIn(email.trim(), password);
+    const { error } = await signIn(trimmedEmail, password);
     if (error) setError(error);
     setLoading(false);
   };

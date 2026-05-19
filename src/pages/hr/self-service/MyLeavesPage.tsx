@@ -81,10 +81,10 @@ export default function MyLeavesPage() {
     const [allocRes, reqRes, holRes] = await Promise.all([
       supabase.from('leave_allocations').select('*, leave_types(name, color, code)').eq('employee_id', employeeId).eq('year', year),
       supabase.from('leave_requests').select('*, leave_types(name, color, code)').eq('employee_id', employeeId).order('created_at', { ascending: false }),
-      supabase.from('public_holidays').select('holiday_date').eq('year', year),
+      supabase.from('public_holidays').select('date').gte('date', `${year}-01-01`).lte('date', `${year}-12-31`),
     ]);
     if ((holRes.data ?? []).length > 0) {
-      setHolidays((holRes.data ?? []).map((h: any) => h.holiday_date));
+      setHolidays((holRes.data ?? []).map((h: any) => h.date));
     }
     setAllocations((allocRes.data ?? []).map((r: Record<string, unknown>) => ({
       ...(r as unknown as LeaveAllocation),

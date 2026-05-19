@@ -21,6 +21,13 @@ export interface WorkflowAccessMap {
   engineRequestIds: Set<string>;
   /** ids of requests where the current user can act on the engine stage. */
   actionableRequestIds: Set<string>;
+  /**
+   * request_id → workflow_instances.status. Exposed so the parent page can
+   * (a) show the correct status badge when leave_requests.status is stale and
+   * (b) auto-heal the parent row when the engine is terminal but the mirror
+   * never landed (e.g. a missing column or RLS rejection during approve).
+   */
+  engineStatusMap: Map<string, string>;
 }
 
 interface InstanceRow {
@@ -44,6 +51,7 @@ const wfFrom = (table: string) => (supabase.from(table as never) as never) as {
 const EMPTY: WorkflowAccessMap = {
   engineRequestIds: new Set(),
   actionableRequestIds: new Set(),
+  engineStatusMap: new Map(),
 };
 
 export function useWorkflowAccess(
@@ -76,11 +84,14 @@ export function useWorkflowAccess(
         }
         const rows = (instances ?? []) as InstanceRow[];
         const engineIds = new Set(rows.map((r) => r.request_id));
+        const statusMap = new Map<string, string>();
+        for (const r of rows) statusMap.set(r.request_id, r.status);
         if (!userId || rows.length === 0) {
           if (!cancelled) {
             setMap({
               engineRequestIds: engineIds,
               actionableRequestIds: new Set(),
+              engineStatusMap: statusMap,
             });
           }
           return;
@@ -100,40 +111,36 @@ export function useWorkflowAccess(
             setMap({
               engineRequestIds: engineIds,
               actionableRequestIds: new Set(),
+              engineStatusMap: statusMap,
             });
           }
           return;
         }
+
+        // Always resolve the current user's roles — super_admin gets an
+        // implicit override on any workflow stage, matching the legacy
+        // canActOnStage hierarchy in approvalWorkflow.ts.
+        const { data: roleRows } = await supabase
+          .from('user_roles')
+          .select('role')
+          .eq('user_id', userId);
+        const userRoleSet = new Set(
+          ((roleRows ?? []) as Array<{ role: string }>).map((r) => r.role),
+        );
+        const isSuperAdmin = userRoleSet.has('super_admin');
+
         const { data: owners } = await wfFrom('workflow_stage_owners')
           .select('stage_id, owner_type, role_name, user_id')
           .in('stage_id', pendingStageIds);
         const ownerRows = (owners ?? []) as OwnerRow[];
 
-        const roleNames = Array.from(
-          new Set(
-            ownerRows
-              .filter((o) => o.owner_type === 'role' && o.role_name)
-              .map((o) => o.role_name as string),
-          ),
-        );
-
-        // Resolve current user's role names from user_roles. We only need
-        // to know if THIS user has any of the role_names referenced — one
-        // small query.
-        let userRoleSet = new Set<string>();
-        if (roleNames.length > 0) {
-          const { data: roleRows } = await supabase
-            .from('user_roles')
-            .select('role')
-            .eq('user_id', userId);
-          userRoleSet = new Set(
-            ((roleRows ?? []) as Array<{ role: string }>).map((r) => r.role),
-          );
-        }
-
         // Build a stage_id → can-act-by-this-user map.
         const stageCanAct = new Map<string, boolean>();
         for (const stageId of pendingStageIds) {
+          if (isSuperAdmin) {
+            stageCanAct.set(stageId, true);
+            continue;
+          }
           const stageOwners = ownerRows.filter((o) => o.stage_id === stageId);
           const userMatch = stageOwners.some(
             (o) => o.owner_type === 'user' && o.user_id === userId,
@@ -155,6 +162,7 @@ export function useWorkflowAccess(
           setMap({
             engineRequestIds: engineIds,
             actionableRequestIds: actionable,
+            engineStatusMap: statusMap,
           });
         }
       } catch (err) {

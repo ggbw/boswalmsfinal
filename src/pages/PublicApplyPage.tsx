@@ -271,32 +271,16 @@ function RegistrationForm({
 
   const handleSubmit = async () => {
     setError("");
-    if (!name.trim()) {
-      setError("Full name is required.");
-      return;
-    }
-    if (!email.trim()) {
-      setError("Email address is required.");
-      return;
-    }
-    if (!mobile.trim()) {
-      setError("Mobile number is required.");
-      return;
-    }
-    if (!password) {
-      setError("Password is required.");
-      return;
-    }
-    if (password !== confirmPwd) {
-      setError("Passwords do not match.");
-      return;
-    }
-    if (password.length < 8) {
-      setError("Password must be at least 8 characters.");
-      return;
-    }
-    if (!agreed) {
-      setError("You must agree to the declaration before submitting.");
+    const errors: string[] = [];
+    if (!name.trim()) errors.push("Full name is required.");
+    if (!email.trim()) errors.push("Email address is required.");
+    if (!mobile.trim()) errors.push("Mobile number is required.");
+    if (!password) errors.push("Password is required.");
+    if (password && password.length < 8) errors.push("Password must be at least 8 characters.");
+    if (password && confirmPwd && password !== confirmPwd) errors.push("Passwords do not match.");
+    if (!agreed) errors.push("You must agree to the declaration before submitting.");
+    if (errors.length > 0) {
+      setError(errors.join("\n"));
       return;
     }
 
@@ -423,6 +407,7 @@ function RegistrationForm({
                 color: "#dc2626",
                 fontSize: 13,
                 marginBottom: 16,
+                whiteSpace: "pre-line",
               }}
             >
               {error}

@@ -99,6 +99,19 @@ export default function PayslipDetailPage() {
   const [showPdf, setShowPdf] = useState(false);
   const pdfRef = useRef<HTMLDivElement | null>(null);
 
+  const [leaveSummary, setLeaveSummary] = useState({
+    openingAnnualLeave: 0,
+    annualLeaveTaken: 0,
+    balanceAnnualLeave: 0,
+    openingSickLeave: 0,
+    sickLeaveTaken: 0,
+    balanceSickLeave: 0,
+  });
+  const [loanSummary, setLoanSummary] = useState({
+    totalSchoolLoan: 0,
+    remainingSchoolLoan: 0,
+  });
+
   useEffect(() => {
     if (mode === 'create') {
       void nextPayslipReference().then((ref) => setForm((f) => ({ ...f, reference: ref })));
@@ -210,6 +223,167 @@ export default function PayslipDetailPage() {
     () => employees.find((e) => e.id === form.employee_id) ?? null,
     [employees, form.employee_id],
   );
+
+  // Fetch latest leave allocation + loan balances for the payslip.
+  // Strategy:
+  //   - Leaves: prefer leave_allocations rows; if a type has no allocation row
+  //     for this employee/year (e.g. new hire created after the seed migration
+  //     ran), fall back to leave_types.max_days as the entitlement and count
+  //     approved leave_requests in that year as "taken". This mirrors the
+  //     fallback pattern already used in MyLeavesPage.
+  //   - Loans: include all active employee loans (Approved + Completed), not
+  //     only ones whose type literally contains "school" — most loans use the
+  //     "Salary Advance" type, so the previous filter zeroed out real data.
+  useEffect(() => {
+    if (!form.employee_id) {
+      setLeaveSummary({
+        openingAnnualLeave: 0, annualLeaveTaken: 0, balanceAnnualLeave: 0,
+        openingSickLeave: 0, sickLeaveTaken: 0, balanceSickLeave: 0,
+      });
+      setLoanSummary({ totalSchoolLoan: 0, remainingSchoolLoan: 0 });
+      return;
+    }
+    const yearStr = (form.period_to || '').slice(0, 4);
+    const year = Number(yearStr) || new Date().getFullYear();
+    let active = true;
+
+    void (async () => {
+      type AllocRow = {
+        leave_type_id: string;
+        opening_balance: number | null;
+        allocated_days: number | null;
+        used_days: number | null;
+        pending_days: number | null;
+        leave_types: { name: string | null; code: string | null } | null;
+      };
+      type LeaveTypeRow = {
+        id: string;
+        name: string | null;
+        code: string | null;
+        max_days: number | null;
+        is_active: boolean | null;
+      };
+      type LeaveReqRow = {
+        leave_type_id: string | null;
+        num_days: number | null;
+        number_of_days: number | null;
+        start_date: string | null;
+      };
+
+      const [{ data: allocs }, { data: leaveTypes }, { data: leaveReqs }] = await Promise.all([
+        supabase
+          .from('leave_allocations')
+          .select('leave_type_id, opening_balance, allocated_days, used_days, pending_days, leave_types(name, code)')
+          .eq('employee_id', form.employee_id)
+          .eq('year', year),
+        supabase
+          .from('leave_types')
+          .select('id, name, code, max_days, is_active')
+          .eq('is_active', true),
+        supabase
+          .from('leave_requests')
+          .select('leave_type_id, num_days, number_of_days, start_date')
+          .eq('employee_id', form.employee_id)
+          .eq('status', 'approved')
+          .gte('start_date', `${year}-01-01`)
+          .lte('start_date', `${year}-12-31`),
+      ]);
+
+      // Build lookup of allocations keyed by leave_type_id
+      const allocByTypeId = new Map<string, AllocRow>();
+      for (const a of (allocs ?? []) as unknown as AllocRow[]) {
+        allocByTypeId.set(a.leave_type_id, a);
+      }
+
+      // Tally approved leave-request days per leave_type_id (used as a fallback
+      // when no allocation row exists, or to sanity-check "taken").
+      const takenByTypeId = new Map<string, number>();
+      for (const r of (leaveReqs ?? []) as unknown as LeaveReqRow[]) {
+        if (!r.leave_type_id) continue;
+        const days = Number(r.num_days ?? r.number_of_days) || 0;
+        takenByTypeId.set(r.leave_type_id, (takenByTypeId.get(r.leave_type_id) ?? 0) + days);
+      }
+
+      let openingAnnual = 0, annualTaken = 0, balanceAnnual = 0;
+      let openingSick = 0, sickTaken = 0, balanceSick = 0;
+
+      for (const lt of (leaveTypes ?? []) as LeaveTypeRow[]) {
+        const name = (lt.name ?? '').toLowerCase();
+        const code = (lt.code ?? '').toUpperCase();
+        const isAnnual = name.includes('annual') || code === 'AL';
+        const isSick = name.includes('sick') || code === 'SL';
+        if (!isAnnual && !isSick) continue;
+
+        const a = allocByTypeId.get(lt.id);
+        let entitlement = 0;
+        let taken = 0;
+        let balance = 0;
+        if (a) {
+          const opening = Number(a.opening_balance) || 0;
+          const allocated = Number(a.allocated_days) || 0;
+          const used = Number(a.used_days) || 0;
+          const pending = Number(a.pending_days) || 0;
+          entitlement = opening + allocated;
+          // Prefer the higher of allocation used_days vs. approved-request total
+          // so the figure stays accurate even if the trigger that decrements
+          // used_days hasn't run yet.
+          taken = Math.max(used, takenByTypeId.get(lt.id) ?? 0);
+          balance = entitlement - taken - pending;
+        } else {
+          // No allocation row — fall back to the leave type's max_days as the
+          // entitlement and approved requests as taken.
+          entitlement = Number(lt.max_days) || 0;
+          taken = takenByTypeId.get(lt.id) ?? 0;
+          balance = entitlement - taken;
+        }
+
+        if (isAnnual) {
+          openingAnnual += entitlement;
+          annualTaken += taken;
+          balanceAnnual += balance;
+        } else if (isSick) {
+          openingSick += entitlement;
+          sickTaken += taken;
+          balanceSick += balance;
+        }
+      }
+      if (active) {
+        setLeaveSummary({
+          openingAnnualLeave: openingAnnual,
+          annualLeaveTaken: annualTaken,
+          balanceAnnualLeave: balanceAnnual,
+          openingSickLeave: openingSick,
+          sickLeaveTaken: sickTaken,
+          balanceSickLeave: balanceSick,
+        });
+      }
+
+      type LoanRow = {
+        total_amount: number | null;
+        remaining_amount: number | null;
+        status: string | null;
+      };
+      const { data: loans } = await supabase
+        .from('advance_salaries')
+        .select('total_amount, remaining_amount, status')
+        .eq('employee_id', form.employee_id);
+
+      let totalLoan = 0, remainingLoan = 0;
+      for (const l of (loans ?? []) as unknown as LoanRow[]) {
+        // Only count loans that are live for the employee (money outstanding).
+        if (l.status !== 'Approved' && l.status !== 'Completed') continue;
+        const total = Number(l.total_amount) || 0;
+        const remaining = l.remaining_amount == null ? total : Number(l.remaining_amount) || 0;
+        totalLoan += total;
+        remainingLoan += remaining;
+      }
+      if (active) {
+        setLoanSummary({ totalSchoolLoan: totalLoan, remainingSchoolLoan: remainingLoan });
+      }
+    })();
+
+    return () => { active = false; };
+  }, [form.employee_id, form.period_to]);
 
   const openPayslipWindow = (autoPrint: boolean) => {
     setShowPdf(true);
@@ -435,10 +609,20 @@ export default function PayslipDetailPage() {
               className="btn btn-sm btn-outline"
               onClick={() => {
                 const emp = employees.find((e) => e.id === form.employee_id) as
-                  | { join_date?: string | null; exit_date?: string | null }
+                  | { joining_date?: string | null; exit_date?: string | null }
                   | undefined;
-                if (!emp?.join_date || !emp?.exit_date) {
-                  toast('Set join date and exit date on the employee record to auto-calculate severance.', 'error');
+                if (!emp) {
+                  toast('Select an employee first.', 'error');
+                  return;
+                }
+                const joinDate = emp.joining_date;
+                if (!joinDate) {
+                  toast('Set the joining date on the employee record to auto-calculate severance.', 'error');
+                  return;
+                }
+                const exitDate = emp.exit_date || form.period_to;
+                if (!exitDate) {
+                  toast('Set an exit date on the employee record, or a period-to date on the payslip.', 'error');
                   return;
                 }
                 const wage = Number(form.basic_salary) || 0;
@@ -448,8 +632,8 @@ export default function PayslipDetailPage() {
                 }
                 const result = calcSeveranceBenefit({
                   contract_wage: wage,
-                  join_date: emp.join_date,
-                  exit_date: emp.exit_date,
+                  join_date: joinDate,
+                  exit_date: exitDate,
                 });
                 if (result.completed_months <= 0) {
                   toast('No completed months of service — severance is zero.', 'info');
@@ -592,7 +776,7 @@ export default function PayslipDetailPage() {
               reference={form.reference}
               payslipName={form.payslip_name}
               employeeName={selectedEmployee?.employee_name ?? ''}
-              employeeCode=""
+              employeeCode={selectedEmployee?.employee_code ?? ''}
               employeeId={selectedEmployee?.employee_code ?? ''}
               department={selectedEmployee?.department}
               jobTitle={selectedEmployee?.job_title}
@@ -610,6 +794,14 @@ export default function PayslipDetailPage() {
               earnings={computed.allEarnings}
               deductions={computed.allDeductions}
               hourLines={form.earnings.filter((e) => (e.hours ?? 0) > 0).map((e) => ({ description: e.description, code: e.code, hours: e.hours }))}
+              openingAnnualLeave={leaveSummary.openingAnnualLeave}
+              annualLeaveTaken={leaveSummary.annualLeaveTaken}
+              balanceAnnualLeave={leaveSummary.balanceAnnualLeave}
+              openingSickLeave={leaveSummary.openingSickLeave}
+              sickLeaveTaken={leaveSummary.sickLeaveTaken}
+              balanceSickLeave={leaveSummary.balanceSickLeave}
+              totalSchoolLoan={loanSummary.totalSchoolLoan}
+              remainingSchoolLoan={loanSummary.remainingSchoolLoan}
             />
           </div>
         </div>

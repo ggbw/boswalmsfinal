@@ -61,7 +61,7 @@ export default function HRLeaveReportPage() {
           .select('*, employees(employee_name, branch_name, department), leave_types(name, code, color)')
           .eq('year', year),
         (supabase.from('leave_requests') as any)
-          .select('*, employees(employee_name, branch_name, department), leave_types(name, code, color)')
+          .select('*, employees!leave_requests_employee_id_fkey(employee_name, branch_name, department), leave_types(name, code, color)')
           .order('created_at', { ascending: false }),
       ]);
       if (ltRes.error)    toast(`Leave types: ${ltRes.error.message}`, 'error');

@@ -461,7 +461,7 @@ async function getInstanceById(id: string): Promise<WorkflowInstance | null> {
 export async function getWorkflowTimeline(
   instanceId: string,
 ): Promise<{ instance: WorkflowInstance; stages: TimelineStage[] } | null> {
-  const instance = await getInstanceById(instanceId);
+  let instance = await getInstanceById(instanceId);
   if (!instance) return null;
 
   const stages = await getWorkflowStages(instance.workflow_id);
@@ -478,7 +478,23 @@ export async function getWorkflowTimeline(
     if (!isWorkflowTableMissingError(err)) approvals = [];
   }
 
-  const currentIdx = stages.findIndex((s) => s.id === instance.current_stage_id);
+  // Self-heal a stale/null current_stage_id. workflow_instances.current_stage_id
+  // is ON DELETE SET NULL, so editing stages after an instance exists can leave
+  // the instance pointing at nothing. Without this, the stepper renders every
+  // stage as "Waiting" and actOnStage rejects approve clicks.
+  let currentIdx = stages.findIndex((s) => s.id === instance.current_stage_id);
+  if (
+    currentIdx < 0 &&
+    (instance.status === 'pending' || instance.status === 'sent_back')
+  ) {
+    const firstStage = stages[0];
+    const repaired = await updateInstance(instance.id, {
+      current_stage_id: firstStage.id,
+    });
+    instance = repaired ?? { ...instance, current_stage_id: firstStage.id };
+    await mirrorParentStage(instance, firstStage);
+    currentIdx = 0;
+  }
   const timeline: TimelineStage[] = stages.map((s, idx) => {
     const stageApprovals = approvals.filter((a) => a.stage_id === s.id);
     let status: TimelineStageStatus;
@@ -516,16 +532,39 @@ export async function actOnStage(args: {
   outcome: 'advanced' | 'completed' | 'rejected' | 'sent_back' | 'waiting';
 } | null> {
   const { instanceId, action, userId, comment } = args;
-  const instance = await getInstanceById(instanceId);
-  if (!instance || !instance.current_stage_id) return null;
+  let instance = await getInstanceById(instanceId);
+  if (!instance) return null;
   if (instance.status !== 'pending' && instance.status !== 'sent_back') return null;
 
   const stages = await getWorkflowStages(instance.workflow_id);
+  if (stages.length === 0) return null;
+
+  // Self-heal a null/stale current_stage_id (see getWorkflowTimeline).
+  if (!instance.current_stage_id || !stages.some((s) => s.id === instance.current_stage_id)) {
+    const firstStage = stages[0];
+    const repaired = await updateInstance(instance.id, { current_stage_id: firstStage.id });
+    instance = repaired ?? { ...instance, current_stage_id: firstStage.id };
+    await mirrorParentStage(instance, firstStage);
+  }
+
   const currentStage = stages.find((s) => s.id === instance.current_stage_id);
   if (!currentStage) return null;
 
   const { userIds: stageApproverIds } = await getStageApprovers(currentStage.id);
-  if (!stageApproverIds.includes(userId)) return null;
+  if (!stageApproverIds.includes(userId)) {
+    // super_admin override — matches the legacy canActOnStage hierarchy.
+    // user_roles only enforces UNIQUE (user_id, role), so a single user can
+    // hold multiple role rows. Fetch them all instead of .maybeSingle()
+    // (which silently fails on >1 row) to keep parity with useWorkflowAccess.
+    const { data: roleRows } = await supabase
+      .from('user_roles')
+      .select('role')
+      .eq('user_id', userId);
+    const userRoles = new Set(
+      ((roleRows ?? []) as Array<{ role: string }>).map((r) => r.role),
+    );
+    if (!userRoles.has('super_admin')) return null;
+  }
 
   try {
     await wfFrom('workflow_stage_approvals').insert({

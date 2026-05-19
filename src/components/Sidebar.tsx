@@ -456,10 +456,21 @@ export default function Sidebar() {
         </div>
         <i
           className="fa-solid fa-right-from-bracket"
+          title="Sign out"
+          aria-label="Sign out"
+          role="button"
+          tabIndex={0}
           style={{ marginLeft: "auto", color: "#484f58", fontSize: 12, cursor: "pointer" }}
           onClick={(e) => {
             e.stopPropagation();
             setCurrentUser(null);
+          }}
+          onKeyDown={(e) => {
+            if (e.key === "Enter" || e.key === " ") {
+              e.preventDefault();
+              e.stopPropagation();
+              setCurrentUser(null);
+            }
           }}
         />
       </div>

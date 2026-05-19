@@ -14,6 +14,7 @@ import {
   LEAVE_SUPER_ADMIN_THRESHOLD_DAYS,
   leaveRequiredStages,
   nextStage,
+  parseMissingColumnError,
   stageLabel,
   stripStageFields,
 } from '@/lib/hr/approvalWorkflow';
@@ -64,7 +65,7 @@ interface Allocation {
 }
 
 export default function LeavesPage() {
-  const { toast, showModal } = useApp();
+  const { toast, showModal, closeModal } = useApp();
   const { user } = useAuth();
   const { can, isHR, isAdmin, isSuperAdmin } = useUserRole();
   const { employees } = useEmployees();
@@ -130,7 +131,57 @@ export default function LeavesPage() {
 
   // ─── Workflow access ──────────────────────────────────────────────────
   const requestIdList = useMemo(() => requests.map(r => r.id), [requests]);
-  const { engineRequestIds, actionableRequestIds } = useWorkflowAccess('leave', requestIdList, userId);
+  const { engineRequestIds, actionableRequestIds, engineStatusMap } = useWorkflowAccess('leave', requestIdList, userId);
+
+  // ─── Self-heal stale leave_requests.status ───────────────────────────
+  // If the workflow engine settled on a terminal state but the leave_requests
+  // mirror update silently failed (missing column on an un-migrated DB, RLS
+  // rejection, ...), the parent row gets stuck on 'pending'. Reconcile here
+  // so the badge matches the workflow timeline.
+  const healedRef = useRef<Set<string>>(new Set());
+  useEffect(() => {
+    if (requests.length === 0 || engineStatusMap.size === 0) return;
+    const stale = requests.filter(r => {
+      const engineStatus = engineStatusMap.get(r.id);
+      if (!engineStatus) return false;
+      if (engineStatus !== 'approved' && engineStatus !== 'rejected') return false;
+      if (r.status === engineStatus) return false;
+      if (healedRef.current.has(r.id)) return false;
+      return true;
+    });
+    if (stale.length === 0) return;
+    void (async () => {
+      for (const r of stale) {
+        healedRef.current.add(r.id);
+        const engineStatus = engineStatusMap.get(r.id) as 'approved' | 'rejected';
+        let payload: Record<string, unknown> =
+          engineStatus === 'approved'
+            ? {
+                status: 'approved',
+                current_stage: null,
+                approved_at: r.approved_at ?? new Date().toISOString(),
+                approved_date: r.approved_date ?? new Date().toISOString().slice(0, 10),
+              }
+            : { status: 'rejected', approved_at: r.approved_at ?? new Date().toISOString() };
+        let healErr: { message?: string } | null = null;
+        ({ error: healErr } = await supabase.from('leave_requests').update(payload as never).eq('id', r.id));
+        if (healErr && isStageColumnMissingError(healErr)) {
+          payload = stripStageFields(payload);
+          ({ error: healErr } = await supabase.from('leave_requests').update(payload as never).eq('id', r.id));
+        }
+        for (let i = 0; i < 6 && healErr; i++) {
+          const missing = parseMissingColumnError(healErr);
+          if (!missing || !(missing in payload)) break;
+          const next = { ...payload };
+          delete next[missing];
+          payload = next;
+          ({ error: healErr } = await supabase.from('leave_requests').update(payload as never).eq('id', r.id));
+        }
+      }
+      void loadRequests();
+    })();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [engineStatusMap, requests]);
 
   // ─── Filtered requests for table ─────────────────────────────────────
   const filtered = useMemo(() => requests.filter(r => {
@@ -203,15 +254,57 @@ export default function LeavesPage() {
     }
   };
 
+  // leave_requests.approved_by has an FK to employees(id), not auth.users(id),
+  // so we must translate the acting user's auth id to their employee id before
+  // writing. Returns null when the user has no employees row (e.g. a system
+  // super_admin) — leaving approved_by NULL satisfies the FK.
+  const resolveApproverEmployeeId = async (): Promise<string | null> => {
+    if (!userId) return null;
+    const { data } = await supabase
+      .from('employees')
+      .select('id')
+      .eq('auth_user_id', userId)
+      .maybeSingle();
+    return ((data as { id?: string } | null)?.id) ?? null;
+  };
+
   const handleApprove = async (r: LeaveRequestWithJoins) => {
+    const approverEmployeeId = await resolveApproverEmployeeId();
     if (engineRequestIds.has(r.id) && userId) {
       const inst = await getActiveInstance('leave', r.id);
       if (inst) {
         const result = await actOnStage({ instanceId: inst.id, action: 'approved', userId });
         if (!result) { toast('Not authorised to approve this stage.', 'error'); return; }
         if (result.outcome === 'completed') {
-          await supabase.from('leave_requests').update({ status: 'approved', current_stage: null, approved_at: new Date().toISOString(), approved_by: userId, approved_date: new Date().toISOString().slice(0, 10) } as never).eq('id', r.id);
-          await deductAllocation(r);
+          // Mirror onto leave_requests with column-fallback for DBs that haven't
+          // applied the leave-enhancements / approval-stages migrations yet, AND
+          // surface errors instead of silently swallowing them — otherwise the
+          // workflow flips to 'approved' but the parent row stays 'pending'.
+          let payload: Record<string, unknown> = {
+            status: 'approved',
+            current_stage: null,
+            approved_at: new Date().toISOString(),
+            approved_by: approverEmployeeId,
+            approved_date: new Date().toISOString().slice(0, 10),
+          };
+          let { error: mirrorErr } = await supabase.from('leave_requests').update(payload as never).eq('id', r.id);
+          if (mirrorErr && isStageColumnMissingError(mirrorErr)) {
+            payload = stripStageFields(payload);
+            ({ error: mirrorErr } = await supabase.from('leave_requests').update(payload as never).eq('id', r.id));
+          }
+          for (let i = 0; i < 6 && mirrorErr; i++) {
+            const missing = parseMissingColumnError(mirrorErr);
+            if (!missing || !(missing in payload)) break;
+            const next = { ...payload };
+            delete next[missing];
+            payload = next;
+            ({ error: mirrorErr } = await supabase.from('leave_requests').update(payload as never).eq('id', r.id));
+          }
+          if (mirrorErr) {
+            toast(`Workflow approved but leave row failed to sync: ${mirrorErr.message}`, 'error');
+          } else {
+            await deductAllocation(r);
+          }
         }
         void notifyWorkflowStageApproved({ ctx: buildCtx(r), stage: result.actedStage, nextStage: result.nextStage, actorUserId: userId });
         toast(result.outcome === 'completed' ? 'Leave fully approved.' : result.outcome === 'advanced' && result.nextStage ? `Approved — forwarded to ${result.nextStage.stage_name}.` : 'Approval recorded.', 'success');
@@ -225,10 +318,10 @@ export default function LeavesPage() {
     const next = nextStage(stages, currentStage);
     const updates: Record<string, unknown> = next
       ? { current_stage: next }
-      : { status: 'approved', current_stage: null, approved_at: new Date().toISOString(), approved_by: userId, approved_date: new Date().toISOString().slice(0, 10) };
+      : { status: 'approved', current_stage: null, approved_at: new Date().toISOString(), approved_by: approverEmployeeId, approved_date: new Date().toISOString().slice(0, 10) };
     let { error } = await supabase.from('leave_requests').update(updates).eq('id', r.id);
     if (error && isStageColumnMissingError(error)) {
-      const legacy = stripStageFields({ status: 'approved', approved_at: new Date().toISOString(), approved_by: userId, approved_date: new Date().toISOString().slice(0, 10) });
+      const legacy = stripStageFields({ status: 'approved', approved_at: new Date().toISOString(), approved_by: approverEmployeeId, approved_date: new Date().toISOString().slice(0, 10) });
       ({ error } = await supabase.from('leave_requests').update(legacy).eq('id', r.id));
     }
     if (error) { toast(error.message, 'error'); return; }
@@ -241,20 +334,40 @@ export default function LeavesPage() {
   const handleReject = async (r: LeaveRequestWithJoins) => {
     const reason = window.prompt('Reason for rejection:')?.trim() ?? '';
     if (!reason) { toast('A rejection reason is required.', 'error'); return; }
+    const approverEmployeeId = await resolveApproverEmployeeId();
     if (engineRequestIds.has(r.id) && userId) {
       const inst = await getActiveInstance('leave', r.id);
       if (inst) {
         const result = await actOnStage({ instanceId: inst.id, action: 'rejected', userId, comment: reason });
         if (!result) { toast('Not authorised to reject this stage.', 'error'); return; }
-        await supabase.from('leave_requests').update({ status: 'rejected', approver_comment: reason, rejection_reason: reason, approved_at: new Date().toISOString(), approved_by: userId } as never).eq('id', r.id);
-        await reverseAllocationPending(r);
+        let payload: Record<string, unknown> = {
+          status: 'rejected',
+          approver_comment: reason,
+          rejection_reason: reason,
+          approved_at: new Date().toISOString(),
+          approved_by: approverEmployeeId,
+        };
+        let { error: mirrorErr } = await supabase.from('leave_requests').update(payload as never).eq('id', r.id);
+        for (let i = 0; i < 6 && mirrorErr; i++) {
+          const missing = parseMissingColumnError(mirrorErr);
+          if (!missing || !(missing in payload)) break;
+          const next = { ...payload };
+          delete next[missing];
+          payload = next;
+          ({ error: mirrorErr } = await supabase.from('leave_requests').update(payload as never).eq('id', r.id));
+        }
+        if (mirrorErr) {
+          toast(`Workflow rejected but leave row failed to sync: ${mirrorErr.message}`, 'error');
+        } else {
+          await reverseAllocationPending(r);
+        }
         void notifyWorkflowRejected({ ctx: buildCtx(r), stage: result.actedStage, actorUserId: userId, reason });
         toast('Leave rejected.', 'info'); void loadRequests(); void loadAllocations(); return;
       }
     }
     const currentStage = (r.current_stage ?? null) as ApprovalStage | null;
     if (currentStage && !canActOnStage(currentStage, roleFlags)) { toast(`Only ${stageLabel(currentStage)} can reject this stage.`, 'error'); return; }
-    const payload: Record<string, unknown> = { status: 'rejected', approver_comment: reason, rejection_reason: reason, approved_at: new Date().toISOString(), approved_by: userId };
+    const payload: Record<string, unknown> = { status: 'rejected', approver_comment: reason, rejection_reason: reason, approved_at: new Date().toISOString(), approved_by: approverEmployeeId };
     let { error } = await supabase.from('leave_requests').update(payload).eq('id', r.id);
     if (error && isStageColumnMissingError(error)) { ({ error } = await supabase.from('leave_requests').update(stripStageFields(payload)).eq('id', r.id)); }
     if (error) { toast(error.message, 'error'); return; }
@@ -264,92 +377,70 @@ export default function LeavesPage() {
   };
 
   // ─── Apply on behalf ──────────────────────────────────────────────────
-  const [applyForm, setApplyForm] = useState({ employee_id: '', leave_type_id: '', start_date: '', end_date: '', reason: '', handover_notes: '', admin_notes: '' });
-  const applyDays = useMemo(() => {
-    if (!applyForm.start_date || !applyForm.end_date) return 0;
-    return calcLeaveDays(applyForm.start_date, applyForm.end_date, BOTSWANA_HOLIDAYS_2026);
-  }, [applyForm.start_date, applyForm.end_date]);
-
-  const handleApplyOnBehalf = async () => {
-    if (!applyForm.employee_id || !applyForm.leave_type_id || !applyForm.start_date || !applyForm.end_date) { toast('Please fill required fields', 'error'); return; }
-    if (applyDays <= 0) { toast('End date must be on or after start date', 'error'); return; }
+  const handleApplyOnBehalf = async (form: ApplyLeaveFormValues, days: number) => {
+    if (!form.employee_id || !form.leave_type_id || !form.start_date || !form.end_date) { toast('Please fill required fields', 'error'); return; }
+    if (days <= 0) { toast('End date must be on or after start date', 'error'); return; }
     const threshold = await getCompanySettingNumber(COMPANY_SETTING_KEYS.LEAVE_THRESHOLD, LEAVE_SUPER_ADMIN_THRESHOLD_DAYS);
-    const stages = leaveRequiredStages(applyDays, threshold);
+    const stages = leaveRequiredStages(days, threshold);
     const payload: Record<string, unknown> = {
-      employee_id: applyForm.employee_id,
-      leave_type_id: applyForm.leave_type_id,
-      start_date: applyForm.start_date,
-      end_date: applyForm.end_date,
-      number_of_days: applyDays,
-      num_days: applyDays,
-      reason: applyForm.reason.trim() || null,
-      handover_notes: applyForm.handover_notes.trim() || null,
-      admin_notes: applyForm.admin_notes.trim() || null,
+      employee_id: form.employee_id,
+      leave_type_id: form.leave_type_id,
+      start_date: form.start_date,
+      end_date: form.end_date,
+      number_of_days: days,
+      num_days: days,
+      reason: form.reason.trim() || null,
+      handover_notes: form.handover_notes.trim() || null,
+      admin_notes: form.admin_notes.trim() || null,
       status: 'pending',
       current_stage: stages[0],
       required_stages: stages,
       applied_date: new Date().toISOString().slice(0, 10),
     };
-    let { data: inserted, error } = await supabase.from('leave_requests').insert(payload).select('*, leave_types(name)').single();
+    let attempt: Record<string, unknown> = payload;
+    let { data: inserted, error } = await supabase.from('leave_requests').insert(attempt).select('*, leave_types(name)').single();
     if (error && isStageColumnMissingError(error)) {
-      const retry = await supabase.from('leave_requests').insert(stripStageFields(payload)).select('*, leave_types(name)').single();
-      inserted = retry.data; error = retry.error;
+      attempt = stripStageFields(attempt);
+      ({ data: inserted, error } = await supabase.from('leave_requests').insert(attempt).select('*, leave_types(name)').single());
+    }
+    // Strip any other columns missing from this DB (e.g. admin_notes/handover_notes when the leave-enhancements migration hasn't been applied)
+    for (let i = 0; i < 6 && error; i++) {
+      const missing = parseMissingColumnError(error);
+      if (!missing || !(missing in attempt)) break;
+      const next = { ...attempt };
+      delete next[missing];
+      attempt = next;
+      ({ data: inserted, error } = await supabase.from('leave_requests').insert(attempt).select('*, leave_types(name)').single());
     }
     if (error) { toast(error.message, 'error'); return; }
     // Bump pending_days on allocation
-    const alloc = allocations.find(a => a.employee_id === applyForm.employee_id && a.leave_type_id === applyForm.leave_type_id && a.year === year);
+    const alloc = allocations.find(a => a.employee_id === form.employee_id && a.leave_type_id === form.leave_type_id && a.year === year);
     if (alloc) {
-      await supabase.from('leave_allocations').update({ pending_days: (alloc.pending_days ?? 0) + applyDays } as never).eq('id', alloc.id);
+      await supabase.from('leave_allocations').update({ pending_days: (alloc.pending_days ?? 0) + days } as never).eq('id', alloc.id);
     }
     if (inserted) {
       const insertedId = (inserted as { id: string }).id;
-      const emp = employees.find(e => e.id === applyForm.employee_id);
-      const lt = leaveTypes.find(t => t.id === applyForm.leave_type_id);
-      const ctx: RequestContext = { requestType: 'leave', requestId: insertedId, requestRef: insertedId.slice(0, 8), employeeId: applyForm.employee_id, employeeName: emp?.employee_name ?? null, typeLabel: lt?.name ?? 'Leave', summary: `${applyDays} day(s) (${applyForm.start_date} → ${applyForm.end_date})` };
+      const emp = employees.find(e => e.id === form.employee_id);
+      const lt = leaveTypes.find(t => t.id === form.leave_type_id);
+      const ctx: RequestContext = { requestType: 'leave', requestId: insertedId, requestRef: insertedId.slice(0, 8), employeeId: form.employee_id, employeeName: emp?.employee_name ?? null, typeLabel: lt?.name ?? 'Leave', summary: `${days} day(s) (${form.start_date} → ${form.end_date})` };
       void (async () => {
-        const matched = await resolveWorkflowForRequest('leave', { leaveTypeId: applyForm.leave_type_id, departmentId: emp?.hr_department_id ?? null, employeeId: applyForm.employee_id });
+        const matched = await resolveWorkflowForRequest('leave', { leaveTypeId: form.leave_type_id, departmentId: emp?.hr_department_id ?? null, employeeId: form.employee_id });
         if (matched) { const started = await startWorkflowInstance('leave', insertedId, matched.id); if (started) { void notifyWorkflowSubmitted({ ctx, stage: started.firstStage, actorUserId: userId }); return; } }
         void notifySubmitted(ctx, stages[0], userId);
       })();
     }
     toast('Leave request created', 'success');
-    setApplyForm({ employee_id: '', leave_type_id: '', start_date: '', end_date: '', reason: '', handover_notes: '', admin_notes: '' });
+    closeModal();
     void loadRequests(); void loadAllocations();
   };
 
   const openApplyModal = () => {
     showModal('Apply Leave on Behalf', (
-      <div>
-        <div className="form-row cols2">
-          <div className="form-group">
-            <label>Employee *</label>
-            <select className="form-select" value={applyForm.employee_id} onChange={e => setApplyForm(f => ({ ...f, employee_id: e.target.value }))}>
-              <option value="">— Select —</option>
-              {employees.map(e => <option key={e.id} value={e.id}>{e.employee_name} ({e.employee_code})</option>)}
-            </select>
-          </div>
-          <div className="form-group">
-            <label>Leave Type *</label>
-            <select className="form-select" value={applyForm.leave_type_id} onChange={e => setApplyForm(f => ({ ...f, leave_type_id: e.target.value }))}>
-              <option value="">— Select —</option>
-              {leaveTypes.map(t => <option key={t.id} value={t.id}>{t.name}</option>)}
-            </select>
-          </div>
-        </div>
-        <div className="form-row cols2">
-          <div className="form-group"><label>Start Date *</label><input type="date" className="form-input" value={applyForm.start_date} onChange={e => setApplyForm(f => ({ ...f, start_date: e.target.value }))} /></div>
-          <div className="form-group"><label>End Date *</label><input type="date" className="form-input" value={applyForm.end_date} onChange={e => setApplyForm(f => ({ ...f, end_date: e.target.value }))} /></div>
-        </div>
-        {applyDays > 0 && <div style={{ marginBottom: 10, fontSize: 12, color: '#1a7f37', fontWeight: 600 }}>{applyDays} working day(s)</div>}
-        <div className="form-group"><label>Reason</label><textarea rows={2} className="form-textarea" value={applyForm.reason} onChange={e => setApplyForm(f => ({ ...f, reason: e.target.value }))} /></div>
-        <div className="form-group"><label>Handover Notes</label><textarea rows={2} className="form-textarea" value={applyForm.handover_notes} onChange={e => setApplyForm(f => ({ ...f, handover_notes: e.target.value }))} /></div>
-        <div className="form-group"><label>Admin Notes</label><textarea rows={2} className="form-textarea" value={applyForm.admin_notes} onChange={e => setApplyForm(f => ({ ...f, admin_notes: e.target.value }))} /></div>
-        <div style={{ textAlign: 'right' }}>
-          <button className="btn btn-primary btn-sm" onClick={() => void handleApplyOnBehalf()}>
-            <i className="fa-solid fa-paper-plane" /> Submit
-          </button>
-        </div>
-      </div>
+      <ApplyLeaveForm
+        employees={employees}
+        leaveTypes={leaveTypes}
+        onSubmit={handleApplyOnBehalf}
+      />
     ), 'large');
   };
 
@@ -370,7 +461,7 @@ export default function LeavesPage() {
         leaveTypes={leaveTypes}
         initialForm={ef}
         onSave={async (form, days) => {
-          const { error } = await supabase.from('leave_requests').update({
+          let attempt: Record<string, unknown> = {
             leave_type_id: form.leave_type_id,
             start_date: form.start_date,
             end_date: form.end_date,
@@ -379,7 +470,16 @@ export default function LeavesPage() {
             reason: form.reason.trim() || null,
             handover_notes: form.handover_notes.trim() || null,
             admin_notes: form.admin_notes.trim() || null,
-          } as never).eq('id', r.id);
+          };
+          let { error } = await supabase.from('leave_requests').update(attempt as never).eq('id', r.id);
+          for (let i = 0; i < 6 && error; i++) {
+            const missing = parseMissingColumnError(error);
+            if (!missing || !(missing in attempt)) break;
+            const next = { ...attempt };
+            delete next[missing];
+            attempt = next;
+            ({ error } = await supabase.from('leave_requests').update(attempt as never).eq('id', r.id));
+          }
           if (error) { toast(error.message, 'error'); return; }
           toast('Leave updated.', 'success');
           void loadRequests();
@@ -560,6 +660,15 @@ export default function LeavesPage() {
                     {filtered.map(r => {
                       const isEngine = engineRequestIds.has(r.id);
                       const canActOnRow = isEngine ? actionableRequestIds.has(r.id) : canActOnStage((r.current_stage ?? null) as ApprovalStage | null, roleFlags);
+                      // Prefer the workflow engine's status when it disagrees with the parent
+                      // row — handles rows where the mirror update silently failed (stuck on
+                      // 'pending' even though the workflow_instance is approved/rejected).
+                      const engineStatus = engineStatusMap.get(r.id);
+                      const effectiveStatus =
+                        isEngine && engineStatus && engineStatus !== r.status &&
+                        (engineStatus === 'approved' || engineStatus === 'rejected')
+                          ? engineStatus
+                          : r.status;
                       return (
                         <Fragment key={r.id}>
                           <tr>
@@ -577,8 +686,8 @@ export default function LeavesPage() {
                             <td>{fmtDate(r.start_date)} → {fmtDate(r.end_date)}</td>
                             <td>{r.num_days ?? r.number_of_days}</td>
                             <td>
-                              <span className={statusBadge(r.status)}>{r.status}</span>
-                              {r.status === 'pending' && r.current_stage && (
+                              <span className={statusBadge(effectiveStatus)}>{effectiveStatus}</span>
+                              {effectiveStatus === 'pending' && r.current_stage && (
                                 <div style={{ fontSize: 10, color: 'var(--text3)', marginTop: 2 }}>
                                   {isEngine ? 'In workflow' : `Awaiting ${stageLabel(r.current_stage as ApprovalStage)}`}
                                 </div>
@@ -593,7 +702,7 @@ export default function LeavesPage() {
                               <button className="btn btn-outline btn-sm" onClick={() => openEditModal(r)} style={{ marginRight: 4 }} title="Edit">
                                 <i className="fa-solid fa-pen" />
                               </button>
-                              {writeOk && r.status === 'pending' && canActOnRow && (
+                              {writeOk && effectiveStatus === 'pending' && canActOnRow && (
                                 <>
                                   <button className="btn btn-green btn-sm" onClick={() => void handleApprove(r)} style={{ marginRight: 4 }} title="Approve"><i className="fa-solid fa-check" /></button>
                                   <button className="btn btn-danger btn-sm" onClick={() => void handleReject(r)} title="Reject"><i className="fa-solid fa-xmark" /></button>
@@ -758,6 +867,74 @@ export default function LeavesPage() {
 }
 
 // ── Sub-components ────────────────────────────────────────────────────────────
+
+interface ApplyLeaveFormValues {
+  employee_id: string;
+  leave_type_id: string;
+  start_date: string;
+  end_date: string;
+  reason: string;
+  handover_notes: string;
+  admin_notes: string;
+}
+
+function ApplyLeaveForm({
+  employees,
+  leaveTypes,
+  onSubmit,
+}: {
+  employees: ReturnType<typeof useEmployees>['employees'];
+  leaveTypes: ReturnType<typeof useLeaveTypes>['types'];
+  onSubmit: (form: ApplyLeaveFormValues, days: number) => Promise<void>;
+}) {
+  const [form, setForm] = useState<ApplyLeaveFormValues>({
+    employee_id: '', leave_type_id: '', start_date: '', end_date: '', reason: '', handover_notes: '', admin_notes: '',
+  });
+  const [submitting, setSubmitting] = useState(false);
+  const days = useMemo(() => {
+    if (!form.start_date || !form.end_date) return 0;
+    return calcLeaveDays(form.start_date, form.end_date, BOTSWANA_HOLIDAYS_2026);
+  }, [form.start_date, form.end_date]);
+
+  const handle = async () => {
+    setSubmitting(true);
+    try { await onSubmit(form, days); } finally { setSubmitting(false); }
+  };
+
+  return (
+    <div>
+      <div className="form-row cols2">
+        <div className="form-group">
+          <label>Employee *</label>
+          <select className="form-select" value={form.employee_id} onChange={e => setForm(f => ({ ...f, employee_id: e.target.value }))}>
+            <option value="">— Select —</option>
+            {employees.map(e => <option key={e.id} value={e.id}>{e.employee_name} ({e.employee_code})</option>)}
+          </select>
+        </div>
+        <div className="form-group">
+          <label>Leave Type *</label>
+          <select className="form-select" value={form.leave_type_id} onChange={e => setForm(f => ({ ...f, leave_type_id: e.target.value }))}>
+            <option value="">— Select —</option>
+            {leaveTypes.map(t => <option key={t.id} value={t.id}>{t.name}</option>)}
+          </select>
+        </div>
+      </div>
+      <div className="form-row cols2">
+        <div className="form-group"><label>Start Date *</label><input type="date" className="form-input" value={form.start_date} onChange={e => setForm(f => ({ ...f, start_date: e.target.value }))} /></div>
+        <div className="form-group"><label>End Date *</label><input type="date" className="form-input" value={form.end_date} onChange={e => setForm(f => ({ ...f, end_date: e.target.value }))} /></div>
+      </div>
+      {days > 0 && <div style={{ marginBottom: 10, fontSize: 12, color: '#1a7f37', fontWeight: 600 }}>{days} working day(s)</div>}
+      <div className="form-group"><label>Reason</label><textarea rows={2} className="form-textarea" value={form.reason} onChange={e => setForm(f => ({ ...f, reason: e.target.value }))} /></div>
+      <div className="form-group"><label>Handover Notes</label><textarea rows={2} className="form-textarea" value={form.handover_notes} onChange={e => setForm(f => ({ ...f, handover_notes: e.target.value }))} /></div>
+      <div className="form-group"><label>Admin Notes</label><textarea rows={2} className="form-textarea" value={form.admin_notes} onChange={e => setForm(f => ({ ...f, admin_notes: e.target.value }))} /></div>
+      <div style={{ textAlign: 'right' }}>
+        <button className="btn btn-primary btn-sm" onClick={() => void handle()} disabled={submitting}>
+          <i className="fa-solid fa-paper-plane" /> {submitting ? 'Submitting…' : 'Submit'}
+        </button>
+      </div>
+    </div>
+  );
+}
 
 function EditLeaveForm({
   r,

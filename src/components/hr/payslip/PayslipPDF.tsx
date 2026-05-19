@@ -72,7 +72,13 @@ function intToWords(n: number): string {
 }
 
 function netToWords(n: number): string {
-  return intToWords(Math.round(n));
+  // Split into whole Pula + thebe so 1999.96 doesn't round up to "Two Thousand"
+  // on legal payslips.
+  const safe = isFinite(n) ? Math.max(0, n) : 0;
+  const whole = Math.floor(safe);
+  const thebe = Math.round((safe - whole) * 100);
+  const wholeWords = intToWords(whole);
+  return thebe > 0 ? `${wholeWords} and ${thebe}/100` : wholeWords;
 }
 
 function formatPayslipDate(d?: string | null): string {
@@ -260,8 +266,9 @@ export default function PayslipPDF({
           </div>
         </div>
 
-        {/* School Loan */}
+        {/* Loan Summary */}
         <div style={{ marginBottom: 14 }}>
+          <div style={{ fontWeight: 700, fontSize: 11, marginBottom: 8 }}>Loan Summary</div>
           <div
             style={{
               display: 'grid',
@@ -270,9 +277,9 @@ export default function PayslipPDF({
               fontSize: 10.5,
             }}
           >
-            <div><b>School Loan</b></div>
-            <div><b>Total School Loan:</b> {totalSchoolLoan.toFixed(1)}</div>
-            <div><b>Remaining School Loan:</b> {remainingSchoolLoan.toFixed(1)}</div>
+            <div><b>Loan</b></div>
+            <div><b>Total Loan:</b> BWP {fmtMoney(totalSchoolLoan)}</div>
+            <div><b>Remaining Loan:</b> BWP {fmtMoney(remainingSchoolLoan)}</div>
           </div>
         </div>
 

@@ -1,0 +1,209 @@
+{
+  "project": "Boswa CIB - School Management System",
+  "baseUrl": "http://localhost:8080",
+  "startCommand": "npm run dev",
+  "startupWaitSeconds": 10,
+
+  "testAccounts": {
+    "superAdmin": {
+      "email": "superAdmin@boswa.ac.bw",
+      "password": "BoswaSuperAdmin2026!",
+      "role": "super admin"
+    },
+    "hr": {
+      "email": "hr@boswa.ac.bw",
+      "password": "BoswaHR2026!",
+      "role": "hr"
+    }
+  },
+
+  "loginSelectors": {
+    "emailInput": "input[type='email'][placeholder='Email']",
+    "passwordInput": "input[type='password'][placeholder='Password']",
+    "submitButton": "button:has-text('Sign In')",
+    "errorMessage": ".login-card div[style*='rgba(220,38,38']"
+  },
+
+  "flows": [
+    {
+      "name": "Login - valid credentials (super admin)",
+      "account": "superAdmin",
+      "steps": [
+        "Navigate to baseUrl",
+        "Fill email and password from superAdmin account",
+        "Click Sign In",
+        "Verify redirect away from login screen (no longer see 'Sign In' button)",
+        "Verify no console errors"
+      ],
+      "severity": "critical"
+    },
+    {
+      "name": "Login - wrong password",
+      "account": "superAdmin",
+      "steps": [
+        "Navigate to baseUrl",
+        "Fill email correctly but use 'wrongpass123' as password",
+        "Click Sign In",
+        "Verify error message appears in the red error box",
+        "Verify user stays on login screen"
+      ],
+      "severity": "high"
+    },
+    {
+      "name": "Login - empty fields",
+      "steps": [
+        "Navigate to baseUrl",
+        "Click Sign In without entering email or password",
+        "Verify form validation (no crash, sensible feedback)"
+      ],
+      "severity": "medium"
+    },
+    {
+      "name": "Login - Enter key submission",
+      "account": "superAdmin",
+      "steps": [
+        "Navigate to baseUrl",
+        "Fill email, fill password, press Enter in the password field",
+        "Verify login proceeds the same as clicking the button"
+      ],
+      "severity": "low"
+    },
+    {
+      "name": "Apply for Admission link",
+      "steps": [
+        "Navigate to baseUrl",
+        "Click 'Apply for Admission' button",
+        "Verify navigation to /apply page loads without console errors"
+      ],
+      "severity": "high"
+    },
+    {
+      "name": "Sidebar navigation - super admin",
+      "account": "superAdmin",
+      "steps": [
+        "Login as admin",
+        "Click each sidebar menu item one by one (Dashboard, Students, Lecturers, Modules, Classes, Admissions, Attendance, Assignments, Exams, Grades, Results, Timetable, Notes, Reports, Notifications, User Management, Config, HR)",
+        "For each page: wait 2 seconds, screenshot, capture any console errors, note if page is blank or shows error UI"
+      ],
+      "severity": "high"
+    },
+    {
+      "name": "Sidebar navigation - lecturer",
+      "account": "lecturer",
+      "steps": [
+        "Login as lecturer",
+        "Click each visible sidebar item (My Modules, My Students, Attendance, Grades, etc.)",
+        "Verify lecturer-only pages load and admin-only pages are hidden or blocked"
+      ],
+      "severity": "high"
+    },
+    {
+      "name": "Sidebar navigation - student",
+      "account": "student",
+      "steps": [
+        "Login as student",
+        "Click each visible sidebar item (Dashboard, Modules, Grades, Transcripts, Timetable, Profile, etc.)",
+        "Verify student-only pages load; admin/lecturer pages must not be accessible"
+      ],
+      "severity": "high"
+    },
+    {
+      "name": "Logout",
+      "account": "superAdmin",
+      "steps": [
+        "Login as superAdmin",
+        "Find and click the logout button (usually in profile menu or sidebar)",
+        "Verify return to login screen",
+        "Try clicking browser back - should NOT regain access to authenticated pages"
+      ],
+      "severity": "critical"
+    },
+    {
+      "name": "Refresh mid-session",
+      "account": "admin",
+      "steps": [
+        "Login as admin",
+        "Navigate to Students page",
+        "Hard refresh the page (F5)",
+        "Verify session persists and page reloads correctly"
+      ],
+      "severity": "medium"
+    },
+    {
+      "name": "Public applicant flow",
+      "steps": [
+        "Navigate to baseUrl/apply",
+        "Verify the public application page loads",
+        "Try filling and submitting with empty required fields - verify validation",
+        "Do NOT submit a real application (skip the final submit)"
+      ],
+      "severity": "medium"
+    },
+    {
+      "name": "HR module - Employees list",
+      "account": "admin",
+      "steps": [
+        "Login as admin",
+        "Navigate to HR section, then Employees",
+        "Verify the table renders without errors",
+        "Try sorting/filtering if controls exist",
+        "Open one employee detail page - verify no crash"
+      ],
+      "severity": "high"
+    },
+    {
+      "name": "HR - Create test employee (writes real record)",
+      "account": "hr",
+      "writesData": true,
+      "steps": [
+        "Login as hr (account 'hr' from testAccounts). If hr cannot see an 'Add Employee' button on the Employees page (missing 'employees:write' permission), log out and retry as superAdmin instead.",
+        "Navigate to HR Management → Employees → Employees (the employees list page)",
+        "Click the 'Add Employee' button at the top right (has user-plus icon and blue background)",
+        "Wait for the 'New Employee' form to load. The 'Employee Code *' field should auto-fill with the next available code (e.g. EMP-0040)",
+        "Compute a unique timestamp marker using the current time, format: YYYYMMDD_HHmm (e.g. 20260518_1430)",
+        "Fill 'Full Name *' with: ZZZ_QA_TEST_<timestamp>   (the ZZZ prefix sorts it to the bottom of any sorted list for easy identification)",
+        "Fill 'Job Title' with: QA Test Position - SAFE TO DELETE",
+        "Fill 'Email' with: qa-test-<timestamp>@qatest.local",
+        "Fill 'Mobile Number' with: +12345678900",
+        "Fill 'Basic Salary' with: 0",
+        "If a 'Status' field is present, set it to 'inactive' so this record does not inflate active counts or payroll estimates",
+        "Fill 'Joining Date' with today's date in YYYY-MM-DD format",
+        "Leave other optional fields (bank, department, manager) empty - only Full Name and Employee Code are required per the source code",
+        "Click the blue 'Save' button at the top right of the form (has floppy-disk icon)",
+        "Verify a success toast appears reading 'Employee created' AND the page redirects back to the Employees list",
+        "On the Employees list, search for the timestamp marker and verify the new employee appears in the table",
+        "In the report, prominently list under a 'Created records (for manual cleanup)' section: the full name (ZZZ_QA_TEST_<timestamp>), the assigned employee_code, and the SQL to delete it: DELETE FROM employees WHERE employee_code = '<code>';",
+        "Capture any console errors or network 4xx/5xx that fire during save. RLS errors (code 42501) indicate the account lacks permission - report and stop, do not retry indefinitely.",
+        "Do NOT attempt to delete the record - skipAreas forbids deletion. The user will clean it up manually."
+      ],
+      "severity": "high"
+    }
+  ],
+
+  "skipAreas": [
+    "Do not submit the public Apply for Admission form (creates real applicant records)",
+    "Do not delete any students, lecturers, employees, modules, or classes",
+    "Do not change passwords or email addresses on any user",
+    "Do not modify HR payroll, salary, or contract data",
+    "Do not send notifications or emails",
+    "Do not export/download PDFs unless explicitly testing that feature"
+  ],
+
+  "watchFor": [
+    "Console errors (red messages in browser devtools)",
+    "Network requests returning 4xx or 5xx",
+    "Blank pages where content should appear",
+    "Broken images (missing logo, broken thumbnails)",
+    "Loading spinners that never resolve",
+    "Layout breaking (overflowing text, overlapping elements, off-screen content)",
+    "Slow responses (>3 seconds for navigation or button clicks)",
+    "Forms that allow obviously invalid input (negative ages, future dates of birth, etc.)"
+  ],
+
+  "report": {
+    "outputDir": "qa/reports",
+    "screenshotDir": "qa/screenshots",
+    "format": "markdown",
+    "includeScreenshots": true
+  }
+}
