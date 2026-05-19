@@ -584,6 +584,7 @@ export async function actOnStage(args: {
       status: 'rejected',
       completed_at: new Date().toISOString(),
     });
+    await mirrorParentTerminal(instance, 'rejected');
     return {
       instance: updated ?? { ...instance, status: 'rejected' },
       actedStage: currentStage,
@@ -641,6 +642,7 @@ export async function actOnStage(args: {
       status: 'rejected',
       completed_at: new Date().toISOString(),
     });
+    await mirrorParentTerminal(instance, 'rejected');
     return {
       instance: updated ?? { ...instance, status: 'rejected' },
       actedStage: currentStage,
@@ -656,6 +658,7 @@ export async function actOnStage(args: {
       status: 'approved',
       completed_at: new Date().toISOString(),
     });
+    await mirrorParentTerminal(instance, 'approved');
     return {
       instance: updated ?? { ...instance, status: 'approved' },
       actedStage: currentStage,
@@ -724,6 +727,122 @@ async function mirrorParentStage(
       .eq('id', instance.request_id);
   } catch {
     // best-effort
+  }
+}
+
+/**
+ * Heal parent rows that were left in 'pending'/'Submitted' even though
+ * their workflow instance already reached a terminal state. This happens
+ * historically when the caller's mirror update silently failed (e.g. an
+ * older build without the column-fallback path). Returns the set of ids
+ * that were patched so the caller can refresh.
+ *
+ * Safe to call on every load — it only touches rows where there is a
+ * concrete workflow instance with status 'approved' or 'rejected'.
+ */
+export async function reconcileStuckParentRows(
+  requestType: WorkflowRequestType,
+  candidateIds: string[],
+): Promise<string[]> {
+  if (candidateIds.length === 0) return [];
+  try {
+    const { data } = await wfFrom('workflow_instances')
+      .select('request_id, status, completed_at')
+      .eq('request_type', requestType)
+      .in('request_id', candidateIds)
+      .in('status', ['approved', 'rejected']);
+    const rows = (data ?? []) as Array<{
+      request_id: string;
+      status: 'approved' | 'rejected';
+      completed_at: string | null;
+    }>;
+    if (rows.length === 0) return [];
+    const patched: string[] = [];
+    for (const r of rows) {
+      if (requestType === 'leave') {
+        const completedDate = r.completed_at?.slice(0, 10) ?? null;
+        let payload: Record<string, unknown> = {
+          status: r.status,
+          current_stage: null,
+          approved_at: r.completed_at,
+          approved_date: completedDate,
+        };
+        let { error } = await supabase
+          .from('leave_requests')
+          .update(payload as never)
+          .eq('id', r.request_id)
+          .eq('status', 'pending');
+        // Strip columns not present in this DB (e.g. approved_date) and retry
+        for (let i = 0; i < 4 && error; i++) {
+          const msg = String((error as { message?: string }).message ?? '').toLowerCase();
+          const m = /column "?([a-z_0-9]+)"? .*does not exist/.exec(msg) ||
+                    /could not find the '?([a-z_0-9]+)'? column/i.exec(msg);
+          const missing = m?.[1];
+          if (!missing || !(missing in payload)) break;
+          const next = { ...payload };
+          delete next[missing];
+          payload = next;
+          ({ error } = await supabase
+            .from('leave_requests')
+            .update(payload as never)
+            .eq('id', r.request_id)
+            .eq('status', 'pending'));
+        }
+        if (!error) patched.push(r.request_id);
+      } else if (requestType === 'loan') {
+        const statusValue = r.status === 'approved' ? 'Approved' : 'Rejected';
+        const { error } = await supabase
+          .from('advance_salaries')
+          .update({ status: statusValue, current_stage: null } as never)
+          .eq('id', r.request_id)
+          .eq('status', 'Submitted');
+        if (!error) patched.push(r.request_id);
+      }
+    }
+    return patched;
+  } catch (err) {
+    if (isWorkflowTableMissingError(err)) return [];
+    return [];
+  }
+}
+
+/**
+ * Mirror a terminal workflow outcome (approved / rejected) onto the parent
+ * leave_requests / advance_salaries row. Callers (LeavesPage, LoansPage)
+ * also write richer fields like approved_at / approved_by — this is a
+ * safety net so that even when the caller's update fails silently (older
+ * DB without new columns, transient RLS hiccup, etc.) the parent row's
+ * status never drifts from the workflow instance's status.
+ *
+ * leave_requests uses lowercase 'approved'/'rejected'; advance_salaries
+ * historically uses capitalised 'Approved'/'Rejected' (see statusBadge in
+ * LoansPage and the existing handleApprove path). We honour both schemes.
+ */
+async function mirrorParentTerminal(
+  instance: WorkflowInstance,
+  outcome: 'approved' | 'rejected',
+): Promise<void> {
+  if (instance.request_type === 'leave') {
+    try {
+      await supabase
+        .from('leave_requests')
+        .update({ status: outcome, current_stage: null } as never)
+        .eq('id', instance.request_id);
+    } catch {
+      // best-effort — LeavesPage's own update is the primary path
+    }
+    return;
+  }
+  if (instance.request_type === 'loan') {
+    const statusValue = outcome === 'approved' ? 'Approved' : 'Rejected';
+    try {
+      await supabase
+        .from('advance_salaries')
+        .update({ status: statusValue, current_stage: null } as never)
+        .eq('id', instance.request_id);
+    } catch {
+      // best-effort
+    }
   }
 }
 

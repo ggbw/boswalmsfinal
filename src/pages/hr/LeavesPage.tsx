@@ -28,6 +28,7 @@ import {
 import {
   actOnStage,
   getActiveInstance,
+  reconcileStuckParentRows,
   resolveWorkflowForRequest,
   startWorkflowInstance,
   notifyWorkflowSubmitted,
@@ -96,14 +97,34 @@ export default function LeavesPage() {
   // ─── Load requests ────────────────────────────────────────────────────
   const loadRequests = useCallback(async () => {
     setReqLoading(true);
-    let q = supabase
-      .from('leave_requests')
-      .select('*, employees!leave_requests_employee_id_fkey(employee_name, employee_code, branch_name, department), leave_types(name, color, code)')
-      .order('created_at', { ascending: false });
-    if (statusFilter !== 'all') q = q.eq('status', statusFilter);
-    if (typeFilter !== 'all') q = q.eq('leave_type_id', typeFilter);
-    const { data, error } = await q;
+    const fetchRows = async () => {
+      let q = supabase
+        .from('leave_requests')
+        .select('*, employees!leave_requests_employee_id_fkey(employee_name, employee_code, branch_name, department), leave_types(name, color, code)')
+        .order('created_at', { ascending: false });
+      if (statusFilter !== 'all') q = q.eq('status', statusFilter);
+      if (typeFilter !== 'all') q = q.eq('leave_type_id', typeFilter);
+      return q;
+    };
+
+    let { data, error } = await fetchRows();
     if (error) { toast(error.message, 'error'); setReqLoading(false); return; }
+
+    // Heal historically-stuck rows: a row that's still 'pending' even though
+    // its workflow instance already reached approved/rejected. Older builds
+    // could silently swallow the mirror-update error after the last stage was
+    // approved, leaving the parent in 'pending' forever — patch them here.
+    const stuckIds = ((data ?? []) as Array<{ id: string; status: string }>)
+      .filter((r) => r.status === 'pending')
+      .map((r) => r.id);
+    if (stuckIds.length > 0) {
+      const patched = await reconcileStuckParentRows('leave', stuckIds);
+      if (patched.length > 0) {
+        ({ data, error } = await fetchRows());
+        if (error) { toast(error.message, 'error'); setReqLoading(false); return; }
+      }
+    }
+
     setRequests((data ?? []).map((r: Record<string, unknown>) => ({
       ...(r as unknown as LeaveRequestWithJoins),
       employee_name: (r.employees as any)?.employee_name ?? null,

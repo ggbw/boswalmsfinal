@@ -5,9 +5,13 @@ import { supabase } from "@/integrations/supabase/client";
 
 // Counts of pending HR approvals shown as badges next to the Leaves / Loans
 // menu items. Returns zeros when the user lacks HR access — the query is
-// skipped entirely so non-HR roles don't poke at HR tables. Filters out
-// manager-owned rows when canSeeManagers is false (mirrors motho2 b879f3f).
-function useHrPendingCounts(isHR: boolean, canSeeManagers: boolean): HrPendingCounts {
+// skipped entirely so non-HR roles don't poke at HR tables.
+//
+// Note: boswalmsfinal's employees table does not have an `employee_type`
+// column, so we don't try to embed it (doing so returns 400 from PostgREST).
+// The hook only runs for HR/admin, which already implies canSeeManagers, so
+// the manager-vs-regular filtering motho2 used here is a no-op anyway.
+function useHrPendingCounts(isHR: boolean): HrPendingCounts {
   const [counts, setCounts] = useState<HrPendingCounts>({ pendingLeaves: 0, pendingLoans: 0 });
   useEffect(() => {
     if (!isHR) {
@@ -17,30 +21,17 @@ function useHrPendingCounts(isHR: boolean, canSeeManagers: boolean): HrPendingCo
     let alive = true;
     void (async () => {
       const [leavesRes, loansRes] = await Promise.all([
-        supabase
-          .from('leave_requests')
-          .select('id, employees!leave_requests_employee_id_fkey(employee_type)')
-          .eq('status', 'pending'),
-        supabase
-          .from('advance_salaries')
-          .select('id, employees(employee_type)')
-          .eq('status', 'Submitted'),
+        supabase.from('leave_requests').select('id').eq('status', 'pending'),
+        supabase.from('advance_salaries').select('id').eq('status', 'Submitted'),
       ]);
       if (!alive) return;
-      const visible = (rows: unknown[]): unknown[] =>
-        canSeeManagers
-          ? rows
-          : rows.filter((r) => {
-              const emp = (r as { employees?: { employee_type?: string } }).employees;
-              return (emp?.employee_type ?? 'regular') !== 'manager';
-            });
       setCounts({
-        pendingLeaves: visible((leavesRes.data ?? []) as unknown[]).length,
-        pendingLoans:  visible((loansRes.data  ?? []) as unknown[]).length,
+        pendingLeaves: (leavesRes.data ?? []).length,
+        pendingLoans:  (loansRes.data  ?? []).length,
       });
     })();
     return () => { alive = false; };
-  }, [isHR, canSeeManagers]);
+  }, [isHR]);
   return counts;
 }
 
@@ -354,9 +345,9 @@ function hasActiveDescendant(item: NavItem, activeId: string): boolean {
 
 export default function Sidebar() {
   const { db, currentUser, activePage, navigate, setCurrentUser } = useApp();
-  const { isHR, canSeeManagers } = useUserRole();
+  const { isHR } = useUserRole();
   const role = currentUser?.role || "admin";
-  const hrPending = useHrPendingCounts(isHR, canSeeManagers);
+  const hrPending = useHrPendingCounts(isHR);
   const navConfig = getNavConfig(role, db, hrPending);
 
   const [expanded, setExpanded] = useState<Record<string, boolean>>({});

@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useState } from 'react';
 import { supabase } from '@/integrations/supabase/client';
+import { reconcileStuckParentRows } from '@/lib/hr/workflowEngine';
 
 export interface AdvanceSalary {
   id: string;
@@ -33,24 +34,44 @@ export function useAdvances(opts?: { employeeId?: string }) {
   const refetch = useCallback(async () => {
     setLoading(true);
     setError(null);
-    let q = supabase
-      .from('advance_salaries')
-      .select('*, employees(employee_name, employee_code)')
-      .order('created_at', { ascending: false });
-    if (opts?.employeeId) q = q.eq('employee_id', opts.employeeId);
-    const { data, error: err } = await q;
+    const runQuery = async () => {
+      let q = supabase
+        .from('advance_salaries')
+        .select('*, employees(employee_name, employee_code)')
+        .order('created_at', { ascending: false });
+      if (opts?.employeeId) q = q.eq('employee_id', opts.employeeId);
+      return q;
+    };
+    let { data, error: err } = await runQuery();
     if (err) {
       setError(err.message);
       setAdvances([]);
-    } else {
-      setAdvances(
-        (data ?? []).map((r: Record<string, unknown>) => ({
-          ...(r as unknown as AdvanceSalary),
-          employee_name: (r.employees as { employee_name?: string } | null)?.employee_name ?? null,
-          employee_code: (r.employees as { employee_code?: string } | null)?.employee_code ?? null,
-        })),
-      );
+      setLoading(false);
+      return;
     }
+    // Heal rows still marked 'Submitted' whose workflow instance is terminal.
+    const stuckIds = ((data ?? []) as Array<{ id: string; status: string }>)
+      .filter((r) => r.status === 'Submitted')
+      .map((r) => r.id);
+    if (stuckIds.length > 0) {
+      const patched = await reconcileStuckParentRows('loan', stuckIds);
+      if (patched.length > 0) {
+        ({ data, error: err } = await runQuery());
+        if (err) {
+          setError(err.message);
+          setAdvances([]);
+          setLoading(false);
+          return;
+        }
+      }
+    }
+    setAdvances(
+      (data ?? []).map((r: Record<string, unknown>) => ({
+        ...(r as unknown as AdvanceSalary),
+        employee_name: (r.employees as { employee_name?: string } | null)?.employee_name ?? null,
+        employee_code: (r.employees as { employee_code?: string } | null)?.employee_code ?? null,
+      })),
+    );
     setLoading(false);
   }, [opts?.employeeId]);
 
