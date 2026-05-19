@@ -61,11 +61,15 @@ function buildMessage(cls: DocumentExpiryClass, empName: string, docType: string
 export async function scanExpiringDocuments(opts?: { today?: Date }): Promise<ExpiringDocument[]> {
   const today = opts?.today ?? new Date();
 
+  // employee_documents.document_type is a free-text column, not an FK to a
+  // document_types table — embed only the employees relation, then read the
+  // type string directly. Alert-acknowledgement columns (alert_sent_30/7) are
+  // not in the current schema; treat them as absent and pass through every
+  // expiring doc each scan.
   const { data: docs } = await supabase
     .from('employee_documents')
-    .select('id,employee_id,expiry_date,alert_sent_30,alert_sent_7,employees(employee_name),document_types(name)')
-    .not('expiry_date', 'is', null)
-    .eq('is_active', true);
+    .select('id,employee_id,expiry_date,document_type,employees(employee_name)')
+    .not('expiry_date', 'is', null);
 
   const out: ExpiringDocument[] = [];
   for (const doc of (docs ?? []) as Array<Record<string, unknown>>) {
@@ -76,17 +80,9 @@ export async function scanExpiringDocuments(opts?: { today?: Date }): Promise<Ex
     const cls = classify(daysLeft);
     if (!cls) continue;
 
-    // Skip alerts already acknowledged — matches motho2's gating.
-    const alert30 = (doc.alert_sent_30 as boolean | null) ?? null;
-    const alert7  = (doc.alert_sent_7 as boolean | null) ?? null;
-    if (cls === 'expired' && alert7) continue;
-    if (cls === '7_day_warning' && alert7) continue;
-    if (cls === '30_day_warning' && alert30) continue;
-
     const emp = doc.employees as { employee_name?: string } | null;
-    const dtype = doc.document_types as { name?: string } | null;
     const empName = emp?.employee_name ?? 'Employee';
-    const docType = dtype?.name ?? 'Document';
+    const docType = (doc.document_type as string | null) ?? 'Document';
     const expiryStr = format(expiry, 'dd MMM yyyy');
 
     out.push({
@@ -98,8 +94,8 @@ export async function scanExpiringDocuments(opts?: { today?: Date }): Promise<Ex
       days_left: daysLeft,
       expiry_class: cls,
       message: buildMessage(cls, empName, docType, daysLeft, expiryStr),
-      alert_sent_30: alert30,
-      alert_sent_7: alert7,
+      alert_sent_30: null,
+      alert_sent_7: null,
     });
   }
   return out;
@@ -125,7 +121,10 @@ async function markAlerts(docId: string, sent30: boolean | null, sent7: boolean 
   if (sent30 !== null) payload.alert_sent_30 = sent30;
   if (sent7 !== null) payload.alert_sent_7 = sent7;
   if (Object.keys(payload).length === 0) return;
-  await supabase.from('employee_documents').update(payload).eq('id', docId);
+  // alert_sent_30 / alert_sent_7 are not in the current schema — tolerate a
+  // PostgREST error so the scan still completes when the columns are absent.
+  const { error } = await (supabase as any).from('employee_documents').update(payload).eq('id', docId);
+  if (error && !/column .* does not exist/i.test(error.message ?? '')) throw error;
 }
 
 /**

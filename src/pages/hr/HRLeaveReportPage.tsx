@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { Fragment, useEffect, useMemo, useRef, useState } from 'react';
 import { useApp } from '@/context/AppContext';
 import { supabase } from '@/integrations/supabase/client';
 import { fmtDate } from '@/lib/hr/leaveUtils';
@@ -188,7 +188,7 @@ export default function HRLeaveReportPage() {
   // Excel — Employee Leave Balances
   const handleBalExcel = () => {
     const wb = XLSX.utils.book_new();
-    const typeHeaders = leaveTypes.flatMap(lt => [`${lt.code ?? lt.name} Alloc`, `${lt.code ?? lt.name} Used`, `${lt.code ?? lt.name} Rem`]);
+    const typeHeaders = leaveTypes.flatMap(lt => [`${lt.code ?? lt.name} Open`, `${lt.code ?? lt.name} Alloc`, `${lt.code ?? lt.name} Used`, `${lt.code ?? lt.name} Rem`]);
     const headers = ['Employee', 'Branch', 'Department', ...typeHeaders];
     const aoa: any[][] = [
       headers,
@@ -196,7 +196,7 @@ export default function HRLeaveReportPage() {
         e.name, e.branch, e.dept,
         ...leaveTypes.flatMap(lt => {
           const a = e.allocs[lt.id];
-          return [a?.allocated_days ?? 0, a?.used_days ?? 0, a?.remaining_days ?? 0];
+          return [a?.opening_balance ?? 0, a?.allocated_days ?? 0, a?.used_days ?? 0, a?.remaining_days ?? 0];
         }),
       ]),
     ];
@@ -330,17 +330,18 @@ export default function HRLeaveReportPage() {
                     <th>Branch</th>
                     <th>Department</th>
                     {leaveTypes.map(lt => (
-                      <>
-                        <th key={lt.id + '_a'} style={{ textAlign: 'center', borderLeft: '1px solid var(--border)', fontSize: 10 }}>{lt.code ?? lt.name} Alloc</th>
-                        <th key={lt.id + '_u'} style={{ textAlign: 'center', fontSize: 10 }}>{lt.code ?? lt.name} Used</th>
-                        <th key={lt.id + '_r'} style={{ textAlign: 'center', fontSize: 10 }}>{lt.code ?? lt.name} Rem</th>
-                      </>
+                      <Fragment key={lt.id}>
+                        <th style={{ textAlign: 'center', borderLeft: '1px solid var(--border)', fontSize: 10 }}>{lt.code ?? lt.name} Open</th>
+                        <th style={{ textAlign: 'center', fontSize: 10 }}>{lt.code ?? lt.name} Alloc</th>
+                        <th style={{ textAlign: 'center', fontSize: 10 }}>{lt.code ?? lt.name} Used</th>
+                        <th style={{ textAlign: 'center', fontSize: 10 }}>{lt.code ?? lt.name} Rem</th>
+                      </Fragment>
                     ))}
                   </tr>
                 </thead>
                 <tbody>
                   {empBalRows.length === 0 && (
-                    <tr><td colSpan={3 + leaveTypes.length * 3} style={{ textAlign: 'center', padding: 32, color: 'var(--text2)' }}>No data.</td></tr>
+                    <tr><td colSpan={3 + leaveTypes.length * 4} style={{ textAlign: 'center', padding: 32, color: 'var(--text2)' }}>No data.</td></tr>
                   )}
                   {empBalRows.slice(balStart, balEnd).map(e => (
                     <tr key={e.id}>
@@ -349,12 +350,14 @@ export default function HRLeaveReportPage() {
                       <td style={{ fontSize: 11, color: 'var(--text2)' }}>{e.dept}</td>
                       {leaveTypes.map(lt => {
                         const a = e.allocs[lt.id];
+                        const opening = a?.opening_balance ?? 0;
                         return (
-                          <>
-                            <td key={lt.id + '_a'} style={{ textAlign: 'center', borderLeft: '1px solid var(--border)', fontSize: 12 }}>{a?.allocated_days ?? '—'}</td>
-                            <td key={lt.id + '_u'} style={{ textAlign: 'center', fontSize: 12, color: '#dc2626' }}>{a?.used_days ?? 0}</td>
-                            <td key={lt.id + '_r'} style={{ textAlign: 'center', fontSize: 12, fontWeight: 700, color: (a?.remaining_days ?? 0) < 0 ? '#dc2626' : '#059669' }}>{a?.remaining_days ?? '—'}</td>
-                          </>
+                          <Fragment key={lt.id}>
+                            <td style={{ textAlign: 'center', borderLeft: '1px solid var(--border)', fontSize: 12, color: opening < 0 ? '#dc2626' : opening > 0 ? '#059669' : 'var(--text2)' }}>{a ? opening : '—'}</td>
+                            <td style={{ textAlign: 'center', fontSize: 12 }}>{a?.allocated_days ?? '—'}</td>
+                            <td style={{ textAlign: 'center', fontSize: 12, color: '#dc2626' }}>{a?.used_days ?? 0}</td>
+                            <td style={{ textAlign: 'center', fontSize: 12, fontWeight: 700, color: (a?.remaining_days ?? 0) < 0 ? '#dc2626' : '#059669' }}>{a?.remaining_days ?? '—'}</td>
+                          </Fragment>
                         );
                       })}
                     </tr>
