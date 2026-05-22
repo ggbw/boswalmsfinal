@@ -3,6 +3,7 @@ import { useApp } from '@/context/AppContext';
 import { useUserRole } from '@/hooks/hr/useUserRole';
 import { usePayComponents } from '@/hooks/hr/usePayComponents';
 import { useContractTemplates } from '@/hooks/hr/useContracts';
+import { useHrDepartments } from '@/hooks/hr/useHrDepartments';
 import { fmtCurrency } from '@/lib/hr/leaveUtils';
 import { supabase } from '@/integrations/supabase/client';
 
@@ -39,6 +40,7 @@ export default function ContractDetailPage() {
   const writeOk = can('contracts', 'write');
   const { components, refetch: refetchComponents } = usePayComponents();
   const { templates } = useContractTemplates();
+  const { departments } = useHrDepartments();
 
   const [contract, setContract] = useState<ContractRow | null>(null);
   const [employee, setEmployee] = useState<{ id: string; employee_name: string; employee_code: string } | null>(null);
@@ -402,7 +404,23 @@ export default function ContractDetailPage() {
         <div className="form-row cols3">
           <div className="form-group">
             <label>Department</label>
-            <input className="form-input" disabled={!writeOk} value={contract.department ?? ''} onChange={(e) => updateContract({ department: e.target.value })} />
+            <select
+              className="form-select"
+              disabled={!writeOk}
+              value={contract.department ?? ''}
+              onChange={(e) => updateContract({ department: e.target.value || null })}
+            >
+              <option value="">— Select —</option>
+              {departments
+                .filter((d) => d.is_active)
+                .map((d) => (
+                  <option key={d.id} value={d.name}>{d.name}</option>
+                ))}
+              {contract.department &&
+                !departments.some((d) => d.name === contract.department) && (
+                  <option value={contract.department}>{contract.department}</option>
+                )}
+            </select>
           </div>
           <div className="form-group">
             <label>Salary Structure</label>

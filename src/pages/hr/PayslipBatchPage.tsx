@@ -1,8 +1,8 @@
-import { useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useApp } from '@/context/AppContext';
 import { useUserRole } from '@/hooks/hr/useUserRole';
 import { useEmployees } from '@/hooks/hr/useEmployees';
-import { computePayslip, fmtMoney } from '@/lib/hr/payrollEngine';
+import { computePayslip, fmtMoney, type PayLine } from '@/lib/hr/payrollEngine';
 import { fmtCurrency } from '@/lib/hr/leaveUtils';
 import { supabase } from '@/integrations/supabase/client';
 import { nextPayslipReference, type PayslipBreakdownLine } from '@/hooks/hr/usePayslips';
@@ -13,6 +13,22 @@ const monthRange = () => {
   const to = new Date(today.getFullYear(), today.getMonth(), 24);
   const iso = (d: Date) => d.toISOString().slice(0, 10);
   return { from: iso(from), to: iso(to) };
+};
+
+interface ContractSnapshot {
+  contractId: string;
+  wage: number;
+  earnings: PayLine[];
+  deductions: PayLine[];
+}
+
+type LineRow = {
+  contract_id: string;
+  amount: number;
+  sequence: number;
+  is_earning: boolean;
+  is_active: boolean;
+  pay_component_defs: { name: string | null; code: string | null; is_taxable: boolean | null } | null;
 };
 
 export default function PayslipBatchPage() {
@@ -28,11 +44,102 @@ export default function PayslipBatchPage() {
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [running, setRunning] = useState(false);
   const [results, setResults] = useState<Array<{ employee: string; reference?: string; net?: number; error?: string }>>([]);
+  const [contractsByEmp, setContractsByEmp] = useState<Map<string, ContractSnapshot>>(new Map());
+  const [contractsLoading, setContractsLoading] = useState(true);
+
+  // Pull the latest active contract (with contract_lines) for every employee
+  // so the batch always reflects whatever HR has on file *right now*. The
+  // previous implementation read from employees.basic_salary, which never sees
+  // contract edits — re-fetching here makes new/updated contracts show up.
+  const loadContractData = useCallback(async (): Promise<Map<string, ContractSnapshot>> => {
+    if (employees.length === 0) {
+      const empty = new Map<string, ContractSnapshot>();
+      setContractsByEmp(empty);
+      setContractsLoading(false);
+      return empty;
+    }
+    setContractsLoading(true);
+    const empIds = employees.map((e) => e.id);
+    const { data: contracts } = await supabase
+      .from('contracts')
+      .select('id, employee_id, wage, status, start_date')
+      .in('employee_id', empIds)
+      .eq('status', 'active')
+      .order('start_date', { ascending: false });
+
+    const pickedByEmp = new Map<string, { id: string; wage: number }>();
+    for (const c of (contracts ?? []) as Array<{
+      id: string;
+      employee_id: string;
+      wage: number;
+      status: string;
+    }>) {
+      if (!pickedByEmp.has(c.employee_id)) {
+        pickedByEmp.set(c.employee_id, { id: c.id, wage: Number(c.wage) || 0 });
+      }
+    }
+
+    const contractIds = Array.from(pickedByEmp.values()).map((c) => c.id);
+    const linesByContract = new Map<string, LineRow[]>();
+    if (contractIds.length > 0) {
+      const { data: lines } = await supabase
+        .from('contract_lines')
+        .select('contract_id, amount, sequence, is_earning, is_active, pay_component_defs(name, code, is_taxable)')
+        .in('contract_id', contractIds)
+        .eq('is_active', true)
+        .order('sequence');
+      for (const l of (lines ?? []) as unknown as LineRow[]) {
+        const arr = linesByContract.get(l.contract_id) ?? [];
+        arr.push(l);
+        linesByContract.set(l.contract_id, arr);
+      }
+    }
+
+    const mapLine = (l: LineRow): PayLine | null => {
+      const def = l.pay_component_defs;
+      if (!def?.code) return null;
+      return {
+        description: def.name ?? def.code,
+        code: def.code,
+        amount: Number(l.amount) || 0,
+        isTaxable: Boolean(def.is_taxable),
+      };
+    };
+
+    const result = new Map<string, ContractSnapshot>();
+    for (const [empId, c] of pickedByEmp) {
+      const rows = linesByContract.get(c.id) ?? [];
+      const earnings = rows.filter((l) => l.is_earning).map(mapLine).filter((l): l is PayLine => l !== null);
+      const deductions = rows.filter((l) => !l.is_earning).map(mapLine).filter((l): l is PayLine => l !== null);
+      result.set(empId, { contractId: c.id, wage: c.wage, earnings, deductions });
+    }
+    setContractsByEmp(result);
+    setContractsLoading(false);
+    return result;
+  }, [employees]);
+
+  useEffect(() => { void loadContractData(); }, [loadContractData]);
 
   const eligible = useMemo(
-    () => employees.filter((e) => (e.status ?? 'active') === 'active' && e.basic_salary > 0),
-    [employees],
+    () =>
+      employees.filter((e) => {
+        if ((e.status ?? 'active') !== 'active') return false;
+        const snap = contractsByEmp.get(e.id);
+        return !!snap && snap.wage > 0;
+      }),
+    [employees, contractsByEmp],
   );
+
+  // Drop selections that are no longer eligible after a contract refresh so the
+  // counts and totals stay coherent.
+  useEffect(() => {
+    setSelected((s) => {
+      const ids = new Set(eligible.map((e) => e.id));
+      const ns = new Set<string>();
+      s.forEach((id) => { if (ids.has(id)) ns.add(id); });
+      return ns.size === s.size ? s : ns;
+    });
+  }, [eligible]);
 
   const toggle = (id: string) =>
     setSelected((s) => {
@@ -49,7 +156,9 @@ export default function PayslipBatchPage() {
     const rows = eligible.filter((e) => selected.has(e.id));
     const totals = rows.reduce(
       (acc, e) => {
-        const c = computePayslip(e.basic_salary, [], [], [], 0, 0);
+        const snap = contractsByEmp.get(e.id);
+        if (!snap) return acc;
+        const c = computePayslip(snap.wage, snap.earnings, snap.deductions, [], 0, 0);
         return {
           gross: acc.gross + c.grossSalary,
           paye: acc.paye + c.payeTax,
@@ -59,7 +168,7 @@ export default function PayslipBatchPage() {
       { gross: 0, paye: 0, net: 0 },
     );
     return totals;
-  }, [eligible, selected]);
+  }, [eligible, selected, contractsByEmp]);
 
   const handleGenerate = async () => {
     if (selected.size === 0) { toast('Select at least one employee', 'error'); return; }
@@ -68,13 +177,21 @@ export default function PayslipBatchPage() {
 
     setRunning(true);
     setResults([]);
+    // Pull contracts again right before we write so the batch reflects any
+    // edits made after the page first loaded.
+    const freshContracts = await loadContractData();
     const out: typeof results = [];
 
     for (const e of eligible) {
       if (!selected.has(e.id)) continue;
       try {
+        const snap = freshContracts.get(e.id);
+        if (!snap) {
+          out.push({ employee: e.employee_name, error: 'No active contract found' });
+          continue;
+        }
         const reference = await nextPayslipReference();
-        const c = computePayslip(e.basic_salary, [], [], [], 0, 0);
+        const c = computePayslip(snap.wage, snap.earnings, snap.deductions, [], 0, 0);
         const earningsBreakdown: PayslipBreakdownLine[] = c.allEarnings.map((l) => ({
           description: l.description, code: l.code, amount: l.amount, isTaxable: l.isTaxable,
         }));
@@ -87,7 +204,7 @@ export default function PayslipBatchPage() {
           period_from: periodFrom,
           period_to: periodTo,
           payslip_name: `Payslip - ${e.employee_name}`,
-          basic_salary: e.basic_salary,
+          basic_salary: snap.wage,
           gross_salary: c.grossSalary,
           total_deductions: c.totalDeductions,
           paye_tax: c.payeTax,
@@ -113,6 +230,8 @@ export default function PayslipBatchPage() {
     toast(`Generated ${ok} payslip(s)${fail ? ` · ${fail} failed` : ''}`, fail ? 'error' : 'success');
   };
 
+  const listLoading = empLoading || contractsLoading;
+
   return (
     <>
       <div className="page-header">
@@ -120,9 +239,19 @@ export default function PayslipBatchPage() {
           <div className="page-title">Batch Payslip Generation</div>
           <div className="page-sub">HR Management · Payroll</div>
         </div>
-        <button className="btn btn-outline btn-sm" onClick={() => navigate('hr-payslips')}>
-          <i className="fa-solid fa-arrow-left" /> Back
-        </button>
+        <div style={{ display: 'flex', gap: 8 }}>
+          <button
+            className="btn btn-outline btn-sm"
+            onClick={() => void loadContractData()}
+            disabled={contractsLoading}
+            title="Re-read contracts so recent edits are picked up"
+          >
+            <i className="fa-solid fa-rotate" /> {contractsLoading ? 'Refreshing…' : 'Refresh contracts'}
+          </button>
+          <button className="btn btn-outline btn-sm" onClick={() => navigate('hr-payslips')}>
+            <i className="fa-solid fa-arrow-left" /> Back
+          </button>
+        </div>
       </div>
 
       <div className="card" style={{ marginBottom: 16 }}>
@@ -192,10 +321,12 @@ export default function PayslipBatchPage() {
             )}
           </div>
         </div>
-        {empLoading ? (
+        {listLoading ? (
           <div style={{ padding: 32, textAlign: 'center', color: 'var(--text2)' }}>Loading…</div>
         ) : eligible.length === 0 ? (
-          <div style={{ padding: 32, textAlign: 'center', color: 'var(--text2)' }}>No active employees with salary configured.</div>
+          <div style={{ padding: 32, textAlign: 'center', color: 'var(--text2)' }}>
+            No active employees with an active contract configured.
+          </div>
         ) : (
           <div className="table-wrap">
             <table>
@@ -204,7 +335,7 @@ export default function PayslipBatchPage() {
                   <th style={{ width: 32 }}></th>
                   <th>Employee</th>
                   <th>Code</th>
-                  <th style={{ textAlign: 'right' }}>Basic</th>
+                  <th style={{ textAlign: 'right' }}>Wage</th>
                   <th style={{ textAlign: 'right' }}>Est. Gross</th>
                   <th style={{ textAlign: 'right' }}>Est. PAYE</th>
                   <th style={{ textAlign: 'right' }}>Est. Net</th>
@@ -212,7 +343,10 @@ export default function PayslipBatchPage() {
               </thead>
               <tbody>
                 {eligible.map((e) => {
-                  const c = computePayslip(e.basic_salary, [], [], [], 0, 0);
+                  const snap = contractsByEmp.get(e.id);
+                  const c = snap
+                    ? computePayslip(snap.wage, snap.earnings, snap.deductions, [], 0, 0)
+                    : null;
                   return (
                     <tr key={e.id}>
                       <td>
@@ -220,10 +354,10 @@ export default function PayslipBatchPage() {
                       </td>
                       <td className="td-name">{e.employee_name}</td>
                       <td style={{ fontFamily: 'JetBrains Mono, monospace' }}>{e.employee_code}</td>
-                      <td style={{ textAlign: 'right' }}>{fmtMoney(e.basic_salary)}</td>
-                      <td style={{ textAlign: 'right' }}>{fmtMoney(c.grossSalary)}</td>
-                      <td style={{ textAlign: 'right' }}>{fmtMoney(c.payeTax)}</td>
-                      <td style={{ textAlign: 'right', fontWeight: 600, color: '#1a7f37' }}>{fmtMoney(c.netSalary)}</td>
+                      <td style={{ textAlign: 'right' }}>{fmtMoney(snap?.wage ?? 0)}</td>
+                      <td style={{ textAlign: 'right' }}>{fmtMoney(c?.grossSalary ?? 0)}</td>
+                      <td style={{ textAlign: 'right' }}>{fmtMoney(c?.payeTax ?? 0)}</td>
+                      <td style={{ textAlign: 'right', fontWeight: 600, color: '#1a7f37' }}>{fmtMoney(c?.netSalary ?? 0)}</td>
                     </tr>
                   );
                 })}
