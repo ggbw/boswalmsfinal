@@ -479,18 +479,27 @@ export type Database = {
         Row: {
           grace_period_minutes: number
           id: number
+          saturday_enabled: boolean
+          saturday_grace_minutes: number | null
+          saturday_work_start_time: string | null
           updated_at: string
           work_start_time: string
         }
         Insert: {
           grace_period_minutes?: number
           id?: number
+          saturday_enabled?: boolean
+          saturday_grace_minutes?: number | null
+          saturday_work_start_time?: string | null
           updated_at?: string
           work_start_time?: string
         }
         Update: {
           grace_period_minutes?: number
           id?: number
+          saturday_enabled?: boolean
+          saturday_grace_minutes?: number | null
+          saturday_work_start_time?: string | null
           updated_at?: string
           work_start_time?: string
         }
