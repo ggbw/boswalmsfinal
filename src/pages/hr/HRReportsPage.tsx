@@ -53,10 +53,14 @@ export default function HRReportsPage() {
     activePage === 'hr-leave-report'   ? 'leaves' :
                                          'payroll';
   const [tab, setTab] = useState<ReportType>(initialTab);
-  const today = new Date().toISOString().slice(0, 10);
-  const monthAgo = new Date(Date.now() - 30 * 24 * 3600 * 1000).toISOString().slice(0, 10);
-  const [from, setFrom] = useState(monthAgo);
-  const [to, setTo] = useState(today);
+  // Default to a wide window around today so payslips with a period_to in the
+  // near future (e.g. cycle ending on the 23rd while today is the 22nd) still
+  // show up without the user having to fiddle with the date pickers.
+  const now = new Date();
+  const defaultFrom = new Date(now.getFullYear(), now.getMonth() - 1, 1).toISOString().slice(0, 10);
+  const defaultTo = new Date(now.getFullYear(), now.getMonth() + 2, 0).toISOString().slice(0, 10);
+  const [from, setFrom] = useState(defaultFrom);
+  const [to, setTo] = useState(defaultTo);
   const [loading, setLoading] = useState(false);
   const [payroll, setPayroll] = useState<PayrollRow[]>([]);
   const [leaves, setLeaves] = useState<LeaveRow[]>([]);
