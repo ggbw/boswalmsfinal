@@ -41,6 +41,7 @@ import { supabase } from '@/integrations/supabase/client';
 import {
   BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer,
 } from 'recharts';
+import * as XLSX from 'xlsx-js-style';
 
 type Tab = 'dashboard' | 'requests' | 'balances' | 'calendar';
 
@@ -550,6 +551,58 @@ export default function LeavesPage() {
     return map;
   }, [allocations]);
 
+  const handleExportBalances = () => {
+    const rows = Object.entries(balEmpMap)
+      .filter(([, emp]) => {
+        const q = balSearch.trim().toLowerCase();
+        if (!q) return true;
+        return (emp.name ?? '').toLowerCase().includes(q) || (emp.code ?? '').toLowerCase().includes(q);
+      })
+      .sort(([, a], [, b]) => (a.name ?? '').localeCompare(b.name ?? ''));
+
+    if (rows.length === 0) { toast('No balances to export', 'error'); return; }
+
+    const typeHeaders = leaveTypes.flatMap((lt) => {
+      const label = lt.code ?? lt.name;
+      return [`${label} Alloc`, `${label} Used`, `${label} Pend`, `${label} Rem`];
+    });
+    const header = ['Employee', 'Code', ...typeHeaders];
+    const aoa: (string | number)[][] = [
+      header,
+      ...rows.map(([, emp]) => [
+        emp.name,
+        emp.code,
+        ...leaveTypes.flatMap((lt) => {
+          const a = emp.allocs[lt.id];
+          return [
+            a?.allocated_days ?? 0,
+            a?.used_days ?? 0,
+            a?.pending_days ?? 0,
+            a?.remaining_days ?? 0,
+          ];
+        }),
+      ]),
+    ];
+
+    const ws = XLSX.utils.aoa_to_sheet(aoa);
+    ws['!cols'] = [{ wch: 26 }, { wch: 14 }, ...typeHeaders.map(() => ({ wch: 10 }))];
+    const headerStyle: XLSX.CellStyle = {
+      font: { bold: true, color: { rgb: 'FFFFFF' } },
+      fill: { fgColor: { rgb: '0D9488' }, patternType: 'solid' },
+      alignment: { horizontal: 'center' },
+    };
+    for (let c = 0; c < header.length; c++) {
+      const ref = XLSX.utils.encode_cell({ r: 0, c });
+      if (ws[ref]) ws[ref].s = headerStyle;
+    }
+
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, `Balances ${year}`);
+    const slug = new Date().toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' }).replace(/ /g, '');
+    XLSX.writeFile(wb, `LeaveBalances_${year}_${slug}.xlsx`);
+    toast(`Exported ${rows.length} employee balance(s)`, 'success');
+  };
+
   // ─── Calendar ─────────────────────────────────────────────────────────
   const [calMonth, setCalMonth] = useState(new Date().getMonth());
   const [calYear, setCalYear] = useState(new Date().getFullYear());
@@ -788,13 +841,23 @@ export default function LeavesPage() {
         <div className="card" style={{ padding: 0 }}>
           <div style={{ padding: '14px 20px 12px', borderBottom: '1px solid var(--border)', display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 12, flexWrap: 'wrap' }}>
             <div style={{ fontSize: 13, fontWeight: 600 }}>Employee Leave Balances — {year}</div>
-            <input
-              className="search-input"
-              placeholder="Search employee…"
-              value={balSearch}
-              onChange={(e) => setBalSearch(e.target.value)}
-              style={{ width: 220, fontSize: 12 }}
-            />
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+              <input
+                className="search-input"
+                placeholder="Search employee…"
+                value={balSearch}
+                onChange={(e) => setBalSearch(e.target.value)}
+                style={{ width: 220, fontSize: 12 }}
+              />
+              <button
+                className="btn btn-outline btn-sm"
+                onClick={handleExportBalances}
+                disabled={allocLoading}
+                title="Download leave balances as Excel"
+              >
+                <i className="fa-solid fa-file-excel" /> Export to Excel
+              </button>
+            </div>
           </div>
           {allocLoading ? (
             <div style={{ padding: 32, textAlign: 'center', color: 'var(--text2)' }}>Loading…</div>

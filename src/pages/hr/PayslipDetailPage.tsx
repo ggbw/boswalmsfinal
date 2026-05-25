@@ -473,8 +473,15 @@ export default function PayslipDetailPage() {
       win.document.write(
         '<style>' +
           'html,body{margin:0;padding:0;background:#fff;font-family:Inter,Arial,system-ui,sans-serif;}' +
-          '@page{size:A4;margin:0;}' +
-          '@media print{body{-webkit-print-color-adjust:exact;print-color-adjust:exact;}}' +
+          // Force the printed paper size to A4 portrait so the browser does
+          // not fall back to whatever default (Letter etc.) the system has.
+          '@page{size:A4 portrait;margin:0;}' +
+          '#payslip-pdf{width:210mm;min-height:297mm;margin:0 auto;box-sizing:border-box;}' +
+          '@media print{' +
+            'html,body{width:210mm;}' +
+            'body{-webkit-print-color-adjust:exact;print-color-adjust:exact;}' +
+            '#payslip-pdf{width:210mm;min-height:297mm;page-break-inside:avoid;break-inside:avoid;}' +
+          '}' +
         '</style>',
       );
       win.document.write('</head><body>');
