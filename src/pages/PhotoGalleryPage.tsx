@@ -6,6 +6,15 @@ import { getLecturerClassIds } from "@/lib/lecturerHelpers";
 
 type ViewMode = "folders" | "student" | "custom_folder";
 
+// Reject folder names that would break storage-path parsing. Folder detection
+// relies on the absence of a "." in the name, and "/" would nest unintentionally.
+function validFolderName(name: string): string | null {
+  const n = name.trim();
+  if (!n) return null;
+  if (n.includes("/") || n.includes(".")) return null;
+  return n;
+}
+
 export default function PhotoGalleryPage() {
   const { db, currentUser, toast } = useApp();
   const role = currentUser?.role;
@@ -31,6 +40,14 @@ export default function PhotoGalleryPage() {
   const [folderNameInput, setFolderNameInput] = useState("");
   const [customFolders, setCustomFolders] = useState<string[]>([]);
   const [selectedCustomFolder, setSelectedCustomFolder] = useState<string | null>(null);
+  // Per-student named subfolders (the "folders inside a student's bucket").
+  const [studentSubfolders, setStudentSubfolders] = useState<Record<string, string[]>>({});
+  const [studentRootPhotos, setStudentRootPhotos] = useState<Record<string, string[]>>({});
+  // When viewing a student's subfolder we reuse the custom-folder view; this
+  // remembers which student to return to.
+  const [folderParent, setFolderParent] = useState<string | null>(null);
+  const [createSubfolderModal, setCreateSubfolderModal] = useState(false);
+  const [newSubfolderName, setNewSubfolderName] = useState("");
   const [createFolderModal, setCreateFolderModal] = useState(false);
   const [newFolderName, setNewFolderName] = useState("");
   const [renameModal, setRenameModal] = useState<{ oldName: string } | null>(null);
@@ -57,6 +74,8 @@ export default function PhotoGalleryPage() {
     setCustomFolders(customFolderNames);
     const allPhotos: Record<string, string[]> = {};
     const thumbs: Record<string, string> = {};
+    const rootPhotos: Record<string, string[]> = {};
+    const subfolderNames: Record<string, string[]> = {};
 
     await Promise.all(
       folders.map(async (folder) => {
@@ -70,28 +89,38 @@ export default function PhotoGalleryPage() {
         const thumbFiles = inner.filter((f) => f.name.startsWith("thumb_"));
         const profileFile = inner.find((f) => f.name.startsWith("profile_"));
 
-        const galleryUrls = photoFiles.map((f) => {
+        // Photos sitting directly in the student folder (not in a named subfolder).
+        const rootUrls = photoFiles.map((f) => {
           const { data } = supabase.storage.from("student-photos").getPublicUrl(`${folder.name}/${f.name}`);
           return data.publicUrl;
         });
+        rootPhotos[folder.name] = rootUrls;
 
-        // Load photos from named subfolders
+        // Named subfolders: each is addressed by the path key "studentId/subName"
+        // so the existing custom-folder view can render/upload to it directly.
+        const galleryUrls = [...rootUrls];
+        const subNames: string[] = [];
         await Promise.all(
           subfolders.map(async (sub) => {
             const { data: subFiles } = await supabase.storage
               .from("student-photos")
               .list(`${folder.name}/${sub.name}`, { limit: 200 });
-            if (!subFiles) return;
-            subFiles
+            subNames.push(sub.name);
+            const subUrls = (subFiles || [])
               .filter((f) => f.name.endsWith(".webp") && !f.name.startsWith("thumb_") && !f.name.startsWith("profile_"))
-              .forEach((f) => {
+              .map((f) => {
                 const { data } = supabase.storage
                   .from("student-photos")
                   .getPublicUrl(`${folder.name}/${sub.name}/${f.name}`);
-                galleryUrls.push(data.publicUrl);
+                return data.publicUrl;
               });
+            const pathKey = `${folder.name}/${sub.name}`;
+            allPhotos[pathKey] = subUrls;
+            if (subUrls.length > 0) thumbs[pathKey] = subUrls[0];
+            galleryUrls.push(...subUrls);
           }),
         );
+        subfolderNames[folder.name] = subNames.sort((a, b) => a.localeCompare(b));
 
         allPhotos[folder.name] = galleryUrls;
 
@@ -110,6 +139,8 @@ export default function PhotoGalleryPage() {
 
     setPhotoMap(allPhotos);
     setThumbMap(thumbs);
+    setStudentRootPhotos(rootPhotos);
+    setStudentSubfolders(subfolderNames);
     setLoading(false);
   };
 
@@ -240,9 +271,12 @@ export default function PhotoGalleryPage() {
       if (pathParts.length < 2) return;
       const filePath = decodeURIComponent(pathParts[1].split("?")[0]);
       const filename = filePath.split("/").pop() || "";
+      // Directory the photo lives in (root, a student subfolder, or a custom
+      // folder) — the matching thumbnail sits alongside it.
+      const dir = filePath.includes("/") ? filePath.slice(0, filePath.lastIndexOf("/") + 1) : "";
       const toDelete = [filePath];
       if (!filename.startsWith("thumb_") && !filename.startsWith("profile_")) {
-        toDelete.push(`${selectedStudentId}/thumb_${filename}`);
+        toDelete.push(`${dir}thumb_${filename}`);
       }
       await supabase.storage.from("student-photos").remove(toDelete);
       toast("Photo deleted", "success");
@@ -275,8 +309,8 @@ export default function PhotoGalleryPage() {
   };
 
   const handleCreateFolder = async () => {
-    const name = newFolderName.trim();
-    if (!name) { toast("Enter a folder name", "error"); return; }
+    const name = validFolderName(newFolderName);
+    if (!name) { toast("Enter a valid folder name (no '/' or '.')", "error"); return; }
     // Create folder by uploading a hidden placeholder file
     const placeholder = new Blob([""], { type: "text/plain" });
     const { error } = await supabase.storage
@@ -289,6 +323,34 @@ export default function PhotoGalleryPage() {
     setCreateFolderModal(false);
     setNewFolderName("");
     await loadPhotos();
+  };
+
+  // Create a named folder INSIDE the selected student's bucket.
+  const handleCreateSubfolder = async () => {
+    if (!selectedStudentId) return;
+    const name = validFolderName(newSubfolderName);
+    if (!name) { toast("Enter a valid folder name (no '/' or '.')", "error"); return; }
+    const placeholder = new Blob([""], { type: "text/plain" });
+    const { error } = await supabase.storage
+      .from("student-photos")
+      .upload(`${selectedStudentId}/${name}/.keep`, placeholder, { upsert: false });
+    if (error && !error.message.includes("already exists")) {
+      toast(error.message, "error"); return;
+    }
+    toast(`Folder "${name}" created!`, "success");
+    setCreateSubfolderModal(false);
+    setNewSubfolderName("");
+    await loadPhotos();
+  };
+
+  // Open a student's named subfolder. Reuses the custom-folder view via a
+  // "studentId/subName" path key, remembering the parent student for back-nav.
+  const openSubfolder = (studentId: string, sub: string) => {
+    setFolderParent(studentId);
+    setSelectedCustomFolder(`${studentId}/${sub}`);
+    setViewMode("custom_folder");
+    setLightboxUrl(null);
+    setDeleteConfirm(null);
   };
 
   const handleRenameFolder = async (oldName: string, newName: string) => {
@@ -351,6 +413,17 @@ export default function PhotoGalleryPage() {
     setViewMode("folders");
     setSelectedStudentId(null);
     setSelectedCustomFolder(null);
+    setFolderParent(null);
+    setLightboxUrl(null);
+    setDeleteConfirm(null);
+  };
+
+  // Return from a student's subfolder back to that student's folder view.
+  const backToStudent = () => {
+    setViewMode("student");
+    setSelectedStudentId(folderParent);
+    setSelectedCustomFolder(null);
+    setFolderParent(null);
     setLightboxUrl(null);
     setDeleteConfirm(null);
   };
@@ -369,6 +442,10 @@ export default function PhotoGalleryPage() {
   // ── CUSTOM FOLDER VIEW ──────────────────────────────────────────────────────
   if (viewMode === "custom_folder" && selectedCustomFolder) {
     const photos = photoMap[selectedCustomFolder] || [];
+    // For a student subfolder the key is "studentId/subName"; show just the
+    // folder name and name the parent student. Plain custom folders have no "/".
+    const folderDisplayName = selectedCustomFolder.split("/").pop() || selectedCustomFolder;
+    const parentStudent = folderParent ? db.students.find((s) => s.id === folderParent) : null;
     return (
       <>
         <style>{`.photo-card:hover .photo-overlay { opacity: 1 !important; }`}</style>
@@ -395,12 +472,14 @@ export default function PhotoGalleryPage() {
         )}
 
         <div className="page-header" style={{ display: "flex", alignItems: "center", gap: 12, flexWrap: "wrap" }}>
-          <button className="btn btn-outline btn-sm" onClick={backToFolders}>
-            <i className="fa-solid fa-arrow-left" /> Back to Gallery
+          <button className="btn btn-outline btn-sm" onClick={folderParent ? backToStudent : backToFolders}>
+            <i className="fa-solid fa-arrow-left" /> {parentStudent ? `Back to ${parentStudent.name}` : "Back to Gallery"}
           </button>
           <div>
-            <div className="page-title" style={{ margin: 0 }}>{selectedCustomFolder}</div>
-            <div style={{ fontSize: 12, color: "var(--text2)" }}>Custom folder</div>
+            <div className="page-title" style={{ margin: 0 }}>{folderDisplayName}</div>
+            <div style={{ fontSize: 12, color: "var(--text2)" }}>
+              {parentStudent ? `Folder in ${parentStudent.name}'s gallery` : "Custom folder"}
+            </div>
           </div>
         </div>
 
@@ -411,7 +490,7 @@ export default function PhotoGalleryPage() {
           </div>
           <div style={{ display: "flex", gap: 8 }}>
             {photos.length > 0 && (
-              <button className="btn btn-outline btn-sm" onClick={() => handleDownloadAll(photos, selectedCustomFolder)}>
+              <button className="btn btn-outline btn-sm" onClick={() => handleDownloadAll(photos, folderDisplayName)}>
                 <i className="fa-solid fa-download" /> Download All
               </button>
             )}
@@ -440,7 +519,7 @@ export default function PhotoGalleryPage() {
                 <img src={url} alt={`photo ${i + 1}`} style={{ width: "100%", height: "100%", objectFit: "cover", display: "block" }} onClick={() => setLightboxUrl(url)} />
                 <div className="photo-overlay" style={{ position: "absolute", bottom: 0, left: 0, right: 0, background: "linear-gradient(transparent, rgba(0,0,0,0.78))", padding: "28px 8px 8px", display: "flex", gap: 6, justifyContent: "flex-end", opacity: 0, transition: "opacity 0.2s" }}>
                   <button onClick={(e) => { e.stopPropagation(); setLightboxUrl(url); }} style={{ background: "rgba(255,255,255,0.2)", border: "none", color: "#fff", borderRadius: 6, padding: "5px 9px", cursor: "pointer", fontSize: 12 }}><i className="fa-solid fa-expand" /></button>
-                  <button onClick={(e) => { e.stopPropagation(); handleDownloadPhoto(url, selectedCustomFolder, i); }} style={{ background: "rgba(255,255,255,0.2)", border: "none", color: "#fff", borderRadius: 6, padding: "5px 9px", cursor: "pointer", fontSize: 12 }}><i className="fa-solid fa-download" /></button>
+                  <button onClick={(e) => { e.stopPropagation(); handleDownloadPhoto(url, folderDisplayName, i); }} style={{ background: "rgba(255,255,255,0.2)", border: "none", color: "#fff", borderRadius: 6, padding: "5px 9px", cursor: "pointer", fontSize: 12 }}><i className="fa-solid fa-download" /></button>
                   {canManage && <button onClick={(e) => { e.stopPropagation(); setDeleteConfirm(url); }} style={{ background: "rgba(220,38,38,0.8)", border: "none", color: "#fff", borderRadius: 6, padding: "5px 9px", cursor: "pointer", fontSize: 12 }}><i className="fa-solid fa-trash" /></button>}
                 </div>
               </div>
@@ -463,11 +542,15 @@ export default function PhotoGalleryPage() {
   if (viewMode === "student" && selectedStudent) {
     const cls = db.classes.find((c) => c.id === selectedStudent.classId);
     const isOwnFolder = isStudent && myStudentId === selectedStudentId;
+    const subfolders = selectedStudentId ? studentSubfolders[selectedStudentId] || [] : [];
+    const rootPhotos = selectedStudentId ? studentRootPhotos[selectedStudentId] || [] : [];
 
     return (
       <>
         <style>{`
           .photo-card:hover .photo-overlay { opacity: 1 !important; }
+          .folder-card { transition: transform 0.15s, box-shadow 0.15s; }
+          .folder-card:hover { transform: translateY(-3px); box-shadow: 0 8px 24px rgba(0,0,0,0.4); }
         `}</style>
 
         {/* Lightbox */}
@@ -693,8 +776,14 @@ export default function PhotoGalleryPage() {
         >
           <div style={{ color: "var(--text2)", fontSize: 13 }}>
             <i className="fa-solid fa-images" style={{ marginRight: 6, color: "var(--accent)" }} />
-            <strong style={{ color: "var(--text1)" }}>{selectedPhotos.length}</strong> gallery photo
-            {selectedPhotos.length !== 1 ? "s" : ""}
+            <strong style={{ color: "var(--text1)" }}>{rootPhotos.length}</strong> photo
+            {rootPhotos.length !== 1 ? "s" : ""} here
+            {subfolders.length > 0 && (
+              <span style={{ marginLeft: 8 }}>
+                · <strong style={{ color: "var(--text1)" }}>{subfolders.length}</strong> folder
+                {subfolders.length !== 1 ? "s" : ""}
+              </span>
+            )}
             {isOwnFolder && <span style={{ marginLeft: 8, fontSize: 11 }}>(uploaded by staff)</span>}
           </div>
           <div style={{ display: "flex", gap: 8 }}>
@@ -704,6 +793,14 @@ export default function PhotoGalleryPage() {
                 onClick={() => handleDownloadAll(selectedPhotos, selectedStudent.name)}
               >
                 <i className="fa-solid fa-download" /> Download All
+              </button>
+            )}
+            {canManage && (
+              <button
+                className="btn btn-outline btn-sm"
+                onClick={() => { setNewSubfolderName(""); setCreateSubfolderModal(true); }}
+              >
+                <i className="fa-solid fa-folder-plus" /> Create Folder
               </button>
             )}
             {canUploadToOthers && (
@@ -738,7 +835,60 @@ export default function PhotoGalleryPage() {
           </div>
         </div>
 
-        {selectedPhotos.length === 0 ? (
+        {/* Create-folder modal (a folder inside this student's bucket) */}
+        {createSubfolderModal && (
+          <div style={{ position: "fixed", inset: 0, zIndex: 900, background: "rgba(0,0,0,0.7)", display: "flex", alignItems: "center", justifyContent: "center" }}>
+            <div className="card" style={{ padding: 28, maxWidth: 400, width: "90%" }}>
+              <div style={{ fontWeight: 700, fontSize: 15, marginBottom: 6, color: "var(--text1)" }}>Create Folder</div>
+              <div style={{ fontSize: 12, color: "var(--text2)", marginBottom: 14 }}>
+                New folder inside <strong>{selectedStudent.name}</strong>'s gallery (e.g. "Graduation", "Practical 3").
+              </div>
+              <input className="form-input" placeholder="Folder name" value={newSubfolderName} autoFocus
+                onChange={(e) => setNewSubfolderName(e.target.value)}
+                onKeyDown={(e) => { if (e.key === "Enter") handleCreateSubfolder(); }} />
+              <div style={{ display: "flex", gap: 10, marginTop: 16, justifyContent: "flex-end" }}>
+                <button className="btn btn-outline btn-sm" onClick={() => { setCreateSubfolderModal(false); setNewSubfolderName(""); }}>Cancel</button>
+                <button className="btn btn-primary btn-sm" onClick={handleCreateSubfolder}>Create</button>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* Folders inside this student's bucket */}
+        {subfolders.length > 0 && (
+          <div style={{ marginBottom: 16 }}>
+            <div style={{ fontWeight: 700, fontSize: 13, color: "var(--text2)", marginBottom: 8, textTransform: "uppercase", letterSpacing: 1 }}>
+              <i className="fa-solid fa-folder-open" style={{ marginRight: 6, color: "var(--accent)" }} /> Folders
+            </div>
+            <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(150px, 1fr))", gap: 12 }}>
+              {subfolders.map((sub) => {
+                const pathKey = `${selectedStudentId}/${sub}`;
+                const count = photoMap[pathKey]?.length || 0;
+                const thumb = thumbMap[pathKey];
+                return (
+                  <div key={sub} className="folder-card card" onClick={() => openSubfolder(selectedStudentId!, sub)}
+                    style={{ padding: 0, cursor: "pointer", overflow: "hidden", border: "1px solid var(--accent)" }}>
+                    <div style={{ height: 100, background: "var(--bg3)", position: "relative", display: "flex", alignItems: "center", justifyContent: "center" }}>
+                      {thumb ? (
+                        <img src={thumb} alt={sub} style={{ width: "100%", height: "100%", objectFit: "cover" }} />
+                      ) : (
+                        <i className="fa-solid fa-folder-open" style={{ fontSize: 22, color: "var(--accent)", opacity: 0.5 }} />
+                      )}
+                      {count > 0 && (
+                        <div style={{ position: "absolute", bottom: 6, right: 6, background: "rgba(0,0,0,0.75)", color: "#fff", fontSize: 10, fontWeight: 700, padding: "2px 7px", borderRadius: 10 }}>
+                          <i className="fa-solid fa-images" style={{ fontSize: 8, marginRight: 3 }} />{count}
+                        </div>
+                      )}
+                    </div>
+                    <div style={{ padding: "8px 10px", textAlign: "center", fontSize: 12, fontWeight: 700, color: "var(--text1)", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{sub}</div>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        )}
+
+        {rootPhotos.length === 0 && subfolders.length === 0 ? (
           <div className="card" style={{ textAlign: "center", padding: 60, color: "var(--text2)" }}>
             <div style={{ fontSize: 52, marginBottom: 12 }}>📷</div>
             <div style={{ fontSize: 15, fontWeight: 600, marginBottom: 6, color: "var(--text1)" }}>
@@ -756,7 +906,7 @@ export default function PhotoGalleryPage() {
           </div>
         ) : (
           <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(200px, 1fr))", gap: 12 }}>
-            {selectedPhotos.map((url, i) => (
+            {rootPhotos.map((url, i) => (
               <div
                 key={i}
                 className="photo-card"
