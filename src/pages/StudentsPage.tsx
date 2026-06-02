@@ -54,6 +54,78 @@ export default function StudentsPage() {
 
   const selectedStudent = selected ? db.students.find((s) => s.id === selected) : null;
 
+  // Create a fresh attempt at a failed module. The retake is a new marks row in a
+  // different academic period (year/semester); the original attempt is left intact
+  // and becomes "superseded" once the retake is graded (latest attempt counts).
+  const handleRetake = (student: any, mark: any, module: any) => {
+    let year = db.config.currentYear;
+    let semester = db.config.currentSemester;
+    showModal(
+      `Retake — ${module?.name || "Module"}`,
+      <div>
+        <div
+          style={{
+            background: "var(--bg2)",
+            borderRadius: 8,
+            padding: "8px 14px",
+            marginBottom: 14,
+            fontSize: 12,
+            color: "var(--text2)",
+          }}
+        >
+          New attempt for <strong>{student.name}</strong>. Previous result:{" "}
+          <strong>{calcModuleMark(mark)}% (Fail)</strong> in Year {mark.year} · Semester {mark.semester}.
+        </div>
+        <div className="form-row cols2">
+          <div className="form-group">
+            <label>Retake Year</label>
+            <input
+              className="form-input"
+              type="number"
+              defaultValue={year}
+              onChange={(e) => (year = Number(e.target.value))}
+            />
+          </div>
+          <div className="form-group">
+            <label>Retake Semester</label>
+            <select className="form-select" defaultValue={semester} onChange={(e) => (semester = Number(e.target.value))}>
+              <option value={1}>Semester 1</option>
+              <option value={2}>Semester 2</option>
+            </select>
+          </div>
+        </div>
+        <button
+          className="btn btn-primary"
+          style={{ marginTop: 12, width: "100%" }}
+          onClick={async () => {
+            if (year === mark.year && semester === mark.semester) {
+              toast("Pick a different year/semester from the original attempt", "error");
+              return;
+            }
+            const { error } = await supabase.from("marks").insert({
+              student_id: student.studentId,
+              module_id: module.id,
+              class_id: mark.classId,
+              test1: 0, test2: 0, pract_test: 0, ind_ass: 0, grp_ass: 0, final_exam: 0, practical: 0,
+              year,
+              semester,
+            });
+            if (error) {
+              const dup = /duplicate|unique/i.test(error.message);
+              toast(dup ? "An attempt already exists for that year/semester" : error.message, "error");
+              return;
+            }
+            toast("Retake attempt created — enter marks via the exam/marks flow", "success");
+            closeModal();
+            reloadDb();
+          }}
+        >
+          Create Retake Attempt
+        </button>
+      </div>,
+    );
+  };
+
   // ── Edit modal ──────────────────────────────────────────────────────────────
   const showEdit = (s: (typeof db.students)[0]) => {
     let name = s.name,
@@ -611,6 +683,7 @@ export default function StudentsPage() {
           role={role || ""}
           onClose={() => setSelected(null)}
           onEdit={() => showEdit(selectedStudent)}
+          onRetake={handleRetake}
         />
       )}
     </div>
@@ -618,10 +691,21 @@ export default function StudentsPage() {
 }
 
 // ── Student Profile Panel ────────────────────────────────────────────────────
-function StudentProfilePanel({ student: s, db, role, onClose, onEdit }: any) {
+function StudentProfilePanel({ student: s, db, role, onClose, onEdit, onRetake }: any) {
   const cls = db.classes.find((c: any) => c.id === s.classId);
   const prog = db.config.programmes.find((p: any) => p.id === s.programme);
   const marks = db.marks.filter((m: any) => m.studentId === s.studentId);
+
+  // For modules taken more than once, only the latest attempt (highest year, then
+  // semester) counts; earlier attempts are "superseded". A failed latest attempt
+  // is eligible for a retake.
+  const attemptRank = (m: any) => m.year * 100 + m.semester;
+  const latestRank: Record<string, number> = {};
+  marks.forEach((m: any) => {
+    const r = attemptRank(m);
+    if (latestRank[m.moduleId] === undefined || r > latestRank[m.moduleId]) latestRank[m.moduleId] = r;
+  });
+  const isLatestAttempt = (m: any) => attemptRank(m) === latestRank[m.moduleId];
 
   // Modules the student is currently enrolled in: their class's modules plus any
   // per-student overrides (same rule MyModulesPage / AssignmentsPage use).
@@ -783,25 +867,49 @@ function StudentProfilePanel({ student: s, db, role, onClose, onEdit }: any) {
             <thead>
               <tr>
                 <th>Module</th>
+                <th>Attempt</th>
                 <th>Total %</th>
                 <th>Grade</th>
+                <th></th>
               </tr>
             </thead>
             <tbody>
-              {marks.map((m: any) => {
-                const mod = db.modules.find((mo: any) => mo.id === m.moduleId);
-                const mm = calcModuleMark(m);
-                const g = grade(mm);
-                return (
-                  <tr key={m.moduleId}>
-                    <td style={{ fontSize: 12 }}>{mod?.name || "—"}</td>
-                    <td style={{ fontFamily: "'JetBrains Mono',monospace", fontSize: 11 }}>{mm}%</td>
-                    <td>
-                      <span className={`badge ${gradeColor(g)}`}>{g}</span>
-                    </td>
-                  </tr>
-                );
-              })}
+              {[...marks]
+                .sort((a: any, b: any) => attemptRank(a) - attemptRank(b))
+                .map((m: any) => {
+                  const mod = db.modules.find((mo: any) => mo.id === m.moduleId);
+                  const mm = calcModuleMark(m);
+                  const g = grade(mm);
+                  const latest = isLatestAttempt(m);
+                  const superseded = !latest;
+                  const canRetake = role === "admin" && latest && mm < 50;
+                  return (
+                    <tr key={`${m.moduleId}-${m.year}-${m.semester}`} style={{ opacity: superseded ? 0.55 : 1 }}>
+                      <td style={{ fontSize: 12, textDecoration: superseded ? "line-through" : "none" }}>
+                        {mod?.name || "—"}
+                      </td>
+                      <td style={{ fontSize: 11, color: "var(--text2)" }}>
+                        Y{m.year}·S{m.semester}
+                        {superseded && <span style={{ marginLeft: 4, fontStyle: "italic" }}>(superseded)</span>}
+                      </td>
+                      <td style={{ fontFamily: "'JetBrains Mono',monospace", fontSize: 11 }}>{mm}%</td>
+                      <td>
+                        <span className={`badge ${gradeColor(g)}`}>{g}</span>
+                      </td>
+                      <td>
+                        {canRetake && (
+                          <button
+                            className="btn btn-outline btn-sm"
+                            onClick={() => onRetake?.(s, m, mod)}
+                            title="Create a new attempt in a later semester/year"
+                          >
+                            <i className="fa-solid fa-rotate-right" /> Retake
+                          </button>
+                        )}
+                      </td>
+                    </tr>
+                  );
+                })}
             </tbody>
           </table>
         </div>

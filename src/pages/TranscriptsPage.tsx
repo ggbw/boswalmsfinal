@@ -18,11 +18,13 @@ function gradePoint(letter: string): number {
   return m[letter] ?? 0;
 }
 
-// Credit-weighted GPA: Σ(gradePoint × credits) / Σ(credits).
+// Credit-weighted GPA: Σ(gradePoint × credits) / Σ(credits). Superseded
+// (earlier retake) attempts are excluded — only the latest attempt counts.
 function computeGPA(mods: PassedModule[]): string {
-  const totalCredits = mods.reduce((s, m) => s + m.credits, 0);
+  const counted = mods.filter((m) => !m.superseded);
+  const totalCredits = counted.reduce((s, m) => s + m.credits, 0);
   if (!totalCredits) return "—";
-  const weighted = mods.reduce((s, m) => s + gradePoint(m.grade) * m.credits, 0);
+  const weighted = counted.reduce((s, m) => s + gradePoint(m.grade) * m.credits, 0);
   return (weighted / totalCredits).toFixed(2);
 }
 
@@ -47,6 +49,7 @@ function todayStr(): string {
 }
 
 interface PassedModule {
+  moduleId: string;
   name: string;
   code: string;
   mark: number;
@@ -54,6 +57,19 @@ interface PassedModule {
   credits: number;
   year: number;
   semester: number;
+  superseded?: boolean;
+}
+
+// When a module was taken more than once (a retake), only the latest attempt
+// (highest year, then semester) counts toward GPA/credits; earlier attempts are
+// flagged "superseded" so they still display but don't count.
+function flagSuperseded(mods: PassedModule[]): PassedModule[] {
+  const latestRank: Record<string, number> = {};
+  mods.forEach((m) => {
+    const r = m.year * 100 + m.semester;
+    if (latestRank[m.moduleId] === undefined || r > latestRank[m.moduleId]) latestRank[m.moduleId] = r;
+  });
+  return mods.map((m) => ({ ...m, superseded: m.year * 100 + m.semester < latestRank[m.moduleId] }));
 }
 
 // ── Print transcript in a new window ─────────────────────────────────────────
@@ -297,22 +313,25 @@ export default function TranscriptsPage() {
                         onClick={() => {
                           const prog = db.config.programmes.find((p: any) => p.id === s.programme);
                           const allMarks = db.marks.filter((m: any) => m.studentId === s.studentId);
-                          const passed: PassedModule[] = allMarks
-                            .map((m: any) => {
-                              const mod = db.modules.find((mo: any) => mo.id === m.moduleId);
-                              const mark = calcModuleMark(m);
-                              return { mark, module: mod, markRecord: m };
-                            })
-                            .filter((x: any) => x.module)
-                            .map((x: any) => ({
-                              name: x.module.name,
-                              code: x.module.code,
-                              mark: x.mark,
-                              grade: letterGrade(x.mark),
-                              credits: 10,
-                              year: x.markRecord.year,
-                              semester: x.markRecord.semester,
-                            }));
+                          const passed: PassedModule[] = flagSuperseded(
+                            allMarks
+                              .map((m: any) => {
+                                const mod = db.modules.find((mo: any) => mo.id === m.moduleId);
+                                const mark = calcModuleMark(m);
+                                return { mark, module: mod, markRecord: m };
+                              })
+                              .filter((x: any) => x.module)
+                              .map((x: any) => ({
+                                moduleId: x.module.id,
+                                name: x.module.name,
+                                code: x.module.code,
+                                mark: x.mark,
+                                grade: letterGrade(x.mark),
+                                credits: 10,
+                                year: x.markRecord.year,
+                                semester: x.markRecord.semester,
+                              })),
+                          );
                           printTranscript(s, prog, passed, {
                             issuer: db.config.transcriptIssuer,
                             title: db.config.transcriptIssuerTitle,

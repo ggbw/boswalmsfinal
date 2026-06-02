@@ -229,7 +229,12 @@ export default function ExamsPage() {
             }
           }
 
-          // Step 2: sync to marks table (final_exam column) for ResultsPage / Transcripts
+          // Step 2: sync to marks table (final_exam column) for ResultsPage / Transcripts.
+          // The marks row is scoped to the CURRENT academic period so that a retake
+          // (a later year/semester) is recorded as a separate attempt instead of
+          // overwriting the original.
+          const curYear = db.config.currentYear;
+          const curSemester = db.config.currentSemester;
           for (const s of students) {
             const score = marksMap[s.studentId] ?? 0;
             const { data: existingMark, error: fetchErr } = await supabase
@@ -237,20 +242,20 @@ export default function ExamsPage() {
               .eq('student_id', s.studentId)
               .eq('module_id', exam.moduleId)
               .eq('class_id', exam.classId)
+              .eq('year', curYear)
+              .eq('semester', curSemester)
               .maybeSingle();
             if (fetchErr) { errors.push(`marks lookup: ${s.studentId}`); continue; }
             if (existingMark) {
               const { error } = await supabase.from('marks').update({ final_exam: score })
-                .eq('student_id', s.studentId)
-                .eq('module_id', exam.moduleId)
-                .eq('class_id', exam.classId);
+                .eq('id', existingMark.id);
               if (error) errors.push(`marks update: ${s.studentId}`);
             } else {
               const { error } = await supabase.from('marks').insert({
                 student_id: s.studentId, module_id: exam.moduleId,
                 class_id: exam.classId, final_exam: score,
                 test1: 0, test2: 0, pract_test: 0, ind_ass: 0, grp_ass: 0, practical: 0,
-                year: db.config.currentYear, semester: db.config.currentSemester,
+                year: curYear, semester: curSemester,
               });
               if (error) errors.push(`marks insert: ${s.studentId}`);
             }
