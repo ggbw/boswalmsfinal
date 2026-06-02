@@ -81,7 +81,7 @@ function printTranscript(
 ) {
   const studyYears = prog?.startYear ? `${prog.startYear}–${prog.startYear + (prog.years || 3)}` : "—";
 
-  const totalCredits = passedModules.reduce((s, m) => s + m.credits, 0);
+  const totalCredits = passedModules.filter((m) => !m.superseded).reduce((s, m) => s + m.credits, 0);
   const cumulativeGpa = computeGPA(passedModules);
 
   const semGroups: Record<string, PassedModule[]> = {};
@@ -99,16 +99,16 @@ function printTranscript(
     .sort()
     .map((semKey) => {
       const semGpa = computeGPA(semGroups[semKey]);
-      const semCredits = semGroups[semKey].reduce((s, m) => s + m.credits, 0);
+      const semCredits = semGroups[semKey].filter((m) => !m.superseded).reduce((s, m) => s + m.credits, 0);
       const rows = semGroups[semKey]
         .map(
           (m, i) => `
-      <tr style="background:${i % 2 === 0 ? "#D9D9D9" : "#fff"}">
-        <td style="padding:5px 10px">${m.name}</td>
+      <tr style="background:${i % 2 === 0 ? "#D9D9D9" : "#fff"};${m.superseded ? "color:#999;text-decoration:line-through" : ""}">
+        <td style="padding:5px 10px">${m.name}${m.superseded ? ' <span style="font-size:9px;font-style:italic;text-decoration:none">(superseded by retake)</span>' : ""}</td>
         <td style="padding:5px 10px;text-align:center;font-family:monospace;font-size:11px">${m.code}</td>
         <td style="padding:5px 10px;text-align:center;font-weight:700">${m.mark}%</td>
         <td style="padding:5px 10px;text-align:center;font-weight:700">${m.grade}</td>
-        <td style="padding:5px 10px;text-align:center">${m.credits}</td>
+        <td style="padding:5px 10px;text-align:center">${m.superseded ? "—" : m.credits}</td>
       </tr>`,
         )
         .join("");
@@ -359,24 +359,27 @@ export function TranscriptView({ stu }: { stu: any }) {
   const prog = db.config.programmes.find((p: any) => p.id === stu.programme);
   const allMarks = db.marks.filter((m: any) => m.studentId === stu.studentId);
 
-  const passedModules: PassedModule[] = allMarks
-    .map((m: any) => {
-      const mod = db.modules.find((mo: any) => mo.id === m.moduleId);
-      const mark = calcModuleMark(m);
-      return { mark, module: mod, markRecord: m };
-    })
-    .filter((x) => x.module)
-    .map((x) => ({
-      name: x.module.name as string,
-      code: x.module.code as string,
-      mark: x.mark,
-      grade: letterGrade(x.mark),
-      credits: 10,
-      year: x.markRecord.year as number,
-      semester: x.markRecord.semester as number,
-    }));
+  const passedModules: PassedModule[] = flagSuperseded(
+    allMarks
+      .map((m: any) => {
+        const mod = db.modules.find((mo: any) => mo.id === m.moduleId);
+        const mark = calcModuleMark(m);
+        return { mark, module: mod, markRecord: m };
+      })
+      .filter((x) => x.module)
+      .map((x) => ({
+        moduleId: x.module.id as string,
+        name: x.module.name as string,
+        code: x.module.code as string,
+        mark: x.mark,
+        grade: letterGrade(x.mark),
+        credits: 10,
+        year: x.markRecord.year as number,
+        semester: x.markRecord.semester as number,
+      })),
+  );
 
-  const totalCredits = passedModules.reduce((s, m) => s + m.credits, 0);
+  const totalCredits = passedModules.filter((m) => !m.superseded).reduce((s, m) => s + m.credits, 0);
   const cumulativeGpa = computeGPA(passedModules);
 
   const semGroups: Record<string, PassedModule[]> = {};
@@ -493,15 +496,27 @@ export function TranscriptView({ stu }: { stu: any }) {
                   {semGroups[semKey].map((m, i) => (
                     <tr
                       key={i}
-                      style={{ background: i % 2 === 0 ? "#D9D9D9" : "#fff", borderBottom: "1px solid #ccc" }}
+                      style={{
+                        background: i % 2 === 0 ? "#D9D9D9" : "#fff",
+                        borderBottom: "1px solid #ccc",
+                        color: m.superseded ? "#999" : undefined,
+                        textDecoration: m.superseded ? "line-through" : undefined,
+                      }}
                     >
-                      <td style={{ padding: "5px 10px" }}>{m.name}</td>
+                      <td style={{ padding: "5px 10px" }}>
+                        {m.name}
+                        {m.superseded && (
+                          <span style={{ fontSize: 9, fontStyle: "italic", textDecoration: "none", marginLeft: 4 }}>
+                            (superseded by retake)
+                          </span>
+                        )}
+                      </td>
                       <td style={{ padding: "5px 10px", textAlign: "center", fontFamily: "monospace", fontSize: 11 }}>
                         {m.code}
                       </td>
                       <td style={{ padding: "5px 10px", textAlign: "center", fontWeight: 700 }}>{m.mark}%</td>
                       <td style={{ padding: "5px 10px", textAlign: "center", fontWeight: 700 }}>{m.grade}</td>
-                      <td style={{ padding: "5px 10px", textAlign: "center" }}>{m.credits}</td>
+                      <td style={{ padding: "5px 10px", textAlign: "center" }}>{m.superseded ? "—" : m.credits}</td>
                     </tr>
                   ))}
                 </tbody>
@@ -519,8 +534,8 @@ export function TranscriptView({ stu }: { stu: any }) {
                 }}
               >
                 <span>Semester GPA = {computeGPA(semGroups[semKey])}</span>
-                <span>Credit Hours = {semGroups[semKey].reduce((s, m) => s + m.credits, 0) * 10} hrs</span>
-                <span>Credit Points = {semGroups[semKey].reduce((s, m) => s + m.credits, 0)} Cr</span>
+                <span>Credit Hours = {semGroups[semKey].filter((m) => !m.superseded).reduce((s, m) => s + m.credits, 0) * 10} hrs</span>
+                <span>Credit Points = {semGroups[semKey].filter((m) => !m.superseded).reduce((s, m) => s + m.credits, 0)} Cr</span>
               </div>
             </div>
           ))
