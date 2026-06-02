@@ -623,6 +623,17 @@ function StudentProfilePanel({ student: s, db, role, onClose, onEdit }: any) {
   const prog = db.config.programmes.find((p: any) => p.id === s.programme);
   const marks = db.marks.filter((m: any) => m.studentId === s.studentId);
 
+  // Modules the student is currently enrolled in: their class's modules plus any
+  // per-student overrides (same rule MyModulesPage / AssignmentsPage use).
+  const classMods = db.modules.filter((m: any) => m.classes.includes(s.classId));
+  const overrideModIds = db.studentModules
+    .filter((sm: any) => sm.studentId === s.id)
+    .map((sm: any) => sm.moduleId);
+  const overrideMods = db.modules.filter(
+    (m: any) => overrideModIds.includes(m.id) && !classMods.find((cm: any) => cm.id === m.id),
+  );
+  const enrolledMods = [...classMods, ...overrideMods];
+
   return (
     <div
       style={{
@@ -694,6 +705,63 @@ function StudentProfilePanel({ student: s, db, role, onClose, onEdit }: any) {
         <ProfileRow label="Year" value={`Year ${s.year}`} />
         <ProfileRow label="Semester" value={`Semester ${s.semester}`} />
       </ProfileSection>
+
+      <div style={{ marginTop: 4, marginBottom: 18 }}>
+        <div
+          style={{
+            fontWeight: 700,
+            fontSize: 11,
+            color: "var(--text2)",
+            textTransform: "uppercase",
+            letterSpacing: 0.5,
+            borderBottom: "1px solid var(--border)",
+            paddingBottom: 4,
+            marginBottom: 10,
+            display: "flex",
+            justifyContent: "space-between",
+          }}
+        >
+          <span>Enrolled Modules</span>
+          <span>{enrolledMods.length}</span>
+        </div>
+        {enrolledMods.length === 0 ? (
+          <div style={{ fontSize: 12, color: "var(--text2)", padding: "4px 0" }}>
+            No modules — assign this student to a class or add module overrides.
+          </div>
+        ) : (
+          <table style={{ width: "100%" }}>
+            <thead>
+              <tr>
+                <th>Module</th>
+                <th>Code</th>
+                <th>Status</th>
+              </tr>
+            </thead>
+            <tbody>
+              {enrolledMods.map((m: any) => {
+                const mk = marks.find((x: any) => x.moduleId === m.id);
+                const mm = mk ? calcModuleMark(mk) : null;
+                const g = mm !== null ? grade(mm) : null;
+                return (
+                  <tr key={m.id}>
+                    <td style={{ fontSize: 12 }}>{m.name}</td>
+                    <td style={{ fontFamily: "'JetBrains Mono',monospace", fontSize: 11 }}>{m.code}</td>
+                    <td>
+                      {g ? (
+                        <span className={`badge ${gradeColor(g)}`}>
+                          {g} · {mm}%
+                        </span>
+                      ) : (
+                        <span className="badge badge-inactive">In progress</span>
+                      )}
+                    </td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        )}
+      </div>
 
       {marks.length > 0 && (
         <div style={{ marginTop: 4 }}>
