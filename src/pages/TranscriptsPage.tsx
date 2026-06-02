@@ -3,12 +3,37 @@ import { useApp } from "@/context/AppContext";
 import { calcModuleMark } from "@/data/db";
 
 // ── Grading ───────────────────────────────────────────────────────────────────
-function transcriptGrade(pct: number): string {
-  if (pct >= 80) return "Distinction";
-  if (pct >= 65) return "Pass with Credit";
-  if (pct >= 50) return "Pass";
-  return "Fail";
+// University letter-grade scale (percentage → letter).
+function letterGrade(pct: number): string {
+  if (pct >= 80) return "A";
+  if (pct >= 70) return "B";
+  if (pct >= 60) return "C";
+  if (pct >= 50) return "D";
+  return "F";
 }
+
+// Grade points on a 4.0 scale.
+function gradePoint(letter: string): number {
+  const m: Record<string, number> = { A: 4.0, B: 3.0, C: 2.0, D: 1.0, F: 0.0 };
+  return m[letter] ?? 0;
+}
+
+// Credit-weighted GPA: Σ(gradePoint × credits) / Σ(credits).
+function computeGPA(mods: PassedModule[]): string {
+  const totalCredits = mods.reduce((s, m) => s + m.credits, 0);
+  if (!totalCredits) return "—";
+  const weighted = mods.reduce((s, m) => s + gradePoint(m.grade) * m.credits, 0);
+  return (weighted / totalCredits).toFixed(2);
+}
+
+// Grading scale displayed at the foot of the transcript.
+const GRADE_SCALE: [string, string][] = [
+  ["A", "80–100% · 4.0"],
+  ["B", "70–79% · 3.0"],
+  ["C", "60–69% · 2.0"],
+  ["D", "50–59% · 1.0"],
+  ["F", "0–49% · 0.0 (Fail)"],
+];
 
 function formatDate(dateStr?: string): string {
   if (!dateStr) return "—";
@@ -41,18 +66,7 @@ function printTranscript(
   const studyYears = prog?.startYear ? `${prog.startYear}–${prog.startYear + (prog.years || 3)}` : "—";
 
   const totalCredits = passedModules.reduce((s, m) => s + m.credits, 0);
-  const avgMark = passedModules.length
-    ? Math.round(passedModules.reduce((s, m) => s + m.mark, 0) / passedModules.length)
-    : 0;
-  const gpa = passedModules.length
-    ? avgMark >= 80
-      ? "4.00"
-      : avgMark >= 65
-        ? "3.50"
-        : avgMark >= 50
-          ? "3.00"
-          : "0.00"
-    : "—";
+  const cumulativeGpa = computeGPA(passedModules);
 
   const semGroups: Record<string, PassedModule[]> = {};
   passedModules.forEach((m) => {
@@ -68,6 +82,8 @@ function printTranscript(
   const semSections = Object.keys(semGroups)
     .sort()
     .map((semKey) => {
+      const semGpa = computeGPA(semGroups[semKey]);
+      const semCredits = semGroups[semKey].reduce((s, m) => s + m.credits, 0);
       const rows = semGroups[semKey]
         .map(
           (m, i) => `
@@ -99,9 +115,9 @@ function printTranscript(
           <tbody>${rows}</tbody>
         </table>
         <div style="font-size:12px;font-weight:700;display:flex;gap:20px;padding:6px 10px;background:#f4f4f4;border:1px solid #ddd;border-radius:0 0 4px 4px">
-          <span>GPA = ${gpa}</span>
-          <span>Total Credit Hours = ${totalCredits * 10} hrs</span>
-          <span>Total Credit Points = ${totalCredits} Cr</span>
+          <span>Semester GPA = ${semGpa}</span>
+          <span>Credit Hours = ${semCredits * 10} hrs</span>
+          <span>Credit Points = ${semCredits} Cr</span>
         </div>
       </div>`;
     })
@@ -156,6 +172,17 @@ function printTranscript(
       : semSections
   }
 
+  <!-- Overall summary -->
+  ${
+    passedModules.length === 0
+      ? ""
+      : `<div style="display:flex;gap:24px;justify-content:flex-end;align-items:center;background:#002060;color:#fff;padding:8px 16px;border-radius:4px;margin-bottom:14px;font-size:13px;font-weight:700">
+          <span>Total Credit Points = ${totalCredits} Cr</span>
+          <span>Total Credit Hours = ${totalCredits * 10} hrs</span>
+          <span style="font-size:14px">Cumulative GPA = ${cumulativeGpa}</span>
+        </div>`
+  }
+
   <!-- Certification -->
   <p style="font-size:12px;color:#555;font-style:italic;margin:14px 0 8px">
     I do hereby self-certify and affirm that this is the official transcript and record of
@@ -171,17 +198,10 @@ function printTranscript(
   <div style="border-top:1px solid #ccc;padding-top:10px;margin-bottom:14px">
     <div style="font-size:11px;font-weight:700;color:#002060;margin-bottom:6px">Grading Scale</div>
     <div style="display:flex;gap:6px;flex-wrap:wrap">
-      ${[
-        ["80–100%", "Distinction"],
-        ["65–79%", "Pass with Credit"],
-        ["50–64%", "Pass"],
-        ["0–49%", "Fail"],
-      ]
-        .map(
-          ([r, d]) =>
-            `<div style="font-size:10px;background:#f0f0f0;border:1px solid #ddd;border-radius:4px;padding:3px 10px"><strong>${r}</strong> — ${d}</div>`,
-        )
-        .join("")}
+      ${GRADE_SCALE.map(
+        ([r, d]) =>
+          `<div style="font-size:10px;background:#f0f0f0;border:1px solid #ddd;border-radius:4px;padding:3px 10px"><strong>${r}</strong> — ${d}</div>`,
+      ).join("")}
     </div>
   </div>
 
@@ -288,7 +308,7 @@ export default function TranscriptsPage() {
                               name: x.module.name,
                               code: x.module.code,
                               mark: x.mark,
-                              grade: transcriptGrade(x.mark),
+                              grade: letterGrade(x.mark),
                               credits: 10,
                               year: x.markRecord.year,
                               semester: x.markRecord.semester,
@@ -331,25 +351,14 @@ export function TranscriptView({ stu }: { stu: any }) {
       name: x.module.name as string,
       code: x.module.code as string,
       mark: x.mark,
-      grade: transcriptGrade(x.mark),
+      grade: letterGrade(x.mark),
       credits: 10,
       year: x.markRecord.year as number,
       semester: x.markRecord.semester as number,
     }));
 
   const totalCredits = passedModules.reduce((s, m) => s + m.credits, 0);
-  const avgMark = passedModules.length
-    ? Math.round(passedModules.reduce((s, m) => s + m.mark, 0) / passedModules.length)
-    : 0;
-  const gpa = passedModules.length
-    ? avgMark >= 80
-      ? "4.00"
-      : avgMark >= 65
-        ? "3.50"
-        : avgMark >= 50
-          ? "3.00"
-          : "0.00"
-    : "—";
+  const cumulativeGpa = computeGPA(passedModules);
 
   const semGroups: Record<string, PassedModule[]> = {};
   passedModules.forEach((m) => {
@@ -490,12 +499,35 @@ export function TranscriptView({ stu }: { stu: any }) {
                   borderRadius: "0 0 4px 4px",
                 }}
               >
-                <span>GPA = {gpa}</span>
-                <span>Total Credit Hours = {totalCredits * 10} hrs</span>
-                <span>Total Credit Points = {totalCredits} Cr</span>
+                <span>Semester GPA = {computeGPA(semGroups[semKey])}</span>
+                <span>Credit Hours = {semGroups[semKey].reduce((s, m) => s + m.credits, 0) * 10} hrs</span>
+                <span>Credit Points = {semGroups[semKey].reduce((s, m) => s + m.credits, 0)} Cr</span>
               </div>
             </div>
           ))
+      )}
+
+      {/* Overall summary */}
+      {passedModules.length > 0 && (
+        <div
+          style={{
+            display: "flex",
+            gap: 24,
+            justifyContent: "flex-end",
+            alignItems: "center",
+            background: "#002060",
+            color: "#fff",
+            padding: "8px 16px",
+            borderRadius: 4,
+            marginBottom: 14,
+            fontSize: 13,
+            fontWeight: 700,
+          }}
+        >
+          <span>Total Credit Points = {totalCredits} Cr</span>
+          <span>Total Credit Hours = {totalCredits * 10} hrs</span>
+          <span style={{ fontSize: 14 }}>Cumulative GPA = {cumulativeGpa}</span>
+        </div>
       )}
 
       {/* Certification */}
@@ -519,12 +551,7 @@ export function TranscriptView({ stu }: { stu: any }) {
       <div style={{ borderTop: "1px solid #ccc", paddingTop: 10, marginBottom: 14 }}>
         <div style={{ fontSize: 11, fontWeight: 700, color: "#002060", marginBottom: 6 }}>Grading Scale</div>
         <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
-          {[
-            ["80–100%", "Distinction"],
-            ["65–79%", "Pass with Credit"],
-            ["50–64%", "Pass"],
-            ["0–49%", "Fail"],
-          ].map(([r, d]) => (
+          {GRADE_SCALE.map(([r, d]) => (
             <div
               key={r}
               style={{

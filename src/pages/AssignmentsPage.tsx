@@ -3,6 +3,114 @@ import { useApp } from '@/context/AppContext';
 import { supabase } from '@/integrations/supabase/client';
 import { getLecturerClassIds, getLecturerModulesList } from '@/lib/lecturerHelpers';
 
+// Stateful assignment create form. Re-renders the Class dropdown whenever the
+// selected Module changes (the previous version froze the class list to the
+// first module, leaving admins unable to pick a class for other modules).
+function AssignmentFormModal({
+  db, currentUser, isAdmin, availableModules, toast, onDone,
+}: {
+  db: any;
+  currentUser: any;
+  isAdmin: boolean;
+  availableModules: any[];
+  toast: (msg: string, type?: string) => void;
+  onDone: () => void;
+}) {
+  const classesForModule = (mid: string) => {
+    const lecClassIds = getLecturerClassIds(db.lecturerModules, currentUser?.id || '');
+    const availableClasses = isAdmin ? db.classes : db.classes.filter((c: any) => lecClassIds.includes(c.id));
+    const mod = db.modules.find((m: any) => m.id === mid);
+    const linked = mod ? availableClasses.filter((c: any) => mod.classes.includes(c.id)) : [];
+    return linked.length > 0 ? linked : availableClasses;
+  };
+
+  const firstModuleId = availableModules[0]?.id || '';
+  const [title, setTitle] = useState('');
+  const [description, setDescription] = useState('');
+  const [moduleId, setModuleId] = useState(firstModuleId);
+  const [classId, setClassId] = useState(classesForModule(firstModuleId)[0]?.id || '');
+  const [dueDate, setDueDate] = useState('');
+  const [marks, setMarks] = useState(100);
+  const [submissionType, setSubmissionType] = useState('softcopy');
+  const [attachmentFile, setAttachmentFile] = useState<File | null>(null);
+  const [saving, setSaving] = useState(false);
+
+  const classOptions = classesForModule(moduleId);
+
+  const handleModuleChange = (mid: string) => {
+    setModuleId(mid);
+    const next = classesForModule(mid);
+    setClassId(prev => (next.some((c: any) => c.id === prev) ? prev : next[0]?.id || ''));
+  };
+
+  const handleSave = async () => {
+    if (!title || !moduleId) { toast('Title and module are required', 'error'); return; }
+    if (attachmentFile && attachmentFile.size > 10 * 1024 * 1024) { toast('Attachment must be under 10MB', 'error'); return; }
+    setSaving(true);
+
+    let attachmentData: string | null = null;
+    let attachmentName: string | null = null;
+    if (attachmentFile) {
+      attachmentName = attachmentFile.name;
+      attachmentData = await new Promise<string>((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onload = () => resolve(reader.result as string);
+        reader.onerror = () => reject(new Error('Failed to read file'));
+        reader.readAsDataURL(attachmentFile);
+      });
+    }
+
+    const id = 'asgn_' + Date.now();
+    const { error } = await supabase.from('assignments').insert({
+      id, title, description, module_id: moduleId, class_id: classId || null,
+      due_date: dueDate || null, marks, status: 'active',
+      submission_type: submissionType, created_by: currentUser?.id || null,
+      uploaded_by: currentUser?.name || null, uploaded_date: new Date().toISOString().split('T')[0],
+      attachment_name: attachmentName, attachment_data: attachmentData,
+    });
+    setSaving(false);
+    if (error) { toast(error.message, 'error'); return; }
+    toast('Assignment created!', 'success');
+    onDone();
+  };
+
+  return (
+    <div>
+      <div className="form-group"><label>Title *</label><input className="form-input" value={title} onChange={e => setTitle(e.target.value)} /></div>
+      <div className="form-group"><label>Description</label><textarea className="form-input" rows={3} value={description} onChange={e => setDescription(e.target.value)} /></div>
+      <div className="form-row cols2">
+        <div className="form-group"><label>Module *</label>
+          <select className="form-select" value={moduleId} onChange={e => handleModuleChange(e.target.value)}>
+            {availableModules.map(m => <option key={m.id} value={m.id}>{m.name}</option>)}
+          </select>
+        </div>
+        <div className="form-group"><label>Class *</label>
+          <select className="form-select" value={classId} onChange={e => setClassId(e.target.value)}>
+            <option value="">— Select class —</option>
+            {classOptions.map((c: any) => <option key={c.id} value={c.id}>{c.name}</option>)}
+          </select>
+        </div>
+      </div>
+      <div className="form-row cols2">
+        <div className="form-group"><label>Due Date</label><input className="form-input" type="date" value={dueDate} onChange={e => setDueDate(e.target.value)} /></div>
+        <div className="form-group"><label>Total Marks</label><input className="form-input" type="number" value={marks} onChange={e => setMarks(Number(e.target.value))} /></div>
+      </div>
+      <div className="form-group"><label>Submission Type *</label>
+        <select className="form-select" value={submissionType} onChange={e => setSubmissionType(e.target.value)}>
+          <option value="softcopy">Softcopy (Digital Upload)</option>
+          <option value="hardcopy">Hardcopy (Physical Submission)</option>
+        </select>
+      </div>
+      <div className="form-group">
+        <label>Attach File (optional)</label>
+        <input className="form-input" type="file" onChange={e => setAttachmentFile(e.target.files?.[0] || null)} />
+        <div style={{fontSize:11,color:'var(--text2)',marginTop:4}}>Attach a reference document, rubric, or instructions file (max 10MB)</div>
+      </div>
+      <button className="btn btn-primary" style={{ marginTop: 12 }} disabled={saving} onClick={handleSave}>Create Assignment</button>
+    </div>
+  );
+}
+
 export default function AssignmentsPage() {
   const { db, currentUser, showModal, closeModal, toast, reloadDb } = useApp();
   const role = currentUser?.role;
@@ -33,82 +141,12 @@ export default function AssignmentsPage() {
 
   const handleCreateAssignment = () => {
     const lecModules = isAdmin ? db.modules : getLecturerModules();
-    let title = '', description = '', moduleId = lecModules[0]?.id || '', classId = '';
-    let dueDate = '', marks = 100, submissionType = 'softcopy';
-    let attachmentFile: File | null = null;
-
-    const getClassesForModule = (mid: string) => {
-      const mod = db.modules.find(m => m.id === mid);
-      if (!mod) return [];
-      if (role === 'admin') return db.classes.filter(c => mod.classes.includes(c.id));
-      const lecClassIds = getLecturerClassIds(db.lecturerModules, currentUser?.id || '');
-      return db.classes.filter(c => mod.classes.includes(c.id) && lecClassIds.includes(c.id));
-    };
-
-    const initialClasses = getClassesForModule(moduleId);
-    classId = initialClasses[0]?.id || '';
-
     showModal('Create Assignment', (
-      <div>
-        <div className="form-group"><label>Title *</label><input className="form-input" onChange={e => title = e.target.value} /></div>
-        <div className="form-group"><label>Description</label><textarea className="form-input" rows={3} onChange={e => description = e.target.value} /></div>
-        <div className="form-row cols2">
-          <div className="form-group"><label>Module *</label>
-            <select className="form-select" defaultValue={moduleId} onChange={e => moduleId = e.target.value}>
-              {lecModules.map(m => <option key={m.id} value={m.id}>{m.name}</option>)}
-            </select>
-          </div>
-          <div className="form-group"><label>Class *</label>
-            <select className="form-select" defaultValue={classId} onChange={e => classId = e.target.value}>
-              {initialClasses.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
-            </select>
-          </div>
-        </div>
-        <div className="form-row cols2">
-          <div className="form-group"><label>Due Date</label><input className="form-input" type="date" onChange={e => dueDate = e.target.value} /></div>
-          <div className="form-group"><label>Total Marks</label><input className="form-input" type="number" defaultValue={100} onChange={e => marks = Number(e.target.value)} /></div>
-        </div>
-        <div className="form-group"><label>Submission Type *</label>
-          <select className="form-select" defaultValue={submissionType} onChange={e => submissionType = e.target.value}>
-            <option value="softcopy">Softcopy (Digital Upload)</option>
-            <option value="hardcopy">Hardcopy (Physical Submission)</option>
-          </select>
-        </div>
-        <div className="form-group">
-          <label>Attach File (optional)</label>
-          <input className="form-input" type="file" onChange={e => { attachmentFile = e.target.files?.[0] || null; }} />
-          <div style={{fontSize:11,color:'var(--text2)',marginTop:4}}>Attach a reference document, rubric, or instructions file (max 10MB)</div>
-        </div>
-        <button className="btn btn-primary" style={{ marginTop: 12 }} onClick={async () => {
-          if (!title || !moduleId) { toast('Title and module are required', 'error'); return; }
-          if (attachmentFile && attachmentFile.size > 10 * 1024 * 1024) { toast('Attachment must be under 10MB', 'error'); return; }
-
-          let attachmentData: string | null = null;
-          let attachmentName: string | null = null;
-
-          if (attachmentFile) {
-            attachmentName = attachmentFile.name;
-            attachmentData = await new Promise<string>((resolve, reject) => {
-              const reader = new FileReader();
-              reader.onload = () => resolve(reader.result as string);
-              reader.onerror = () => reject(new Error('Failed to read file'));
-              reader.readAsDataURL(attachmentFile!);
-            });
-          }
-
-          const id = 'asgn_' + Date.now();
-          const { error } = await supabase.from('assignments').insert({
-            id, title, description, module_id: moduleId, class_id: classId || null,
-            due_date: dueDate || null, marks, status: 'active',
-            submission_type: submissionType, created_by: currentUser?.id || null,
-            uploaded_by: currentUser?.name || null, uploaded_date: new Date().toISOString().split('T')[0],
-            attachment_name: attachmentName, attachment_data: attachmentData,
-          });
-          if (error) { toast(error.message, 'error'); } else {
-            toast('Assignment created!', 'success'); closeModal(); reloadDb();
-          }
-        }}>Create Assignment</button>
-      </div>
+      <AssignmentFormModal
+        db={db} currentUser={currentUser} isAdmin={isAdmin}
+        availableModules={lecModules} toast={toast}
+        onDone={() => { closeModal(); reloadDb(); }}
+      />
     ));
   };
 

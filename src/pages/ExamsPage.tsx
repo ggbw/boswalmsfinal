@@ -3,6 +3,116 @@ import { useApp } from '@/context/AppContext';
 import { supabase } from '@/integrations/supabase/client';
 import { getLecturerClassIds, getLecturerModulesList } from '@/lib/lecturerHelpers';
 
+// Stateful exam create/edit form. Re-renders the Class dropdown whenever the
+// selected Module changes (the previous mutable-variable version did not, which
+// left admins unable to pick a class).
+function ExamFormModal({
+  exam, db, currentUser, isAdmin, availableModules, toast, onDone,
+}: {
+  exam?: any;
+  db: any;
+  currentUser: any;
+  isAdmin: boolean;
+  availableModules: any[];
+  toast: (msg: string, type?: string) => void;
+  onDone: () => void;
+}) {
+  const classesForModule = (mid: string) => {
+    const lecClassIds = getLecturerClassIds(db.lecturerModules, currentUser?.id || '');
+    const availableClasses = isAdmin ? db.classes : db.classes.filter((c: any) => lecClassIds.includes(c.id));
+    const mod = db.modules.find((m: any) => m.id === mid);
+    const linked = mod ? availableClasses.filter((c: any) => mod.classes.includes(c.id)) : [];
+    return linked.length > 0 ? linked : availableClasses;
+  };
+
+  const firstModuleId = exam?.moduleId || availableModules[0]?.id || '';
+  const [name, setName] = useState(exam?.name || '');
+  const [moduleId, setModuleId] = useState(firstModuleId);
+  const [classId, setClassId] = useState(exam?.classId || classesForModule(firstModuleId)[0]?.id || '');
+  const [date, setDate] = useState(exam?.date || '');
+  const [type, setType] = useState(exam?.type || 'Written Exam');
+  const [startTime, setStartTime] = useState(exam?.startTime || '');
+  const [endTime, setEndTime] = useState(exam?.endTime || '');
+  const [room, setRoom] = useState(exam?.room || '');
+  const [saving, setSaving] = useState(false);
+
+  const classOptions = classesForModule(moduleId);
+
+  const handleModuleChange = (mid: string) => {
+    setModuleId(mid);
+    const next = classesForModule(mid);
+    setClassId(prev => (next.some((c: any) => c.id === prev) ? prev : next[0]?.id || ''));
+  };
+
+  const handleSave = async () => {
+    if (!name || !moduleId) { toast('Name and module are required', 'error'); return; }
+    setSaving(true);
+    const payload = {
+      name, module_id: moduleId, class_id: classId || null, date: date || null,
+      start_time: startTime || null, end_time: endTime || null, room: room || null, type,
+    };
+    const { error } = exam
+      ? await supabase.from('exams').update(payload).eq('id', exam.id)
+      : await supabase.from('exams').insert({
+          id: 'exam_' + Date.now(), status: 'scheduled', created_by: currentUser?.id || null, ...payload,
+        });
+    setSaving(false);
+    if (error) { toast(error.message, 'error'); return; }
+    toast(exam ? 'Exam updated!' : 'Exam created!', 'success');
+    onDone();
+  };
+
+  return (
+    <div>
+      <div className="form-group"><label>Exam Name *</label>
+        <input className="form-input" placeholder="e.g. Semester 1 Final Exam" value={name} onChange={e => setName(e.target.value)} />
+      </div>
+      <div className="form-row cols2">
+        <div className="form-group"><label>Module *</label>
+          <select className="form-select" value={moduleId} onChange={e => handleModuleChange(e.target.value)}>
+            {availableModules.map(m => <option key={m.id} value={m.id}>{m.name}</option>)}
+          </select>
+        </div>
+        <div className="form-group"><label>Class *</label>
+          <select className="form-select" value={classId} onChange={e => setClassId(e.target.value)}>
+            <option value="">— Select class —</option>
+            {classOptions.map((c: any) => <option key={c.id} value={c.id}>{c.name}</option>)}
+          </select>
+        </div>
+      </div>
+      <div className="form-row cols2">
+        <div className="form-group"><label>Date</label><input className="form-input" type="date" value={date} onChange={e => setDate(e.target.value)} /></div>
+      </div>
+      <div className="form-row cols2">
+        <div className="form-group"><label>Start Time</label><input className="form-input" type="time" value={startTime} onChange={e => setStartTime(e.target.value)} /></div>
+        <div className="form-group"><label>End Time</label><input className="form-input" type="time" value={endTime} onChange={e => setEndTime(e.target.value)} /></div>
+      </div>
+      <div className="form-row cols2">
+        <div className="form-group"><label>Room / Venue</label>
+          <select className="form-select" value={room} onChange={e => setRoom(e.target.value)}>
+            <option value="">— Select room —</option>
+            {db.rooms.map((r: any) => <option key={r.id} value={r.name}>{r.name} ({r.type})</option>)}
+          </select>
+        </div>
+        <div className="form-group"><label>Type</label>
+          <select className="form-select" value={type} onChange={e => setType(e.target.value)}>
+            <option>Written Exam</option>
+            <option>Practical Exam</option>
+            <option>Final Practical Exam</option>
+            <option>Final Theory Exam</option>
+            <option>Final Practical Theory Exam</option>
+            <option>Recipe</option>
+            <option>Oral Exam</option>
+          </select>
+        </div>
+      </div>
+      <button className="btn btn-primary" style={{ marginTop: 12, width: '100%' }} disabled={saving} onClick={handleSave}>
+        {exam ? 'Save Changes' : 'Create Exam'}
+      </button>
+    </div>
+  );
+}
+
 export default function ExamsPage() {
   const { db, currentUser, showModal, closeModal, toast, reloadDb } = useApp();
   const role = currentUser?.role;
@@ -21,143 +131,23 @@ export default function ExamsPage() {
 
   const handleCreateExam = () => {
     const availableModules = isAdmin ? db.modules : getLecturerModules();
-    let name = '', moduleId = availableModules[0]?.id || '', classId = '', date = '', type = 'Written Exam', startTime = '', endTime = '', room = '';
-
-    const getClassesForModule = (mid: string) => {
-      const lecClassIds = getLecturerClassIds(db.lecturerModules, currentUser?.id || '');
-      const availableClasses = isAdmin ? db.classes : db.classes.filter(c => lecClassIds.includes(c.id));
-      const mod = db.modules.find(m => m.id === mid);
-      const linked = mod ? availableClasses.filter(c => mod.classes.includes(c.id)) : [];
-      return linked.length > 0 ? linked : availableClasses;
-    };
-
-    const initialClasses = getClassesForModule(moduleId);
-    classId = initialClasses[0]?.id || '';
-
     showModal('Create Exam', (
-      <div>
-        <div className="form-group"><label>Exam Name *</label><input className="form-input" placeholder="e.g. Semester 1 Final Exam" onChange={e => name = e.target.value} /></div>
-        <div className="form-row cols2">
-          <div className="form-group"><label>Module *</label>
-            <select className="form-select" defaultValue={moduleId} onChange={e => { moduleId = e.target.value; }}>
-              {availableModules.map(m => <option key={m.id} value={m.id}>{m.name}</option>)}
-            </select>
-          </div>
-          <div className="form-group"><label>Class *</label>
-            <select className="form-select" defaultValue={classId} onChange={e => classId = e.target.value}>
-              <option value="">— Select class —</option>
-              {getClassesForModule(moduleId).map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
-            </select>
-          </div>
-        </div>
-        <div className="form-row cols2">
-          <div className="form-group"><label>Date</label><input className="form-input" type="date" onChange={e => date = e.target.value} /></div>
-        </div>
-        <div className="form-row cols2">
-          <div className="form-group"><label>Start Time</label><input className="form-input" type="time" onChange={e => startTime = e.target.value} /></div>
-          <div className="form-group"><label>End Time</label><input className="form-input" type="time" onChange={e => endTime = e.target.value} /></div>
-        </div>
-        <div className="form-row cols2">
-          <div className="form-group"><label>Room / Venue</label>
-            <select className="form-select" defaultValue={room} onChange={e => room = e.target.value}>
-              <option value="">— Select room —</option>
-              {db.rooms.map((r: any) => <option key={r.id} value={r.name}>{r.name} ({r.type})</option>)}
-            </select>
-          </div>
-          <div className="form-group"><label>Type</label>
-            <select className="form-select" defaultValue={type} onChange={e => type = e.target.value}>
-              <option>Written Exam</option>
-              <option>Practical Exam</option>
-              <option>Final Practical Exam</option>
-              <option>Final Theory Exam</option>
-              <option>Final Practical Theory Exam</option>
-              <option>Recipe</option>
-              <option>Oral Exam</option>
-            </select>
-          </div>
-        </div>
-        <button className="btn btn-primary" style={{ marginTop: 12, width: '100%' }} onClick={async () => {
-          if (!name || !moduleId) { toast('Name and module are required', 'error'); return; }
-          const { error } = await supabase.from('exams').insert({
-            id: 'exam_' + Date.now(), name, module_id: moduleId,
-            class_id: classId || null, date: date || null,
-            start_time: startTime || null, end_time: endTime || null,
-            room: room || null, type, status: 'scheduled', created_by: currentUser?.id || null,
-          });
-          if (error) { toast(error.message, 'error'); } else {
-            toast('Exam created!', 'success'); closeModal(); reloadDb();
-          }
-        }}>Create Exam</button>
-      </div>
+      <ExamFormModal
+        db={db} currentUser={currentUser} isAdmin={isAdmin}
+        availableModules={availableModules} toast={toast}
+        onDone={() => { closeModal(); reloadDb(); }}
+      />
     ));
   };
 
   const handleEditExam = (exam: typeof exams[0]) => {
     const availableModules = isAdmin ? db.modules : getLecturerModules();
-    let name = exam.name, moduleId = exam.moduleId, classId = exam.classId || '', date = exam.date || '', type = exam.type || 'Written Exam', startTime = exam.startTime || '', endTime = exam.endTime || '', room = exam.room || '';
-
-    const getClassesForModule = (mid: string) => {
-      const lecClassIds = getLecturerClassIds(db.lecturerModules, currentUser?.id || '');
-      const availableClasses = isAdmin ? db.classes : db.classes.filter(c => lecClassIds.includes(c.id));
-      const mod = db.modules.find(m => m.id === mid);
-      const linked = mod ? availableClasses.filter(c => mod.classes.includes(c.id)) : [];
-      return linked.length > 0 ? linked : availableClasses;
-    };
-
     showModal('Edit Exam', (
-      <div>
-        <div className="form-group"><label>Exam Name *</label><input className="form-input" defaultValue={name} onChange={e => name = e.target.value} /></div>
-        <div className="form-row cols2">
-          <div className="form-group"><label>Module *</label>
-            <select className="form-select" defaultValue={moduleId} onChange={e => { moduleId = e.target.value; }}>
-              {availableModules.map(m => <option key={m.id} value={m.id}>{m.name}</option>)}
-            </select>
-          </div>
-          <div className="form-group"><label>Class *</label>
-            <select className="form-select" defaultValue={classId} onChange={e => classId = e.target.value}>
-              <option value="">— Select class —</option>
-              {getClassesForModule(moduleId).map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
-            </select>
-          </div>
-        </div>
-        <div className="form-row cols2">
-          <div className="form-group"><label>Date</label><input className="form-input" type="date" defaultValue={date} onChange={e => date = e.target.value} /></div>
-        </div>
-        <div className="form-row cols2">
-          <div className="form-group"><label>Start Time</label><input className="form-input" type="time" defaultValue={startTime} onChange={e => startTime = e.target.value} /></div>
-          <div className="form-group"><label>End Time</label><input className="form-input" type="time" defaultValue={endTime} onChange={e => endTime = e.target.value} /></div>
-        </div>
-        <div className="form-row cols2">
-          <div className="form-group"><label>Room / Venue</label>
-            <select className="form-select" defaultValue={room} onChange={e => room = e.target.value}>
-              <option value="">— Select room —</option>
-              {db.rooms.map((r: any) => <option key={r.id} value={r.name}>{r.name} ({r.type})</option>)}
-            </select>
-          </div>
-          <div className="form-group"><label>Type</label>
-            <select className="form-select" defaultValue={type} onChange={e => type = e.target.value}>
-              <option>Written Exam</option>
-              <option>Practical Exam</option>
-              <option>Final Practical Exam</option>
-              <option>Final Theory Exam</option>
-              <option>Final Practical Theory Exam</option>
-              <option>Recipe</option>
-              <option>Oral Exam</option>
-            </select>
-          </div>
-        </div>
-        <button className="btn btn-primary" style={{ marginTop: 12, width: '100%' }} onClick={async () => {
-          if (!name || !moduleId) { toast('Name and module are required', 'error'); return; }
-          const { error } = await supabase.from('exams').update({
-            name, module_id: moduleId, class_id: classId || null,
-            date: date || null, start_time: startTime || null, end_time: endTime || null,
-            room: room || null, type,
-          }).eq('id', exam.id);
-          if (error) { toast(error.message, 'error'); } else {
-            toast('Exam updated!', 'success'); closeModal(); reloadDb();
-          }
-        }}>Save Changes</button>
-      </div>
+      <ExamFormModal
+        exam={exam} db={db} currentUser={currentUser} isAdmin={isAdmin}
+        availableModules={availableModules} toast={toast}
+        onDone={() => { closeModal(); reloadDb(); }}
+      />
     ));
   };
 
