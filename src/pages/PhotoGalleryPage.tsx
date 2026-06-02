@@ -19,7 +19,7 @@ export default function PhotoGalleryPage() {
   const { db, currentUser, toast } = useApp();
   const role = currentUser?.role;
   const isStudent = role === "student";
-  const canManage = role === "admin" || role === "lecturer"; // upload + delete
+  const canManage = role === "admin" || role === "super_admin" || role === "lecturer"; // upload + delete
   const canView = canManage || role === "hod" || role === "hoy"; // view folders
   const canUploadToOthers = canManage; // keep alias for existing JSX
 
