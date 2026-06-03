@@ -136,6 +136,9 @@ export interface Programme {
   startYear: number;
   level?: number;
   intakeMonth?: number;
+  // Months this programme accepts intakes in (1 = January, 7 = July). A
+  // certificate may offer both; diplomas offer July only.
+  intakes?: number[];
 }
 
 export interface LecturerModule {

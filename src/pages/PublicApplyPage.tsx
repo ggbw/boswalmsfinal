@@ -9,6 +9,8 @@ interface Programme {
   years: number;
   semesters: number;
   level?: number;
+  intake_month?: number | null;
+  intakes?: number[] | null;
 }
 interface Module {
   id: string;
@@ -260,6 +262,14 @@ function RegistrationForm({
   const [guardEmail, setGuardEmail] = useState("");
   // Programme
   const [secondChoice, setSecondChoice] = useState("");
+  // Intakes this programme offers (1 = January, 7 = July); applicant picks one.
+  const offeredIntakes =
+    firstChoice.intakes && firstChoice.intakes.length > 0
+      ? firstChoice.intakes
+      : firstChoice.intake_month
+        ? [firstChoice.intake_month]
+        : [7];
+  const [intake, setIntake] = useState<number>(offeredIntakes[0]);
   // Documents
   const [idFile, setIdFile] = useState<File | null>(null);
   const [qualFile, setQualFile] = useState<File | null>(null);
@@ -339,6 +349,7 @@ function RegistrationForm({
         applicant_id: applicantId,
         first_choice_programme: firstChoice.id,
         second_choice_programme: secondChoice || null,
+        intake_month: intake,
         status: "submitted",
         submitted_at: new Date().toISOString(),
       });
@@ -530,6 +541,24 @@ function RegistrationForm({
                 disabled
                 style={{ background: "#f3f4f6", color: "#374151" }}
               />
+            </FG>
+            <FG label="Intake">
+              {offeredIntakes.length > 1 ? (
+                <select className="form-select" value={intake} onChange={(e) => setIntake(Number(e.target.value))}>
+                  {offeredIntakes.map((m) => (
+                    <option key={m} value={m}>
+                      {m === 1 ? "January" : m === 7 ? "July" : `Month ${m}`}
+                    </option>
+                  ))}
+                </select>
+              ) : (
+                <input
+                  className="form-input"
+                  value={offeredIntakes[0] === 1 ? "January" : "July"}
+                  disabled
+                  style={{ background: "#f3f4f6", color: "#374151" }}
+                />
+              )}
             </FG>
             <FG label="Second Choice (optional)">
               <select className="form-select" onChange={(e) => setSecondChoice(e.target.value)}>

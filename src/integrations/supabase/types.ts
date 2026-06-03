@@ -170,6 +170,7 @@ export type Database = {
           enrolled_at: string | null
           first_choice_programme: string | null
           id: string
+          intake_month: number | null
           rejection_reason: string | null
           reviewed_at: string | null
           second_choice_programme: string | null
@@ -185,6 +186,7 @@ export type Database = {
           enrolled_at?: string | null
           first_choice_programme?: string | null
           id: string
+          intake_month?: number | null
           rejection_reason?: string | null
           reviewed_at?: string | null
           second_choice_programme?: string | null
@@ -200,6 +202,7 @@ export type Database = {
           enrolled_at?: string | null
           first_choice_programme?: string | null
           id?: string
+          intake_month?: number | null
           rejection_reason?: string | null
           reviewed_at?: string | null
           second_choice_programme?: string | null
@@ -1979,6 +1982,7 @@ export type Database = {
         Row: {
           id: string
           intake_month: number | null
+          intakes: number[] | null
           level: number | null
           name: string
           semesters: number
@@ -1989,6 +1993,7 @@ export type Database = {
         Insert: {
           id: string
           intake_month?: number | null
+          intakes?: number[] | null
           level?: number | null
           name: string
           semesters?: number
@@ -1999,6 +2004,7 @@ export type Database = {
         Update: {
           id?: string
           intake_month?: number | null
+          intakes?: number[] | null
           level?: number | null
           name?: string
           semesters?: number

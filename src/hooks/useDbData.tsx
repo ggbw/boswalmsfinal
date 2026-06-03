@@ -69,6 +69,9 @@ export function useDbData() {
         id: p.id, name: p.name, years: p.years, semesters: p.semesters,
         type: p.type, startYear: p.start_year, level: p.level ?? null,
         intakeMonth: p.intake_month ?? 7,
+        // Falls back to the single intake_month when the intakes column is
+        // absent (e.g. before the merge migration is applied).
+        intakes: Array.isArray(p.intakes) && p.intakes.length > 0 ? p.intakes : [p.intake_month ?? 7],
       }));
 
       const initialDb: DB = {

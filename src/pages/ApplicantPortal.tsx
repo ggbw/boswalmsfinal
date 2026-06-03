@@ -316,9 +316,12 @@ function DownloadLetterBtn({ applicationId, type, progName }: { applicationId:st
         supabase.from('programmes').select('name,type,years,intake_month').eq('id', appl.first_choice_programme).single(),
       ]);
       const applicant = applicantRes.data;
-      const prog = progRes.data
+      const prog: any = progRes.data
         ? progRes.data
         : { name: progName || '—', type: '', years: 3, intake_month: 7 };
+      // The applicant chose their intake (Jan/July) at apply time; the offer
+      // letter should reflect that rather than the programme's default.
+      if (appl?.intake_month) prog.intake_month = appl.intake_month;
       const cfg = configRes.data;
 
       const fmt = (iso: string) => new Date(iso).toLocaleDateString('en-GB',{day:'numeric',month:'long',year:'numeric'});

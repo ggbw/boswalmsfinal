@@ -50,7 +50,8 @@ export default function ConfigPage() {
       semesters = 2,
       startYear = new Date().getFullYear(),
       level = 6,
-      intakeMonth = 7;
+      intakeJan = false,
+      intakeJul = true;
     showModal(
       "Add Programme",
       <div>
@@ -114,11 +115,15 @@ export default function ConfigPage() {
             />
           </div>
           <div className="form-group">
-            <label>Intake Month</label>
-            <select className="form-select" defaultValue={intakeMonth} onChange={(e) => (intakeMonth = Number(e.target.value))}>
-              <option value={7}>July</option>
-              <option value={1}>January</option>
-            </select>
+            <label>Intakes</label>
+            <div style={{ display: "flex", gap: 16, alignItems: "center", paddingTop: 8 }}>
+              <label style={{ display: "flex", gap: 6, alignItems: "center", fontWeight: 400, cursor: "pointer" }}>
+                <input type="checkbox" defaultChecked={false} onChange={(e) => (intakeJan = e.target.checked)} /> January
+              </label>
+              <label style={{ display: "flex", gap: 6, alignItems: "center", fontWeight: 400, cursor: "pointer" }}>
+                <input type="checkbox" defaultChecked={true} onChange={(e) => (intakeJul = e.target.checked)} /> July
+              </label>
+            </div>
           </div>
         </div>
         <button
@@ -129,10 +134,15 @@ export default function ConfigPage() {
               toast("Programme name is required", "error");
               return;
             }
+            const intakes = [intakeJan ? 1 : null, intakeJul ? 7 : null].filter((m): m is number => m !== null);
+            if (intakes.length === 0) {
+              toast("Select at least one intake", "error");
+              return;
+            }
             const id = "prog_" + Date.now();
             const { error } = await supabase
               .from("programmes")
-              .insert({ id, name, type, years, semesters, start_year: startYear, level, intake_month: intakeMonth });
+              .insert({ id, name, type, years, semesters, start_year: startYear, level, intake_month: intakes[0], intakes });
             if (error) {
               toast(error.message, "error");
             } else {
@@ -155,7 +165,8 @@ export default function ConfigPage() {
       semesters = prog.semesters,
       startYear = prog.startYear,
       level = prog.level ?? 6,
-      intakeMonth = prog.intakeMonth ?? 7;
+      intakeJan = (prog.intakes ?? [prog.intakeMonth ?? 7]).includes(1),
+      intakeJul = (prog.intakes ?? [prog.intakeMonth ?? 7]).includes(7);
     showModal(
       "Edit Programme",
       <div>
@@ -219,20 +230,29 @@ export default function ConfigPage() {
             />
           </div>
           <div className="form-group">
-            <label>Intake Month</label>
-            <select className="form-select" defaultValue={intakeMonth} onChange={(e) => (intakeMonth = Number(e.target.value))}>
-              <option value={7}>July</option>
-              <option value={1}>January</option>
-            </select>
+            <label>Intakes</label>
+            <div style={{ display: "flex", gap: 16, alignItems: "center", paddingTop: 8 }}>
+              <label style={{ display: "flex", gap: 6, alignItems: "center", fontWeight: 400, cursor: "pointer" }}>
+                <input type="checkbox" defaultChecked={intakeJan} onChange={(e) => (intakeJan = e.target.checked)} /> January
+              </label>
+              <label style={{ display: "flex", gap: 6, alignItems: "center", fontWeight: 400, cursor: "pointer" }}>
+                <input type="checkbox" defaultChecked={intakeJul} onChange={(e) => (intakeJul = e.target.checked)} /> July
+              </label>
+            </div>
           </div>
         </div>
         <div style={{ display: "flex", gap: 8, marginTop: 12 }}>
           <button
             className="btn btn-primary"
             onClick={async () => {
+              const intakes = [intakeJan ? 1 : null, intakeJul ? 7 : null].filter((m): m is number => m !== null);
+              if (intakes.length === 0) {
+                toast("Select at least one intake", "error");
+                return;
+              }
               const { error } = await supabase
                 .from("programmes")
-                .update({ name, type, years, semesters, start_year: startYear, level, intake_month: intakeMonth })
+                .update({ name, type, years, semesters, start_year: startYear, level, intake_month: intakes[0], intakes })
                 .eq("id", prog.id);
               if (error) {
                 toast(error.message, "error");
