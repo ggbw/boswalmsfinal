@@ -42,9 +42,11 @@ export default function MyModulesPage() {
   const allModsWithMarks = allMarks.length;
   const currentMods = [...currentClassMods, ...overrideMods];
   const currentMarks = allMarks.filter((mk) => currentModIds.has(mk.moduleId));
-  const passingCurrent = currentMarks.filter((mk) => calcModuleMark(mk) >= 50).length;
+  const markHasPrac = (mk: { moduleId: string }) =>
+    db.modules.find((mo) => mo.id === mk.moduleId)?.hasPractical !== false;
+  const passingCurrent = currentMarks.filter((mk) => calcModuleMark(mk, markHasPrac(mk)) >= 50).length;
   const avgMark = allModsWithMarks
-    ? Math.round(allMarks.reduce((a, mk) => a + calcModuleMark(mk), 0) / allModsWithMarks)
+    ? Math.round(allMarks.reduce((a, mk) => a + calcModuleMark(mk, markHasPrac(mk)), 0) / allModsWithMarks)
     : null;
 
   const getLecturer = (mod: (typeof currentMods)[0]) => {
@@ -61,7 +63,7 @@ export default function MyModulesPage() {
 
   const renderModuleCard = (m: (typeof currentMods)[0], isPast: boolean) => {
     const mark = allMarks.find((mk) => mk.moduleId === m.id);
-    const mm = mark ? calcModuleMark(mark) : null;
+    const mm = mark ? calcModuleMark(mark, m.hasPractical !== false) : null;
     const g = mm !== null ? grade(mm) : null;
     const passed = mm !== null && mm >= 50;
     const dept = db.departments.find((d) => d.id === m.dept);

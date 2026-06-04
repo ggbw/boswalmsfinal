@@ -27,7 +27,7 @@ export function useDbData() {
         supabase.from("programmes").select("*"),
         supabase.from("departments").select("*"),
         supabase.from("classes").select("*"),
-        supabase.from("modules").select("id,code,name,dept"),
+        supabase.from("modules").select("id,code,name,dept,has_practical"),
         supabase.from("module_classes").select("module_id,class_id"),
         supabase.from("students").select("id,student_id,name,gender,dob,mobile,class_id,guardian,programme,year,semester,status,email,progression_status,national_id,nationality,guardian_email,guardian_mobile,enrolment_date,completion_date"),
         supabase.from("notifications").select("*").order("date", { ascending: false }).limit(50),
@@ -120,6 +120,7 @@ export function useDbData() {
         modules: (modulesRes.data || []).map((m: any) => ({
           id: m.id, code: m.code, name: m.name, dept: m.dept || "",
           classes: moduleClassMap[m.id] || [],
+          hasPractical: m.has_practical ?? true,
         })),
         students: (studentsRes.data || []).map((s: any) => ({
           id: s.id, studentId: s.student_id, name: s.name,

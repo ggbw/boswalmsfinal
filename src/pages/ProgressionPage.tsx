@@ -40,7 +40,10 @@ export default function ProgressionPage() {
         toast(`${student.name} has no marks recorded. Cannot approve progression.`, 'error');
         return false;
       }
-      const failingModules = studentMarks.filter(m => calcModuleMark(m) < 50);
+      const failingModules = studentMarks.filter(m => {
+        const mod = db.modules.find(mo => mo.id === m.moduleId);
+        return calcModuleMark(m, mod?.hasPractical !== false) < 50;
+      });
       if (failingModules.length > 0) {
         const modNames = failingModules.map(m => db.modules.find(mo => mo.id === m.moduleId)?.name || m.moduleId).join(', ');
         toast(`${student.name} has failing modules: ${modNames}. Cannot approve.`, 'error');

@@ -49,6 +49,10 @@ export interface Module {
   name: string;
   dept: string;
   classes: string[];
+  // Whether the module is assessed with a practical component. Practical
+  // modules use CW 40% + Practical 20% + Final Exam 40%; non-practical modules
+  // use CW 60% + Final Exam 40%. Treated as `true` when undefined (legacy).
+  hasPractical?: boolean;
 }
 export interface Mark {
   studentId: string;
@@ -1602,11 +1606,14 @@ export function createInitialDB(): DB {
   return db;
 }
 
-export function calcModuleMark(m: Mark): number {
-  const cw = ((m.test1 + m.test2 + m.practTest + m.indAss + m.grpAss) / 5) * 0.4;
-  const fm = m.finalExam * 0.4;
-  const pm = m.practical * 0.2;
-  return Math.round(cw + fm + pm);
+export function calcModuleMark(m: Mark, hasPractical: boolean = true): number {
+  const cwAvg = (m.test1 + m.test2 + m.practTest + m.indAss + m.grpAss) / 5;
+  if (!hasPractical) {
+    // Non-practical modules: coursework 60% + final exam 40%.
+    return Math.round(cwAvg * 0.6 + m.finalExam * 0.4);
+  }
+  // Practical modules: coursework 40% + practical 20% + final exam 40%.
+  return Math.round(cwAvg * 0.4 + m.practical * 0.2 + m.finalExam * 0.4);
 }
 
 export function grade(pct: number): string {

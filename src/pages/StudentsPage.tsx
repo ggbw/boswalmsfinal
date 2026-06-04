@@ -74,7 +74,7 @@ export default function StudentsPage() {
           }}
         >
           New attempt for <strong>{student.name}</strong>. Previous result:{" "}
-          <strong>{calcModuleMark(mark)}% (Fail)</strong> in Year {mark.year} · Semester {mark.semester}.
+          <strong>{calcModuleMark(mark, module?.hasPractical !== false)}% (Fail)</strong> in Year {mark.year} · Semester {mark.semester}.
         </div>
         <div className="form-row cols2">
           <div className="form-group">
@@ -824,7 +824,7 @@ function StudentProfilePanel({ student: s, db, role, onClose, onEdit, onRetake }
             <tbody>
               {enrolledMods.map((m: any) => {
                 const mk = marks.find((x: any) => x.moduleId === m.id);
-                const mm = mk ? calcModuleMark(mk) : null;
+                const mm = mk ? calcModuleMark(mk, m.hasPractical !== false) : null;
                 const g = mm !== null ? grade(mm) : null;
                 return (
                   <tr key={m.id}>
@@ -878,7 +878,7 @@ function StudentProfilePanel({ student: s, db, role, onClose, onEdit, onRetake }
                 .sort((a: any, b: any) => attemptRank(a) - attemptRank(b))
                 .map((m: any) => {
                   const mod = db.modules.find((mo: any) => mo.id === m.moduleId);
-                  const mm = calcModuleMark(m);
+                  const mm = calcModuleMark(m, mod?.hasPractical !== false);
                   const g = grade(mm);
                   const latest = isLatestAttempt(m);
                   const superseded = !latest;

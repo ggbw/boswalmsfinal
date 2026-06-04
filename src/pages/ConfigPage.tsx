@@ -419,6 +419,7 @@ export default function ConfigPage() {
       dept = db.departments[0]?.id || "";
     let customName = "";
     let useCustom = false;
+    let hasPractical = true;
     showModal(
       "Add Module",
       <div>
@@ -466,6 +467,15 @@ export default function ConfigPage() {
             </select>
           </div>
         </div>
+        <div className="form-group">
+          <label style={{ display: "flex", gap: 8, alignItems: "center", fontWeight: 400, cursor: "pointer" }}>
+            <input type="checkbox" defaultChecked={hasPractical} onChange={(e) => (hasPractical = e.target.checked)} />
+            Module has a practical component
+          </label>
+          <div style={{ fontSize: 11, color: "var(--text2)", marginTop: 4 }}>
+            With practical: Coursework 40% + Practical 20% + Final Exam 40%. Without: Coursework 60% + Final Exam 40%.
+          </div>
+        </div>
         <button
           className="btn btn-primary"
           style={{ marginTop: 12 }}
@@ -476,7 +486,7 @@ export default function ConfigPage() {
               return;
             }
             const id = "mod_" + Date.now();
-            const { error } = await supabase.from("modules").insert({ id, name: finalName, code, dept: dept || null });
+            const { error } = await supabase.from("modules").insert({ id, name: finalName, code, dept: dept || null, has_practical: hasPractical });
             if (error) {
               toast(error.message, "error");
             } else {
@@ -496,6 +506,7 @@ export default function ConfigPage() {
     let name = mod.name,
       code = mod.code,
       dept = mod.dept || "";
+    let hasPractical = mod.hasPractical !== false;
     showModal(
       "Edit Module",
       <div>
@@ -520,6 +531,15 @@ export default function ConfigPage() {
             </select>
           </div>
         </div>
+        <div className="form-group">
+          <label style={{ display: "flex", gap: 8, alignItems: "center", fontWeight: 400, cursor: "pointer" }}>
+            <input type="checkbox" defaultChecked={hasPractical} onChange={(e) => (hasPractical = e.target.checked)} />
+            Module has a practical component
+          </label>
+          <div style={{ fontSize: 11, color: "var(--text2)", marginTop: 4 }}>
+            With practical: Coursework 40% + Practical 20% + Final Exam 40%. Without: Coursework 60% + Final Exam 40%.
+          </div>
+        </div>
         <div style={{ display: "flex", gap: 8, marginTop: 12 }}>
           <button
             className="btn btn-primary"
@@ -530,7 +550,7 @@ export default function ConfigPage() {
               }
               const { error } = await supabase
                 .from("modules")
-                .update({ name, code, dept: dept || null })
+                .update({ name, code, dept: dept || null, has_practical: hasPractical })
                 .eq("id", mod.id);
               if (error) {
                 toast(error.message, "error");

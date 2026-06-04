@@ -317,7 +317,7 @@ export default function TranscriptsPage() {
                             allMarks
                               .map((m: any) => {
                                 const mod = db.modules.find((mo: any) => mo.id === m.moduleId);
-                                const mark = calcModuleMark(m);
+                                const mark = calcModuleMark(m, mod?.hasPractical !== false);
                                 return { mark, module: mod, markRecord: m };
                               })
                               .filter((x: any) => x.module)
@@ -363,7 +363,7 @@ export function TranscriptView({ stu }: { stu: any }) {
     allMarks
       .map((m: any) => {
         const mod = db.modules.find((mo: any) => mo.id === m.moduleId);
-        const mark = calcModuleMark(m);
+        const mark = calcModuleMark(m, mod?.hasPractical !== false);
         return { mark, module: mod, markRecord: m };
       })
       .filter((x) => x.module)

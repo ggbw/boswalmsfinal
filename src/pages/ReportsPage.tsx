@@ -82,6 +82,11 @@ export default function ReportsPage() {
     const classModules = db.modules;
     const moduleId = selModuleId || classModules[0]?.id || "";
     const mod = db.modules.find((m) => m.id === moduleId);
+    // Non-practical modules are weighted Coursework 60% + Final Exam 40%
+    // (no practical section); practical modules stay CW 40% + Prac 20% + Exam 40%.
+    const moduleHasPractical = mod?.hasPractical !== false;
+    const cwWeight = moduleHasPractical ? 0.4 : 0.6;
+    const cwPct = Math.round(cwWeight * 100);
     const students = db.students.filter((s) => s.classId === cls.id);
     const prog = db.config.programmes.find((p) => p.id === cls.programme);
 
@@ -114,7 +119,7 @@ export default function ReportsPage() {
         ...classAssignments.map((a) => score(s.studentId, a.id)),
       ].filter((x) => x !== null) as number[];
       const theoryCWAvg = theoryCWScores.length ? avg(theoryCWScores) : null;
-      const theory40 = theoryCWAvg !== null ? r2(theoryCWAvg * 0.4) : null;
+      const theory40 = theoryCWAvg !== null ? r2(theoryCWAvg * cwWeight) : null;
 
       // Final theory exam
       const finalTheory = finalTheoryExam ? score(s.studentId, finalTheoryExam.id) : null;
@@ -144,7 +149,8 @@ export default function ReportsPage() {
       // Practical mark
       const pracParts = [pracCW70, finalPrac20, finalPracT10].filter((x) => x !== null) as number[];
       const practicalMark = pracParts.length ? r2(pracParts.reduce((a, b) => a + b, 0)) : null;
-      const prac20 = practicalMark !== null ? r2(practicalMark * 0.2) : null;
+      // Non-practical modules contribute nothing from the practical section.
+      const prac20 = moduleHasPractical && practicalMark !== null ? r2(practicalMark * 0.2) : null;
 
       // Module mark — always calculated, missing parts treated as 0
       const moduleMark = r2((theory40 ?? 0) + (prac20 ?? 0) + (final40 ?? 0));
@@ -184,7 +190,9 @@ export default function ReportsPage() {
       : 0;
 
     const hasTheory = theoryCWExams.length > 0 || classAssignments.length > 0 || finalTheoryExam;
-    const hasPractical = practicalCWExams.length > 0 || recipeExams.length > 0 || finalPracExam || finalPracTheo;
+    const hasPractical =
+      moduleHasPractical &&
+      (practicalCWExams.length > 0 || recipeExams.length > 0 || !!finalPracExam || !!finalPracTheo);
 
     const handleExport = async () => {
       if (!document.getElementById("sheetjs")) {
@@ -210,7 +218,7 @@ export default function ReportsPage() {
         "Surname",
         "Student No.",
         ...thHeaders,
-        ...(thHeaders.length > 0 ? ["CW Avg", "40% CW"] : []),
+        ...(thHeaders.length > 0 ? ["CW Avg", `${cwPct}% CW`] : []),
         ...(finalTheoryExam ? [finalTheoryExam.name, "40% Final Exam"] : []),
         ...(hasPractical
           ? [
@@ -436,7 +444,7 @@ export default function ReportsPage() {
                             <th
                               style={{ background: "#002060", color: "#C9A227", textAlign: "center", fontWeight: 700 }}
                             >
-                              40% CW
+                              {cwPct}% CW
                             </th>
                           </>
                         )}
@@ -734,8 +742,10 @@ export default function ReportsPage() {
                     <th style={{ width: 30 }}>No</th>
                     <th>Student</th>
                     <th>ID</th>
-                    <th style={{ background: "#002060", color: "#C9A227", textAlign: "center" }}>40% CW</th>
-                    <th style={{ background: "#7f3f00", color: "#ffd580", textAlign: "center" }}>20% Practical</th>
+                    <th style={{ background: "#002060", color: "#C9A227", textAlign: "center" }}>{cwPct}% CW</th>
+                    {moduleHasPractical && (
+                      <th style={{ background: "#7f3f00", color: "#ffd580", textAlign: "center" }}>20% Practical</th>
+                    )}
                     <th style={{ background: "#3d0000", color: "#fff", textAlign: "center" }}>40% Final Exam</th>
                     <th style={{ background: "#002060", color: "#fff", textAlign: "center", fontWeight: 800 }}>
                       Module Mark
@@ -754,11 +764,13 @@ export default function ReportsPage() {
                       >
                         {r.theory40 ?? "—"}
                       </td>
-                      <td
-                        style={{ textAlign: "center", fontFamily: "'JetBrains Mono',monospace", background: "#fdecd0" }}
-                      >
-                        {r.prac20 ?? 0}
-                      </td>
+                      {moduleHasPractical && (
+                        <td
+                          style={{ textAlign: "center", fontFamily: "'JetBrains Mono',monospace", background: "#fdecd0" }}
+                        >
+                          {r.prac20 ?? 0}
+                        </td>
+                      )}
                       <td
                         style={{ textAlign: "center", fontFamily: "'JetBrains Mono',monospace", background: "#fdecea" }}
                       >
@@ -782,7 +794,7 @@ export default function ReportsPage() {
                   ))}
                   {classAvg !== null && (
                     <tr style={{ background: "#002060", color: "#fff", fontWeight: 700 }}>
-                      <td colSpan={6} style={{ textAlign: "right", paddingRight: 12, fontSize: 11, color: "#C9A227" }}>
+                      <td colSpan={moduleHasPractical ? 6 : 5} style={{ textAlign: "right", paddingRight: 12, fontSize: 11, color: "#C9A227" }}>
                         CLASS AVERAGE
                       </td>
                       <td style={{ textAlign: "center", fontFamily: "'JetBrains Mono',monospace", fontSize: 14 }}>
@@ -891,8 +903,10 @@ export default function ReportsPage() {
                   if (sMarks.length) {
                     const a = Math.round(
                       sMarks.reduce((acc, m) => {
-                        const cw = ((m.test1 + m.test2 + m.practTest + m.indAss + m.grpAss) / 5) * 0.4;
-                        return acc + cw + m.finalExam * 0.4 + m.practical * 0.2;
+                        const mod = db.modules.find((mo) => mo.id === m.moduleId);
+                        const hasPrac = mod?.hasPractical !== false;
+                        const cwAvg = (m.test1 + m.test2 + m.practTest + m.indAss + m.grpAss) / 5;
+                        return acc + (hasPrac ? cwAvg * 0.4 + m.practical * 0.2 : cwAvg * 0.6) + m.finalExam * 0.4;
                       }, 0) / sMarks.length,
                     );
                     const g = grade(a);

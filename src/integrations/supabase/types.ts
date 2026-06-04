@@ -1744,18 +1744,21 @@ export type Database = {
         Row: {
           code: string
           dept: string | null
+          has_practical: boolean
           id: string
           name: string
         }
         Insert: {
           code: string
           dept?: string | null
+          has_practical?: boolean
           id: string
           name: string
         }
         Update: {
           code?: string
           dept?: string | null
+          has_practical?: boolean
           id?: string
           name?: string
         }
