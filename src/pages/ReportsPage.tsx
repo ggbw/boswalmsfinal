@@ -905,7 +905,9 @@ export default function ReportsPage() {
                       sMarks.reduce((acc, m) => {
                         const mod = db.modules.find((mo) => mo.id === m.moduleId);
                         const hasPrac = mod?.hasPractical !== false;
-                        const cwAvg = (m.test1 + m.test2 + m.practTest + m.indAss + m.grpAss) / 5;
+                        const cwAvg = hasPrac
+                          ? (m.test1 + m.test2 + m.practTest + m.indAss + m.grpAss) / 5
+                          : (m.test1 + m.test2 + m.indAss + m.grpAss) / 4;
                         return acc + (hasPrac ? cwAvg * 0.4 + m.practical * 0.2 : cwAvg * 0.6) + m.finalExam * 0.4;
                       }, 0) / sMarks.length,
                     );

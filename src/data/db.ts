@@ -1607,12 +1607,14 @@ export function createInitialDB(): DB {
 }
 
 export function calcModuleMark(m: Mark, hasPractical: boolean = true): number {
-  const cwAvg = (m.test1 + m.test2 + m.practTest + m.indAss + m.grpAss) / 5;
   if (!hasPractical) {
-    // Non-practical modules: coursework 60% + final exam 40%.
+    // Theory-only modules: coursework 60% + final exam 40%.
+    // No practical or practical test — coursework averages the 4 theory components.
+    const cwAvg = (m.test1 + m.test2 + m.indAss + m.grpAss) / 4;
     return Math.round(cwAvg * 0.6 + m.finalExam * 0.4);
   }
   // Practical modules: coursework 40% + practical 20% + final exam 40%.
+  const cwAvg = (m.test1 + m.test2 + m.practTest + m.indAss + m.grpAss) / 5;
   return Math.round(cwAvg * 0.4 + m.practical * 0.2 + m.finalExam * 0.4);
 }
 

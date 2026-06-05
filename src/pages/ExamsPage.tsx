@@ -25,6 +25,15 @@ function ExamFormModal({
     return linked.length > 0 ? linked : availableClasses;
   };
 
+  // Exam types split by whether they belong to the practical section of a module.
+  // Theory-only modules (hasPractical === false) must not offer practical types.
+  const THEORY_TYPES = ['Written Exam', 'Final Theory Exam', 'Oral Exam'];
+  const PRACTICAL_TYPES = ['Practical Exam', 'Final Practical Exam', 'Final Practical Theory Exam', 'Recipe'];
+  const typeOptionsFor = (mid: string) => {
+    const mod = db.modules.find((m: any) => m.id === mid);
+    return mod?.hasPractical === false ? THEORY_TYPES : [...THEORY_TYPES, ...PRACTICAL_TYPES];
+  };
+
   const firstModuleId = exam?.moduleId || availableModules[0]?.id || '';
   const [name, setName] = useState(exam?.name || '');
   const [moduleId, setModuleId] = useState(firstModuleId);
@@ -42,7 +51,11 @@ function ExamFormModal({
     setModuleId(mid);
     const next = classesForModule(mid);
     setClassId(prev => (next.some((c: any) => c.id === prev) ? prev : next[0]?.id || ''));
+    const validTypes = typeOptionsFor(mid);
+    setType(prev => (validTypes.includes(prev) ? prev : validTypes[0]));
   };
+
+  const typeOptions = typeOptionsFor(moduleId);
 
   const handleSave = async () => {
     if (!name || !moduleId) { toast('Name and module are required', 'error'); return; }
@@ -96,13 +109,9 @@ function ExamFormModal({
         </div>
         <div className="form-group"><label>Type</label>
           <select className="form-select" value={type} onChange={e => setType(e.target.value)}>
-            <option>Written Exam</option>
-            <option>Practical Exam</option>
-            <option>Final Practical Exam</option>
-            <option>Final Theory Exam</option>
-            <option>Final Practical Theory Exam</option>
-            <option>Recipe</option>
-            <option>Oral Exam</option>
+            {/* Existing exam may carry a type no longer valid for the module — keep it selectable. */}
+            {!typeOptions.includes(type) && <option>{type}</option>}
+            {typeOptions.map(t => <option key={t}>{t}</option>)}
           </select>
         </div>
       </div>
