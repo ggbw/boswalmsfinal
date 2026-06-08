@@ -235,7 +235,7 @@ export default function HRUserManagementPage() {
               // Assign the chosen role.
               const { error: roleErr } = await supabase
                 .from('user_roles')
-                .insert({ user_id: userId, role });
+                .insert({ user_id: userId, role } as never);
               if (roleErr) {
                 toast(`Role assignment failed: ${roleErr.message}`, 'error');
                 return;
@@ -301,7 +301,7 @@ export default function HRUserManagementPage() {
               if (role !== u.role) {
                 const { error: roleErr } = await supabase
                   .from('user_roles')
-                  .update({ role })
+                  .update({ role } as never)
                   .eq('user_id', u.user_id);
                 if (roleErr) { toast(roleErr.message, 'error'); return; }
               }

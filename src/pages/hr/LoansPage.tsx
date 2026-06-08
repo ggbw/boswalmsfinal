@@ -141,14 +141,14 @@ export default function LoansPage() {
 
     let { data: inserted, error } = await supabase
       .from('advance_salaries')
-      .insert(basePayload)
+      .insert(basePayload as never)
       .select('id')
       .single();
     if (error && isStageColumnMissingError(error)) {
       const legacy = stripStageFields(basePayload);
       const retry = await supabase
         .from('advance_salaries')
-        .insert(legacy)
+        .insert(legacy as never)
         .select('id')
         .single();
       inserted = retry.data;
