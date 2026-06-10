@@ -3,18 +3,34 @@ import { useApp } from "@/context/AppContext";
 import { calcModuleMark } from "@/data/db";
 
 // ── Grading ───────────────────────────────────────────────────────────────────
-// University letter-grade scale (percentage → letter).
+// University letter-grade scale (percentage → letter) with +/- bands.
 function letterGrade(pct: number): string {
-  if (pct >= 80) return "A";
+  if (pct >= 86) return "A";
+  if (pct >= 80) return "A-";
+  if (pct >= 75) return "B+";
   if (pct >= 70) return "B";
-  if (pct >= 60) return "C";
-  if (pct >= 50) return "D";
+  if (pct >= 65) return "B-";
+  if (pct >= 60) return "C+";
+  if (pct >= 55) return "C";
+  if (pct >= 50) return "C-";
+  if (pct >= 40) return "D";
   return "F";
 }
 
 // Grade points on a 4.0 scale.
 function gradePoint(letter: string): number {
-  const m: Record<string, number> = { A: 4.0, B: 3.0, C: 2.0, D: 1.0, F: 0.0 };
+  const m: Record<string, number> = {
+    A: 4.0,
+    "A-": 3.7,
+    "B+": 3.3,
+    B: 3.0,
+    "B-": 2.7,
+    "C+": 2.3,
+    C: 2.0,
+    "C-": 1.7,
+    D: 1.0,
+    F: 0.0,
+  };
   return m[letter] ?? 0;
 }
 
@@ -30,11 +46,16 @@ function computeGPA(mods: PassedModule[]): string {
 
 // Grading scale displayed at the foot of the transcript.
 const GRADE_SCALE: [string, string][] = [
-  ["A", "80–100% · 4.0"],
-  ["B", "70–79% · 3.0"],
-  ["C", "60–69% · 2.0"],
-  ["D", "50–59% · 1.0"],
-  ["F", "0–49% · 0.0 (Fail)"],
+  ["A", "86–100% · 4.0"],
+  ["A-", "80–85% · 3.7"],
+  ["B+", "75–79% · 3.3"],
+  ["B", "70–74% · 3.0"],
+  ["B-", "65–69% · 2.7"],
+  ["C+", "60–64% · 2.3"],
+  ["C", "55–59% · 2.0"],
+  ["C-", "50–54% · 1.7"],
+  ["D", "40–49% · 1.0"],
+  ["F", "0–39% · 0.0 (Fail)"],
 ];
 
 function formatDate(dateStr?: string): string {
