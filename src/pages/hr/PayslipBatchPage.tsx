@@ -213,7 +213,7 @@ export default function PayslipBatchPage() {
           deductions_breakdown: deductionsBreakdown,
           benefits_breakdown: [],
           status: 'draft',
-        });
+        } as never);
         if (error) {
           out.push({ employee: e.employee_name, error: error.message });
         } else {

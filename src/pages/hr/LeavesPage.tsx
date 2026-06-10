@@ -439,10 +439,10 @@ export default function LeavesPage() {
       applied_date: new Date().toISOString().slice(0, 10),
     };
     let attempt: Record<string, unknown> = payload;
-    let { data: inserted, error } = await supabase.from('leave_requests').insert(attempt).select('*, leave_types(name)').single();
+    let { data: inserted, error } = await supabase.from('leave_requests').insert(attempt as never).select('*, leave_types(name)').single();
     if (error && isStageColumnMissingError(error)) {
       attempt = stripStageFields(attempt);
-      ({ data: inserted, error } = await supabase.from('leave_requests').insert(attempt).select('*, leave_types(name)').single());
+      ({ data: inserted, error } = await supabase.from('leave_requests').insert(attempt as never).select('*, leave_types(name)').single());
     }
     // Strip any other columns missing from this DB (e.g. admin_notes/handover_notes when the leave-enhancements migration hasn't been applied)
     for (let i = 0; i < 6 && error; i++) {
@@ -451,7 +451,7 @@ export default function LeavesPage() {
       const next = { ...attempt };
       delete next[missing];
       attempt = next;
-      ({ data: inserted, error } = await supabase.from('leave_requests').insert(attempt).select('*, leave_types(name)').single());
+      ({ data: inserted, error } = await supabase.from('leave_requests').insert(attempt as never).select('*, leave_types(name)').single());
     }
     if (error) { toast(error.message, 'error'); return; }
     // Bump pending_days on allocation

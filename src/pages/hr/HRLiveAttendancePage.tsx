@@ -321,7 +321,7 @@ export default function HRLiveAttendancePage() {
                   padding: '10px 16px', fontWeight: 500, whiteSpace: 'nowrap',
                   borderBottom: `2px solid ${isActive ? 'var(--primary)' : 'transparent'}`,
                   color: isActive ? 'var(--primary)' : 'var(--text2)',
-                  background: 'none', border: 'none', borderBottom: `2px solid ${isActive ? 'var(--primary)' : 'transparent'}`,
+                  background: 'none', border: 'none',
                   cursor: 'pointer', fontSize: 14,
                 }}
               >

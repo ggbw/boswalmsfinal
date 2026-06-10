@@ -111,7 +111,7 @@ export async function resolveRecipientsByRole(
   const { data: rows } = await supabase
     .from('user_roles')
     .select('user_id, role')
-    .in('role', roles);
+    .in('role', roles as never);
   if (!rows || rows.length === 0) return [];
   const userIds = (rows as Array<{ user_id: string }>).map((r) => r.user_id);
   // Pull email + name from profiles (boswalmsfinal's profile shape has both).

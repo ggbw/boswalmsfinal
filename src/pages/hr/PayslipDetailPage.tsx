@@ -145,7 +145,7 @@ export default function PayslipDetailPage() {
       .maybeSingle()
       .then(({ data }) => {
         if (!active) return;
-        if (data) setForm(fromPayslip(data as Payslip));
+        if (data) setForm(fromPayslip(data as unknown as Payslip));
         setLoading(false);
       });
     return () => { active = false; };
@@ -221,8 +221,8 @@ export default function PayslipDetailPage() {
     };
 
     const { data, error } = form.id
-      ? await supabase.from('payslips').update(payload).eq('id', form.id).select('id').single()
-      : await supabase.from('payslips').insert(payload).select('id').single();
+      ? await supabase.from('payslips').update(payload as never).eq('id', form.id).select('id').single()
+      : await supabase.from('payslips').insert(payload as never).select('id').single();
     setSaving(false);
     if (error) { toast(error.message, 'error'); return; }
     toast(form.id ? 'Payslip updated' : 'Payslip created', 'success');

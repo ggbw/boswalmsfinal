@@ -48,7 +48,7 @@ export async function setCompanySetting(key: string, value: string, description?
   if (description !== undefined) payload.description = description;
   const { error } = await supabase
     .from('company_settings')
-    .upsert(payload, { onConflict: 'key' });
+    .upsert(payload as never, { onConflict: 'key' });
   if (error) return { error: error.message };
   // Reflect the new value immediately for subsequent reads in the same tab.
   cache.set(key, value);

@@ -308,7 +308,7 @@ function DownloadLetterBtn({ applicationId, type, progName }: { applicationId:st
       // Fetch application + applicant + programme + school config in parallel
       const [applRes, configRes] = await Promise.all([
         supabase.from('applications').select('*').eq('id', applicationId).single(),
-        supabase.from('school_config').select('offer_letter_signatory,offer_letter_signatory_title,offer_letter_signature_url,welcome_letter_signatory,welcome_letter_signatory_title,welcome_letter_signature_url,wl_uniform_open,wl_uniform_close,wl_reg_start,wl_reg_end,wl_induction,wl_classes_start').eq('id', 1).single(),
+        supabase.from('school_config').select('offer_letter_signatory,offer_letter_signatory_title,offer_letter_signature_url,welcome_letter_signatory,welcome_letter_signatory_title,welcome_letter_signature_url,wl_uniform_open,wl_uniform_close,wl_reg_start,wl_reg_end,wl_induction,wl_classes_start').limit(1).maybeSingle(),
       ]);
       const appl = applRes.data;
       const [applicantRes, progRes] = await Promise.all([
