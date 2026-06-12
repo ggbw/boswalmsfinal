@@ -155,11 +155,16 @@ async function buildPassedModules(db: any, student: any): Promise<PassedModule[]
     });
   });
 
-  // Preserve legacy `marks` rows not already covered by assessment data.
+  // Preserve legacy `marks` rows not already covered by assessment data. Their
+  // academic year/semester is taken from the class (study year 1–3) so they
+  // group consistently with the assessment-derived rows above.
   db.marks
     .filter((m: any) => m.studentId === student.studentId)
     .forEach((m: any) => {
-      if (periodKeys.has(`${m.moduleId}|${m.year}|${m.semester}`)) return;
+      const cls = db.classes.find((c: any) => c.id === m.classId);
+      const year = cls?.year ?? m.year;
+      const semester = cls?.semester ?? m.semester;
+      if (periodKeys.has(`${m.moduleId}|${year}|${semester}`)) return;
       const mod = db.modules.find((mo: any) => mo.id === m.moduleId);
       const mark = calcModuleMark(m, mod?.hasPractical !== false);
       result.push({
@@ -169,12 +174,16 @@ async function buildPassedModules(db: any, student: any): Promise<PassedModule[]
         mark,
         grade: letterGrade(mark),
         credits: 10,
-        year: m.year,
-        semester: m.semester,
+        year,
+        semester,
       });
     });
 
-  return flagSuperseded(result);
+  // Order by academic year, then semester, then module code so the transcript
+  // sections — and the modules within each — read in a stable, natural order.
+  return flagSuperseded(result).sort(
+    (a, b) => a.year - b.year || a.semester - b.semester || a.code.localeCompare(b.code),
+  );
 }
 
 // ── Print transcript in a new window ─────────────────────────────────────────
@@ -201,7 +210,6 @@ function printTranscript(
   const footerUrl = window.location.origin + "/transcript_footer.png";
 
   const semSections = Object.keys(semGroups)
-    .sort()
     .map((semKey) => {
       const semGpa = computeGPA(semGroups[semKey]);
       const semCredits = semGroups[semKey].filter((m) => !m.superseded).reduce((s, m) => s + m.credits, 0);
@@ -544,7 +552,6 @@ export function TranscriptView({ stu }: { stu: any }) {
         </div>
       ) : (
         Object.keys(semGroups)
-          .sort()
           .map((semKey) => (
             <div key={semKey} style={{ marginBottom: 16 }}>
               <div
