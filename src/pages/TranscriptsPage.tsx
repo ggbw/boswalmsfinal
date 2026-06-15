@@ -2,13 +2,10 @@ import { useState, useEffect } from "react";
 import { useApp } from "@/context/AppContext";
 import { calcModuleMark } from "@/data/db";
 import { supabase } from "@/integrations/supabase/client";
-<<<<<<< HEAD
+import { categorizeModuleAssessments, computeStudentModuleMark } from "@/lib/moduleMark";
 
 // Roles permitted to edit the transcript signatory ("admin and above").
 const CAN_EDIT_ISSUER = ["admin", "super_admin"];
-=======
-import { categorizeModuleAssessments, computeStudentModuleMark } from "@/lib/moduleMark";
->>>>>>> 4f8165ae19c69f0f4c3cfdfd24085c59af0e1885
 
 // ── Grading ───────────────────────────────────────────────────────────────────
 // University letter-grade scale (percentage → letter) with +/- bands.
@@ -90,8 +87,8 @@ interface PassedModule {
   semester: number;
   // The calendar period the mark was recorded in. Identifies the attempt so the
   // latest retake can be picked; NOT used for display.
-  attemptYear: number;
-  attemptSem: number;
+  attemptYear?: number;
+  attemptSem?: number;
   superseded?: boolean;
 }
 
@@ -101,43 +98,12 @@ interface PassedModule {
 function flagSuperseded(mods: PassedModule[]): PassedModule[] {
   const latestRank: Record<string, number> = {};
   mods.forEach((m) => {
-    const r = m.attemptYear * 100 + m.attemptSem;
+    const r = (m.attemptYear ?? m.year) * 100 + (m.attemptSem ?? m.semester);
     if (latestRank[m.moduleId] === undefined || r > latestRank[m.moduleId]) latestRank[m.moduleId] = r;
   });
-  return mods.map((m) => ({ ...m, superseded: m.attemptYear * 100 + m.attemptSem < latestRank[m.moduleId] }));
+  return mods.map((m) => ({ ...m, superseded: (m.attemptYear ?? m.year) * 100 + (m.attemptSem ?? m.semester) < latestRank[m.moduleId] }));
 }
 
-<<<<<<< HEAD
-// Build the list of modules shown on a student's transcript. A module's
-// year/semester comes from the CLASS it was taken in (the curriculum position),
-// not from the mark row's calendar period — marks are stamped with the academic
-// year/semester that was current when they were entered, which would otherwise
-// group every module under "Year 2026" instead of Year 1/2/3.
-function buildPassedModules(db: any, stu: any): PassedModule[] {
-  const allMarks = db.marks.filter((m: any) => m.studentId === stu.studentId);
-  return flagSuperseded(
-    allMarks
-      .map((m: any) => {
-        const mod = db.modules.find((mo: any) => mo.id === m.moduleId);
-        const cls = db.classes.find((c: any) => c.id === m.classId);
-        const mark = calcModuleMark(m, mod?.hasPractical !== false);
-        return { mark, module: mod, cls, markRecord: m };
-      })
-      .filter((x: any) => x.module)
-      .map((x: any) => ({
-        moduleId: x.module.id as string,
-        name: x.module.name as string,
-        code: x.module.code as string,
-        mark: x.mark,
-        grade: letterGrade(x.mark),
-        credits: 10,
-        year: (x.cls?.year ?? x.markRecord.year) as number,
-        semester: (x.cls?.semester ?? x.markRecord.semester) as number,
-        attemptYear: x.markRecord.year as number,
-        attemptSem: x.markRecord.semester as number,
-      })),
-  );
-}
 
 // School contact details shown on the transcript (kept in sync with the
 // acceptance/welcome letters in ApplicantPortal).
@@ -153,7 +119,6 @@ const SCHOOL_CONTACT_LINE =
   `${SCHOOL_CONTACT.address}  ·  ${SCHOOL_CONTACT.pobox}  ·  ☎ ${SCHOOL_CONTACT.tel}` +
   `  ·  ✉ ${SCHOOL_CONTACT.email}  ·  ${SCHOOL_CONTACT.web}`;
 
-=======
 // ── Build a student's transcript modules ─────────────────────────────────────
 // Real marks live in `assessment_marks` (one row per exam/assignment). Each
 // module's weighted mark is computed the same way the Class Report does, via the
@@ -245,7 +210,6 @@ async function buildPassedModules(db: any, student: any): Promise<PassedModule[]
   );
 }
 
->>>>>>> 4f8165ae19c69f0f4c3cfdfd24085c59af0e1885
 // ── Print transcript in a new window ─────────────────────────────────────────
 function printTranscript(
   student: any,
@@ -505,11 +469,7 @@ export default function TranscriptsPage() {
                         className="btn btn-primary btn-sm"
                         onClick={async () => {
                           const prog = db.config.programmes.find((p: any) => p.id === s.programme);
-<<<<<<< HEAD
-                          const passed = buildPassedModules(db, s);
-=======
                           const passed = await buildPassedModules(db, s);
->>>>>>> 4f8165ae19c69f0f4c3cfdfd24085c59af0e1885
                           printTranscript(s, prog, passed, {
                             issuer: db.config.transcriptIssuer,
                             title: db.config.transcriptIssuerTitle,
@@ -565,10 +525,6 @@ export function TranscriptView({ stu }: { stu: any }) {
   };
 
   const prog = db.config.programmes.find((p: any) => p.id === stu.programme);
-<<<<<<< HEAD
-
-  const passedModules: PassedModule[] = buildPassedModules(db, stu);
-=======
   const [passedModules, setPassedModules] = useState<PassedModule[]>([]);
   const [loading, setLoading] = useState(true);
 
@@ -584,7 +540,6 @@ export function TranscriptView({ stu }: { stu: any }) {
       active = false;
     };
   }, [db, stu]);
->>>>>>> 4f8165ae19c69f0f4c3cfdfd24085c59af0e1885
 
   const totalCredits = passedModules.filter((m) => !m.superseded).reduce((s, m) => s + m.credits, 0);
   const cumulativeGpa = computeGPA(passedModules);
