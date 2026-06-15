@@ -2071,72 +2071,33 @@ export type Database = {
           current_term: number
           current_year: number
           id: string
-          letter_date: string | null
-          offer_letter_signatory: string | null
-          offer_letter_signatory_title: string | null
-          offer_letter_signature_url: string | null
           school_name: string
           semester_end_date: string | null
           semester_start_date: string | null
           transcript_issuer: string | null
           transcript_issuer_title: string | null
-          welcome_letter_signatory: string | null
-          welcome_letter_signatory_title: string | null
-          welcome_letter_signature_url: string | null
-          wl_classes_start: string | null
-          wl_induction: string | null
-          wl_reg_end: string | null
-          wl_reg_start: string | null
-          wl_uniform_close: string | null
-          wl_uniform_open: string | null
         }
         Insert: {
           current_semester?: number
           current_term?: number
           current_year?: number
           id?: string
-          letter_date?: string | null
-          offer_letter_signatory?: string | null
-          offer_letter_signatory_title?: string | null
-          offer_letter_signature_url?: string | null
           school_name?: string
           semester_end_date?: string | null
           semester_start_date?: string | null
           transcript_issuer?: string | null
           transcript_issuer_title?: string | null
-          welcome_letter_signatory?: string | null
-          welcome_letter_signatory_title?: string | null
-          welcome_letter_signature_url?: string | null
-          wl_classes_start?: string | null
-          wl_induction?: string | null
-          wl_reg_end?: string | null
-          wl_reg_start?: string | null
-          wl_uniform_close?: string | null
-          wl_uniform_open?: string | null
         }
         Update: {
           current_semester?: number
           current_term?: number
           current_year?: number
           id?: string
-          letter_date?: string | null
-          offer_letter_signatory?: string | null
-          offer_letter_signatory_title?: string | null
-          offer_letter_signature_url?: string | null
           school_name?: string
           semester_end_date?: string | null
           semester_start_date?: string | null
           transcript_issuer?: string | null
           transcript_issuer_title?: string | null
-          welcome_letter_signatory?: string | null
-          welcome_letter_signatory_title?: string | null
-          welcome_letter_signature_url?: string | null
-          wl_classes_start?: string | null
-          wl_induction?: string | null
-          wl_reg_end?: string | null
-          wl_reg_start?: string | null
-          wl_uniform_close?: string | null
-          wl_uniform_open?: string | null
         }
         Relationships: []
       }
