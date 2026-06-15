@@ -1,6 +1,10 @@
 import { useState } from "react";
 import { useApp } from "@/context/AppContext";
 import { calcModuleMark } from "@/data/db";
+import { supabase } from "@/integrations/supabase/client";
+
+// Roles permitted to edit the transcript signatory ("admin and above").
+const CAN_EDIT_ISSUER = ["admin", "super_admin"];
 
 // ── Grading ───────────────────────────────────────────────────────────────────
 // University letter-grade scale (percentage → letter) with +/- bands.
@@ -76,22 +80,73 @@ interface PassedModule {
   mark: number;
   grade: string;
   credits: number;
+  // Study year/semester (1–3 / 1–2) the module sits in within the curriculum —
+  // used for grouping/display on the transcript.
   year: number;
   semester: number;
+  // The calendar period the mark was recorded in. Identifies the attempt so the
+  // latest retake can be picked; NOT used for display.
+  attemptYear: number;
+  attemptSem: number;
   superseded?: boolean;
 }
 
 // When a module was taken more than once (a retake), only the latest attempt
-// (highest year, then semester) counts toward GPA/credits; earlier attempts are
-// flagged "superseded" so they still display but don't count.
+// (highest calendar year, then semester) counts toward GPA/credits; earlier
+// attempts are flagged "superseded" so they still display but don't count.
 function flagSuperseded(mods: PassedModule[]): PassedModule[] {
   const latestRank: Record<string, number> = {};
   mods.forEach((m) => {
-    const r = m.year * 100 + m.semester;
+    const r = m.attemptYear * 100 + m.attemptSem;
     if (latestRank[m.moduleId] === undefined || r > latestRank[m.moduleId]) latestRank[m.moduleId] = r;
   });
-  return mods.map((m) => ({ ...m, superseded: m.year * 100 + m.semester < latestRank[m.moduleId] }));
+  return mods.map((m) => ({ ...m, superseded: m.attemptYear * 100 + m.attemptSem < latestRank[m.moduleId] }));
 }
+
+// Build the list of modules shown on a student's transcript. A module's
+// year/semester comes from the CLASS it was taken in (the curriculum position),
+// not from the mark row's calendar period — marks are stamped with the academic
+// year/semester that was current when they were entered, which would otherwise
+// group every module under "Year 2026" instead of Year 1/2/3.
+function buildPassedModules(db: any, stu: any): PassedModule[] {
+  const allMarks = db.marks.filter((m: any) => m.studentId === stu.studentId);
+  return flagSuperseded(
+    allMarks
+      .map((m: any) => {
+        const mod = db.modules.find((mo: any) => mo.id === m.moduleId);
+        const cls = db.classes.find((c: any) => c.id === m.classId);
+        const mark = calcModuleMark(m, mod?.hasPractical !== false);
+        return { mark, module: mod, cls, markRecord: m };
+      })
+      .filter((x: any) => x.module)
+      .map((x: any) => ({
+        moduleId: x.module.id as string,
+        name: x.module.name as string,
+        code: x.module.code as string,
+        mark: x.mark,
+        grade: letterGrade(x.mark),
+        credits: 10,
+        year: (x.cls?.year ?? x.markRecord.year) as number,
+        semester: (x.cls?.semester ?? x.markRecord.semester) as number,
+        attemptYear: x.markRecord.year as number,
+        attemptSem: x.markRecord.semester as number,
+      })),
+  );
+}
+
+// School contact details shown on the transcript (kept in sync with the
+// acceptance/welcome letters in ApplicantPortal).
+const SCHOOL_CONTACT = {
+  address: "Plot 2830, Sedie · Maun",
+  pobox: "P O Box 661, Maun",
+  tel: "+267 686 0262",
+  fax: "+267 686 0261",
+  email: "info@boswa.ac.bw",
+  web: "www.boswa.ac.bw",
+};
+const SCHOOL_CONTACT_LINE =
+  `${SCHOOL_CONTACT.address}  ·  ${SCHOOL_CONTACT.pobox}  ·  ☎ ${SCHOOL_CONTACT.tel}` +
+  `  ·  ✉ ${SCHOOL_CONTACT.email}  ·  ${SCHOOL_CONTACT.web}`;
 
 // ── Print transcript in a new window ─────────────────────────────────────────
 function printTranscript(
@@ -172,21 +227,41 @@ function printTranscript(
     @media print {
       body { padding: 0; }
       .no-print { display: none !important; }
+      .watermark { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
     }
     table { border-collapse: collapse; }
+    /* Faint centered logo watermark, fixed so it repeats on every printed page. */
+    .watermark {
+      position: fixed;
+      top: 50%;
+      left: 50%;
+      transform: translate(-50%, -50%) rotate(-30deg);
+      width: 70%;
+      max-width: 520px;
+      opacity: 0.06;
+      z-index: 0;
+      pointer-events: none;
+    }
+    body > *:not(.watermark) { position: relative; z-index: 1; }
   </style>
 </head>
 <body>
+  <!-- Watermark -->
+  <img class="watermark" src="${logoUrl}" onerror="this.style.display='none'" />
+
   <!-- Header -->
   <div style="text-align:center;margin-bottom:10px">
     <img src="${logoUrl}" style="height:70px;object-fit:contain" onerror="this.style.display='none'" />
   </div>
 
   <!-- Title band -->
-  <div style="background:#002060;padding:12px 20px;text-align:center;border-bottom:3px solid #C9A227;margin-bottom:14px">
-    <div style="font-size:15px;font-weight:800;color:#fff;letter-spacing:0.5px">BOSSWA CULINARY INSTITUTE OF BOTSWANA</div>
+  <div style="background:#002060;padding:12px 20px;text-align:center;border-bottom:3px solid #C9A227;margin-bottom:4px">
+    <div style="font-size:15px;font-weight:800;color:#fff;letter-spacing:0.5px">BOSWA CULINARY INSTITUTE OF BOTSWANA</div>
     <div style="font-size:12px;color:#C9A227;margin-top:4px;font-style:italic">Official Academic Transcript</div>
   </div>
+
+  <!-- Address / contact line -->
+  <div style="text-align:center;font-size:10px;color:#555;margin-bottom:14px">${SCHOOL_CONTACT_LINE}</div>
 
   <!-- Student info -->
   <div style="display:grid;grid-template-columns:1fr 1fr;gap:4px 32px;margin-bottom:14px;background:#f9f9f9;padding:12px;border-radius:6px;font-size:12px;border-bottom:2px solid #C9A227">
@@ -333,26 +408,7 @@ export default function TranscriptsPage() {
                         className="btn btn-primary btn-sm"
                         onClick={() => {
                           const prog = db.config.programmes.find((p: any) => p.id === s.programme);
-                          const allMarks = db.marks.filter((m: any) => m.studentId === s.studentId);
-                          const passed: PassedModule[] = flagSuperseded(
-                            allMarks
-                              .map((m: any) => {
-                                const mod = db.modules.find((mo: any) => mo.id === m.moduleId);
-                                const mark = calcModuleMark(m, mod?.hasPractical !== false);
-                                return { mark, module: mod, markRecord: m };
-                              })
-                              .filter((x: any) => x.module)
-                              .map((x: any) => ({
-                                moduleId: x.module.id,
-                                name: x.module.name,
-                                code: x.module.code,
-                                mark: x.mark,
-                                grade: letterGrade(x.mark),
-                                credits: 10,
-                                year: x.markRecord.year,
-                                semester: x.markRecord.semester,
-                              })),
-                          );
+                          const passed = buildPassedModules(db, s);
                           printTranscript(s, prog, passed, {
                             issuer: db.config.transcriptIssuer,
                             title: db.config.transcriptIssuerTitle,
@@ -375,30 +431,41 @@ export default function TranscriptsPage() {
 
 // ── TranscriptView ─────────────────────────────────────────────────────────────
 export function TranscriptView({ stu }: { stu: any }) {
-  const { db } = useApp();
+  const { db, currentUser, toast, reloadDb } = useApp();
+
+  const canEditIssuer = CAN_EDIT_ISSUER.includes(currentUser?.role || "");
+  const [editingIssuer, setEditingIssuer] = useState(false);
+  const [issuerName, setIssuerName] = useState(db.config.transcriptIssuer || "");
+  const [issuerTitle, setIssuerTitle] = useState(db.config.transcriptIssuerTitle || "");
+  const [savingIssuer, setSavingIssuer] = useState(false);
+
+  const saveIssuer = async () => {
+    const configId = (db.config as any)?.id;
+    if (!configId) {
+      toast("Config record not found", "error");
+      return;
+    }
+    setSavingIssuer(true);
+    const { error } = await supabase
+      .from("school_config")
+      .update({
+        transcript_issuer: issuerName.trim() || null,
+        transcript_issuer_title: issuerTitle.trim() || null,
+      } as any)
+      .eq("id", configId);
+    setSavingIssuer(false);
+    if (error) {
+      toast(error.message, "error");
+      return;
+    }
+    toast("Transcript signatory saved!", "success");
+    setEditingIssuer(false);
+    reloadDb();
+  };
 
   const prog = db.config.programmes.find((p: any) => p.id === stu.programme);
-  const allMarks = db.marks.filter((m: any) => m.studentId === stu.studentId);
 
-  const passedModules: PassedModule[] = flagSuperseded(
-    allMarks
-      .map((m: any) => {
-        const mod = db.modules.find((mo: any) => mo.id === m.moduleId);
-        const mark = calcModuleMark(m, mod?.hasPractical !== false);
-        return { mark, module: mod, markRecord: m };
-      })
-      .filter((x) => x.module)
-      .map((x) => ({
-        moduleId: x.module.id as string,
-        name: x.module.name as string,
-        code: x.module.code as string,
-        mark: x.mark,
-        grade: letterGrade(x.mark),
-        credits: 10,
-        year: x.markRecord.year as number,
-        semester: x.markRecord.semester as number,
-      })),
-  );
+  const passedModules: PassedModule[] = buildPassedModules(db, stu);
 
   const totalCredits = passedModules.filter((m) => !m.superseded).reduce((s, m) => s + m.credits, 0);
   const cumulativeGpa = computeGPA(passedModules);
@@ -420,7 +487,26 @@ export function TranscriptView({ stu }: { stu: any }) {
 
   // ── On-screen preview ──────────────────────────────────────────────────────
   return (
-    <div className="card" style={{ fontFamily: "Arial, sans-serif" }}>
+    <div className="card" style={{ fontFamily: "Arial, sans-serif", position: "relative", overflow: "hidden" }}>
+      {/* Watermark */}
+      <img
+        src="/transcript_logo.png"
+        alt=""
+        aria-hidden="true"
+        onError={(e) => ((e.target as HTMLImageElement).style.display = "none")}
+        style={{
+          position: "absolute",
+          top: "50%",
+          left: "50%",
+          transform: "translate(-50%, -50%) rotate(-30deg)",
+          width: "70%",
+          maxWidth: 520,
+          opacity: 0.06,
+          pointerEvents: "none",
+          zIndex: 0,
+        }}
+      />
+      <div style={{ position: "relative", zIndex: 1 }}>
       {/* Title band */}
       <div
         style={{
@@ -433,11 +519,16 @@ export function TranscriptView({ stu }: { stu: any }) {
         }}
       >
         <div style={{ fontSize: 16, fontWeight: 800, color: "#fff", letterSpacing: 0.5 }}>
-          BOSSWA CULINARY INSTITUTE OF BOTSWANA
+          BOSWA CULINARY INSTITUTE OF BOTSWANA
         </div>
         <div style={{ fontSize: 13, color: "#C9A227", marginTop: 4, fontStyle: "italic" }}>
           Official Academic Transcript
         </div>
+      </div>
+
+      {/* Address / contact line */}
+      <div style={{ textAlign: "center", fontSize: 10, color: "#555", marginTop: 6 }}>
+        {SCHOOL_CONTACT_LINE}
       </div>
 
       {/* Student info grid */}
@@ -591,15 +682,66 @@ export function TranscriptView({ stu }: { stu: any }) {
         <strong>{stu.name}</strong> in the academic studies of {studyYears}.
       </p>
       <div style={{ fontSize: 12, marginBottom: 14, lineHeight: 1.8 }}>
-        <div>
-          <strong>Issued By:</strong> {db.config.transcriptIssuer || "Boisi Dibuile"}
-        </div>
-        <div>
-          <strong>Position:</strong> {db.config.transcriptIssuerTitle || "Deputy Principal"}
-        </div>
-        <div>
-          <strong>Date:</strong> {todayStr()}
-        </div>
+        {editingIssuer ? (
+          <div style={{ display: "flex", flexDirection: "column", gap: 8, maxWidth: 360 }}>
+            <div className="form-group" style={{ margin: 0 }}>
+              <label style={{ fontWeight: 700 }}>Issued By</label>
+              <input
+                className="form-input"
+                value={issuerName}
+                placeholder="Boisi Dibuile"
+                onChange={(e) => setIssuerName(e.target.value)}
+              />
+            </div>
+            <div className="form-group" style={{ margin: 0 }}>
+              <label style={{ fontWeight: 700 }}>Position</label>
+              <input
+                className="form-input"
+                value={issuerTitle}
+                placeholder="Deputy Principal"
+                onChange={(e) => setIssuerTitle(e.target.value)}
+              />
+            </div>
+            <div style={{ display: "flex", gap: 8 }}>
+              <button className="btn btn-primary btn-sm" disabled={savingIssuer} onClick={saveIssuer}>
+                {savingIssuer ? "Saving…" : "Save"}
+              </button>
+              <button
+                className="btn btn-outline btn-sm"
+                disabled={savingIssuer}
+                onClick={() => {
+                  setIssuerName(db.config.transcriptIssuer || "");
+                  setIssuerTitle(db.config.transcriptIssuerTitle || "");
+                  setEditingIssuer(false);
+                }}
+              >
+                Cancel
+              </button>
+            </div>
+          </div>
+        ) : (
+          <>
+            <div>
+              <strong>Issued By:</strong> {db.config.transcriptIssuer || "Boisi Dibuile"}
+            </div>
+            <div>
+              <strong>Position:</strong> {db.config.transcriptIssuerTitle || "Deputy Principal"}
+            </div>
+            <div>
+              <strong>Date:</strong> {todayStr()}
+            </div>
+            {canEditIssuer && (
+              <button
+                className="btn btn-outline btn-sm"
+                style={{ marginTop: 6 }}
+                onClick={() => setEditingIssuer(true)}
+              >
+                <i className="fa-solid fa-pen" style={{ marginRight: 6 }} />
+                Edit Issued By / Position
+              </button>
+            )}
+          </>
+        )}
       </div>
 
       {/* Grading key */}
@@ -629,6 +771,7 @@ export function TranscriptView({ stu }: { stu: any }) {
           <i className="fa-solid fa-print" style={{ marginRight: 6 }} />
           Print / Save as PDF
         </button>
+      </div>
       </div>
     </div>
   );
