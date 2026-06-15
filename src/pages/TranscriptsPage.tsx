@@ -469,11 +469,7 @@ export default function TranscriptsPage() {
                         className="btn btn-primary btn-sm"
                         onClick={async () => {
                           const prog = db.config.programmes.find((p: any) => p.id === s.programme);
-<<<<<<< HEAD
-                          const passed = buildPassedModules(db, s);
-=======
                           const passed = await buildPassedModules(db, s);
->>>>>>> 4f8165ae19c69f0f4c3cfdfd24085c59af0e1885
                           printTranscript(s, prog, passed, {
                             issuer: db.config.transcriptIssuer,
                             title: db.config.transcriptIssuerTitle,
@@ -529,10 +525,6 @@ export function TranscriptView({ stu }: { stu: any }) {
   };
 
   const prog = db.config.programmes.find((p: any) => p.id === stu.programme);
-<<<<<<< HEAD
-
-  const passedModules: PassedModule[] = buildPassedModules(db, stu);
-=======
   const [passedModules, setPassedModules] = useState<PassedModule[]>([]);
   const [loading, setLoading] = useState(true);
 
@@ -548,7 +540,6 @@ export function TranscriptView({ stu }: { stu: any }) {
       active = false;
     };
   }, [db, stu]);
->>>>>>> 4f8165ae19c69f0f4c3cfdfd24085c59af0e1885
 
   const totalCredits = passedModules.filter((m) => !m.superseded).reduce((s, m) => s + m.credits, 0);
   const cumulativeGpa = computeGPA(passedModules);
