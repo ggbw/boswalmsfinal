@@ -3,22 +3,9 @@ import { useApp } from "@/context/AppContext";
 import { grade, gradeColor } from "@/data/db";
 import { supabase } from "@/integrations/supabase/client";
 import { getLecturerClasses } from "@/lib/lecturerHelpers";
+import { avg, categorizeModuleAssessments, computeStudentModuleMark } from "@/lib/moduleMark";
 
 const GRADE_ORDER = ["Distinction", "Merit", "Credit", "Pass", "Fail"] as const;
-
-// Exam type → which section of the report
-const THEORY_TYPES = ["Written Exam", "Oral Exam"];
-const FINAL_THEORY = "Final Theory Exam";
-const RECIPE_TYPE = "Recipe";
-const FINAL_PRAC = "Final Practical Exam";
-const FINAL_PRAC_THEO = "Final Practical Theory Exam";
-
-function r2(n: number) {
-  return Math.round(n * 100) / 100;
-}
-function avg(nums: number[]) {
-  return nums.length ? nums.reduce((a, b) => a + b, 0) / nums.length : 0;
-}
 
 interface AssessmentMark {
   student_id: string;
@@ -85,8 +72,7 @@ export default function ReportsPage() {
     // Non-practical modules are weighted Coursework 60% + Final Exam 40%
     // (no practical section); practical modules stay CW 40% + Prac 20% + Exam 40%.
     const moduleHasPractical = mod?.hasPractical !== false;
-    const cwWeight = moduleHasPractical ? 0.4 : 0.6;
-    const cwPct = Math.round(cwWeight * 100);
+    const cwPct = moduleHasPractical ? 40 : 60;
     const students = db.students.filter((s) => s.classId === cls.id);
     const prog = db.config.programmes.find((p) => p.id === cls.programme);
 
@@ -94,16 +80,9 @@ export default function ReportsPage() {
     const classExams = db.exams.filter((e) => e.classId === cls.id && e.moduleId === moduleId);
     const classAssignments = db.assignments.filter((a) => a.classId === cls.id && a.moduleId === moduleId);
 
-    // Categorise
-    const theoryCWExams = classExams.filter((e) => THEORY_TYPES.includes(e.type || "Written Exam"));
-    const finalTheoryExam = classExams.find((e) => e.type === FINAL_THEORY);
-    // All exams with "practical" in their type (case-insensitive), excluding the specific final ones
-    const practicalCWExams = classExams.filter(
-      (e) => (e.type || "").toLowerCase().includes("practical") && e.type !== FINAL_PRAC && e.type !== FINAL_PRAC_THEO,
-    );
-    const recipeExams = classExams.filter((e) => e.type === RECIPE_TYPE);
-    const finalPracExam = classExams.find((e) => e.type === FINAL_PRAC);
-    const finalPracTheo = classExams.find((e) => e.type === FINAL_PRAC_THEO);
+    // Categorise into the buckets the weighting needs (shared with the transcript).
+    const cat = categorizeModuleAssessments(classExams, classAssignments);
+    const { theoryCWExams, finalTheoryExam, practicalCWExams, recipeExams, finalPracExam, finalPracTheo } = cat;
 
     // Helper: get score for a student+assessment
     const score = (studentId: string, assessmentId: string) => {
@@ -111,73 +90,15 @@ export default function ReportsPage() {
       return m ? m.score : null;
     };
 
-    // Build rows
+    // Build rows using the shared weighted computation.
     const rows = students.map((s) => {
-      // Theory CW: exams + assignments, averaged
-      const theoryCWScores = [
-        ...theoryCWExams.map((e) => score(s.studentId, e.id)),
-        ...classAssignments.map((a) => score(s.studentId, a.id)),
-      ].filter((x) => x !== null) as number[];
-      const theoryCWAvg = theoryCWScores.length ? avg(theoryCWScores) : null;
-      const theory40 = theoryCWAvg !== null ? r2(theoryCWAvg * cwWeight) : null;
-
-      // Final theory exam
-      const finalTheory = finalTheoryExam ? score(s.studentId, finalTheoryExam.id) : null;
-      const final40 = finalTheory !== null ? r2(finalTheory * 0.4) : null;
-
-      // Practical CW (exams with "practical" in type, not finals)
-      const practicalCWScores = practicalCWExams
-        .map((e) => score(s.studentId, e.id))
-        .filter((x) => x !== null) as number[];
-      const practicalCWAvg = practicalCWScores.length ? avg(practicalCWScores) : null;
-
-      // Recipes
-      const recipeScores = recipeExams.map((e) => score(s.studentId, e.id)).filter((x) => x !== null) as number[];
-      const recipeAvg = recipeScores.length ? avg(recipeScores) : null;
-
-      // Combined practical CW (practicalCW + recipes) → 70%
-      const allPracCWScores = [...practicalCWScores, ...recipeScores];
-      const allPracCWAvg = allPracCWScores.length ? avg(allPracCWScores) : null;
-      const pracCW70 = allPracCWAvg !== null ? r2(allPracCWAvg * 0.7) : null;
-
-      // Final practical
-      const finalPrac = finalPracExam ? score(s.studentId, finalPracExam.id) : null;
-      const finalPrac20 = finalPrac !== null ? r2(finalPrac * 0.2) : null;
-      const finalPracT = finalPracTheo ? score(s.studentId, finalPracTheo.id) : null;
-      const finalPracT10 = finalPracT !== null ? r2(finalPracT * 0.1) : null;
-
-      // Practical mark
-      const pracParts = [pracCW70, finalPrac20, finalPracT10].filter((x) => x !== null) as number[];
-      const practicalMark = pracParts.length ? r2(pracParts.reduce((a, b) => a + b, 0)) : null;
-      // Non-practical modules contribute nothing from the practical section.
-      const prac20 = moduleHasPractical && practicalMark !== null ? r2(practicalMark * 0.2) : null;
-
-      // Module mark — always calculated, missing parts treated as 0
-      const moduleMark = r2((theory40 ?? 0) + (prac20 ?? 0) + (final40 ?? 0));
-      const decision = grade(moduleMark);
-
-      return {
-        s,
-        theoryCWScores,
-        theoryCWAvg,
-        theory40,
-        finalTheory,
-        final40,
-        practicalCWScores,
-        practicalCWAvg,
-        recipeScores,
-        recipeAvg,
-        allPracCWAvg,
-        pracCW70,
-        finalPrac,
-        finalPrac20,
-        finalPracT,
-        finalPracT10,
-        practicalMark,
-        prac20,
-        moduleMark,
-        decision,
-      };
+      const mark = computeStudentModuleMark({
+        studentId: s.studentId,
+        hasPractical: moduleHasPractical,
+        cat,
+        scoreOf: score,
+      });
+      return { s, ...mark, decision: grade(mark.moduleMark) };
     });
 
     const classAvg = rows.length ? Math.round(avg(rows.map((r) => r.moduleMark))) : null;
