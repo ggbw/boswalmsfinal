@@ -87,8 +87,8 @@ interface PassedModule {
   semester: number;
   // The calendar period the mark was recorded in. Identifies the attempt so the
   // latest retake can be picked; NOT used for display.
-  attemptYear: number;
-  attemptSem: number;
+  attemptYear?: number;
+  attemptSem?: number;
   superseded?: boolean;
 }
 
@@ -98,10 +98,10 @@ interface PassedModule {
 function flagSuperseded(mods: PassedModule[]): PassedModule[] {
   const latestRank: Record<string, number> = {};
   mods.forEach((m) => {
-    const r = m.attemptYear * 100 + m.attemptSem;
+    const r = (m.attemptYear ?? m.year) * 100 + (m.attemptSem ?? m.semester);
     if (latestRank[m.moduleId] === undefined || r > latestRank[m.moduleId]) latestRank[m.moduleId] = r;
   });
-  return mods.map((m) => ({ ...m, superseded: m.attemptYear * 100 + m.attemptSem < latestRank[m.moduleId] }));
+  return mods.map((m) => ({ ...m, superseded: (m.attemptYear ?? m.year) * 100 + (m.attemptSem ?? m.semester) < latestRank[m.moduleId] }));
 }
 
 
