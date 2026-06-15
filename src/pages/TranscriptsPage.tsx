@@ -104,7 +104,6 @@ function flagSuperseded(mods: PassedModule[]): PassedModule[] {
   return mods.map((m) => ({ ...m, superseded: m.attemptYear * 100 + m.attemptSem < latestRank[m.moduleId] }));
 }
 
-<<<<<<< HEAD
 // Build the list of modules shown on a student's transcript. A module's
 // year/semester comes from the CLASS it was taken in (the curriculum position),
 // not from the mark row's calendar period — marks are stamped with the academic
@@ -150,7 +149,6 @@ const SCHOOL_CONTACT_LINE =
   `${SCHOOL_CONTACT.address}  ·  ${SCHOOL_CONTACT.pobox}  ·  ☎ ${SCHOOL_CONTACT.tel}` +
   `  ·  ✉ ${SCHOOL_CONTACT.email}  ·  ${SCHOOL_CONTACT.web}`;
 
-=======
 // ── Build a student's transcript modules ─────────────────────────────────────
 // Real marks live in `assessment_marks` (one row per exam/assignment). Each
 // module's weighted mark is computed the same way the Class Report does, via the
@@ -242,7 +240,6 @@ async function buildPassedModules(db: any, student: any): Promise<PassedModule[]
   );
 }
 
->>>>>>> 4f8165ae19c69f0f4c3cfdfd24085c59af0e1885
 // ── Print transcript in a new window ─────────────────────────────────────────
 function printTranscript(
   student: any,
