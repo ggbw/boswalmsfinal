@@ -104,36 +104,6 @@ function flagSuperseded(mods: PassedModule[]): PassedModule[] {
   return mods.map((m) => ({ ...m, superseded: m.attemptYear * 100 + m.attemptSem < latestRank[m.moduleId] }));
 }
 
-// Build the list of modules shown on a student's transcript. A module's
-// year/semester comes from the CLASS it was taken in (the curriculum position),
-// not from the mark row's calendar period — marks are stamped with the academic
-// year/semester that was current when they were entered, which would otherwise
-// group every module under "Year 2026" instead of Year 1/2/3.
-function buildPassedModules(db: any, stu: any): PassedModule[] {
-  const allMarks = db.marks.filter((m: any) => m.studentId === stu.studentId);
-  return flagSuperseded(
-    allMarks
-      .map((m: any) => {
-        const mod = db.modules.find((mo: any) => mo.id === m.moduleId);
-        const cls = db.classes.find((c: any) => c.id === m.classId);
-        const mark = calcModuleMark(m, mod?.hasPractical !== false);
-        return { mark, module: mod, cls, markRecord: m };
-      })
-      .filter((x: any) => x.module)
-      .map((x: any) => ({
-        moduleId: x.module.id as string,
-        name: x.module.name as string,
-        code: x.module.code as string,
-        mark: x.mark,
-        grade: letterGrade(x.mark),
-        credits: 10,
-        year: (x.cls?.year ?? x.markRecord.year) as number,
-        semester: (x.cls?.semester ?? x.markRecord.semester) as number,
-        attemptYear: x.markRecord.year as number,
-        attemptSem: x.markRecord.semester as number,
-      })),
-  );
-}
 
 // School contact details shown on the transcript (kept in sync with the
 // acceptance/welcome letters in ApplicantPortal).
