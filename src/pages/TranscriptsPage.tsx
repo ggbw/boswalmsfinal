@@ -104,10 +104,6 @@ function flagSuperseded(mods: PassedModule[]): PassedModule[] {
   return mods.map((m) => ({ ...m, superseded: (m.attemptYear ?? m.year) * 100 + (m.attemptSem ?? m.semester) < latestRank[m.moduleId] }));
 }
 
-<<<<<<< HEAD
-=======
-
->>>>>>> 7adf2f65634a88c4c95fb5b7aa26440674c12177
 // School contact details shown on the transcript (kept in sync with the
 // acceptance/welcome letters in ApplicantPortal).
 const SCHOOL_CONTACT = {
@@ -233,10 +229,6 @@ async function buildPassedModules(db: any, student: any): Promise<PassedModule[]
     (a, b) => a.year - b.year || a.semester - b.semester || a.code.localeCompare(b.code),
   );
 }
-<<<<<<< HEAD
-=======
-
->>>>>>> 7adf2f65634a88c4c95fb5b7aa26440674c12177
 // ── Print transcript in a new window ─────────────────────────────────────────
 function printTranscript(
   student: any,
@@ -552,10 +544,6 @@ export function TranscriptView({ stu }: { stu: any }) {
   };
 
   const prog = db.config.programmes.find((p: any) => p.id === stu.programme);
-<<<<<<< HEAD
-
-=======
->>>>>>> 7adf2f65634a88c4c95fb5b7aa26440674c12177
   const [passedModules, setPassedModules] = useState<PassedModule[]>([]);
   const [loading, setLoading] = useState(true);
 
