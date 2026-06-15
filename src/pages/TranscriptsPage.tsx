@@ -2,13 +2,10 @@ import { useState, useEffect } from "react";
 import { useApp } from "@/context/AppContext";
 import { calcModuleMark } from "@/data/db";
 import { supabase } from "@/integrations/supabase/client";
-<<<<<<< HEAD
+import { categorizeModuleAssessments, computeStudentModuleMark } from "@/lib/moduleMark";
 
 // Roles permitted to edit the transcript signatory ("admin and above").
 const CAN_EDIT_ISSUER = ["admin", "super_admin"];
-=======
-import { categorizeModuleAssessments, computeStudentModuleMark } from "@/lib/moduleMark";
->>>>>>> 4f8165ae19c69f0f4c3cfdfd24085c59af0e1885
 
 // ── Grading ───────────────────────────────────────────────────────────────────
 // University letter-grade scale (percentage → letter) with +/- bands.
