@@ -200,6 +200,15 @@ export interface StudentModuleOverride {
   addedAt: string;
 }
 
+// Curriculum mapping: which study year/semester a module sits in for a given
+// programme. Source of truth for grouping modules on the transcript.
+export interface ProgrammeModule {
+  programmeId: string;
+  moduleId: string;
+  year: number;
+  semester: number;
+}
+
 export interface DB {
   config: {
     id?: string;
@@ -241,6 +250,7 @@ export interface DB {
   admissionEnquiries: AdmissionEnquiry[];
   rooms: Room[];
   lecturerModules: LecturerModule[];
+  programmeModules: ProgrammeModule[];
 }
 
 export function createInitialDB(): DB {
@@ -1600,6 +1610,7 @@ export function createInitialDB(): DB {
       { id: "room005", name: "Lecture Room B", type: "Classroom", capacity: 30, notes: "" },
     ],
     lecturerModules: [],
+    programmeModules: [],
   };
 
   // Seed attendance

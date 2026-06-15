@@ -22,6 +22,7 @@ export function useDbData() {
         lecturerModulesRes,
         profilesRes,
         userRolesRes,
+        programmeModulesRes,
       ] = await Promise.all([
         supabase.from("school_config").select("*").single(),
         supabase.from("programmes").select("*"),
@@ -35,6 +36,7 @@ export function useDbData() {
         supabase.from("lecturer_modules").select("id,lecturer_id,module_id,class_id"),
         supabase.from("profiles").select("user_id,name,email,dept,code,student_id"),
         supabase.from("user_roles").select("user_id,role"),
+        supabase.from("programme_modules" as any).select("programme_id,module_id,year,semester"),
       ]);
 
       const moduleClassMap: Record<string, string[]> = {};
@@ -135,6 +137,9 @@ export function useDbData() {
         })),
         lecturerModules: (lecturerModulesRes.data || []).map((lm: any) => ({
           id: lm.id, lecturerId: lm.lecturer_id, moduleId: lm.module_id, classId: lm.class_id,
+        })),
+        programmeModules: (programmeModulesRes.data || []).map((pm: any) => ({
+          programmeId: pm.programme_id, moduleId: pm.module_id, year: pm.year, semester: pm.semester,
         })),
         // placeholders — filled in by background load
         marks: [], attendance: [], studentModules: [], exams: [],
