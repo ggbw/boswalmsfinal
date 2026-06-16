@@ -329,15 +329,10 @@ function printTranscript(
   <!-- Watermark -->
   <img class="watermark" src="${logoUrl}" onerror="this.style.display='none'" />
 
-  <!-- Header -->
-  <div style="text-align:center;margin-bottom:10px">
-    <img src="${logoUrl}" style="height:70px;object-fit:contain" onerror="this.style.display='none'" />
-  </div>
-
-  <!-- Title band -->
-  <div style="background:#002060;padding:12px 20px;text-align:center;border-bottom:3px solid #C9A227;margin-bottom:4px">
-    <div style="font-size:15px;font-weight:800;color:#fff;letter-spacing:0.5px">BOSWA CULINARY INSTITUTE OF BOTSWANA</div>
-    <div style="font-size:12px;color:#C9A227;margin-top:4px;font-style:italic">Official Academic Transcript</div>
+  <!-- Header (logo lockup) -->
+  <div style="text-align:center;padding:6px 0 10px;border-bottom:2px solid #C9A227;margin-bottom:6px">
+    <img src="${logoUrl}" style="height:110px;object-fit:contain" onerror="this.style.display='none'" />
+    <div style="font-size:12px;color:#777;margin-top:8px;font-style:italic;letter-spacing:0.5px">Official Academic Transcript</div>
   </div>
 
   <!-- Address / contact line -->
@@ -645,21 +640,15 @@ export function TranscriptView({ stu }: { stu: any }) {
         }}
       />
       <div style={{ position: "relative", zIndex: 1 }}>
-      {/* Title band */}
-      <div
-        style={{
-          background: "#002060",
-          borderRadius: 6,
-          padding: "14px 20px",
-          textAlign: "center",
-          marginBottom: 0,
-          borderBottom: "3px solid #C9A227",
-        }}
-      >
-        <div style={{ fontSize: 16, fontWeight: 800, color: "#fff", letterSpacing: 0.5 }}>
-          BOSWA CULINARY INSTITUTE OF BOTSWANA
-        </div>
-        <div style={{ fontSize: 13, color: "#C9A227", marginTop: 4, fontStyle: "italic" }}>
+      {/* Header (logo lockup) */}
+      <div style={{ textAlign: "center", padding: "6px 0 10px", borderBottom: "2px solid #C9A227" }}>
+        <img
+          src="/transcript_logo.png"
+          alt="Boswa Culinary Institute of Botswana"
+          onError={(e) => ((e.target as HTMLImageElement).style.display = "none")}
+          style={{ height: 110, objectFit: "contain" }}
+        />
+        <div style={{ fontSize: 13, color: "#777", marginTop: 8, fontStyle: "italic", letterSpacing: 0.5 }}>
           Official Academic Transcript
         </div>
       </div>
