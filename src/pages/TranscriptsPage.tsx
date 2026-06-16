@@ -427,10 +427,76 @@ function printTranscript(
 
 // ── Pages ──────────────────────────────────────────────────────────────────────
 
+// ── Transcript signatory editor (Issued By / Position) ───────────────────────
+// Global setting applied to every transcript, edited from the page header by
+// admin & above.
+function IssuerSettingsForm() {
+  const { db, toast, closeModal, reloadDb } = useApp();
+  const [issuerName, setIssuerName] = useState(db.config.transcriptIssuer || "");
+  const [issuerTitle, setIssuerTitle] = useState(db.config.transcriptIssuerTitle || "");
+  const [saving, setSaving] = useState(false);
+
+  const save = async () => {
+    const configId = (db.config as any)?.id;
+    if (!configId) {
+      toast("Config record not found", "error");
+      return;
+    }
+    setSaving(true);
+    const { error } = await supabase
+      .from("school_config")
+      .update({
+        transcript_issuer: issuerName.trim() || null,
+        transcript_issuer_title: issuerTitle.trim() || null,
+      } as any)
+      .eq("id", configId);
+    setSaving(false);
+    if (error) {
+      toast(error.message, "error");
+      return;
+    }
+    toast("Transcript signatory saved!", "success");
+    closeModal();
+    reloadDb();
+  };
+
+  return (
+    <div>
+      <div className="form-group">
+        <label>Issued By</label>
+        <input
+          className="form-input"
+          value={issuerName}
+          placeholder="Boisi Dibuile"
+          onChange={(e) => setIssuerName(e.target.value)}
+        />
+      </div>
+      <div className="form-group">
+        <label>Position</label>
+        <input
+          className="form-input"
+          value={issuerTitle}
+          placeholder="Deputy Principal"
+          onChange={(e) => setIssuerTitle(e.target.value)}
+        />
+      </div>
+      <div style={{ display: "flex", gap: 8, marginTop: 8 }}>
+        <button className="btn btn-primary" disabled={saving} onClick={save}>
+          {saving ? "Saving…" : "Save"}
+        </button>
+        <button className="btn btn-outline" disabled={saving} onClick={closeModal}>
+          Cancel
+        </button>
+      </div>
+    </div>
+  );
+}
+
 export default function TranscriptsPage() {
   const { db, currentUser, showModal } = useApp();
   const [search, setSearch] = useState("");
   const role = currentUser?.role;
+  const canEditIssuer = CAN_EDIT_ISSUER.includes(role || "");
 
   if (role === "student") {
     const stu = db.students.find((s) => s.studentId === currentUser?.studentId);
@@ -447,8 +513,17 @@ export default function TranscriptsPage() {
 
   return (
     <>
-      <div className="page-header">
+      <div className="page-header" style={{ display: "flex", alignItems: "center", gap: 12 }}>
         <div className="page-title">Student Transcripts</div>
+        {canEditIssuer && (
+          <button
+            className="btn btn-outline btn-sm"
+            onClick={() => showModal("Transcript Signatory — Issued By / Position", <IssuerSettingsForm />)}
+          >
+            <i className="fa-solid fa-pen" style={{ marginRight: 6 }} />
+            Issued By / Position
+          </button>
+        )}
       </div>
       <div className="card">
         <div className="search-bar">
@@ -511,37 +586,7 @@ export default function TranscriptsPage() {
 
 // ── TranscriptView ─────────────────────────────────────────────────────────────
 export function TranscriptView({ stu }: { stu: any }) {
-  const { db, currentUser, toast, reloadDb } = useApp();
-
-  const canEditIssuer = CAN_EDIT_ISSUER.includes(currentUser?.role || "");
-  const [editingIssuer, setEditingIssuer] = useState(false);
-  const [issuerName, setIssuerName] = useState(db.config.transcriptIssuer || "");
-  const [issuerTitle, setIssuerTitle] = useState(db.config.transcriptIssuerTitle || "");
-  const [savingIssuer, setSavingIssuer] = useState(false);
-
-  const saveIssuer = async () => {
-    const configId = (db.config as any)?.id;
-    if (!configId) {
-      toast("Config record not found", "error");
-      return;
-    }
-    setSavingIssuer(true);
-    const { error } = await supabase
-      .from("school_config")
-      .update({
-        transcript_issuer: issuerName.trim() || null,
-        transcript_issuer_title: issuerTitle.trim() || null,
-      } as any)
-      .eq("id", configId);
-    setSavingIssuer(false);
-    if (error) {
-      toast(error.message, "error");
-      return;
-    }
-    toast("Transcript signatory saved!", "success");
-    setEditingIssuer(false);
-    reloadDb();
-  };
+  const { db } = useApp();
 
   const prog = db.config.programmes.find((p: any) => p.id === stu.programme);
   const [passedModules, setPassedModules] = useState<PassedModule[]>([]);
@@ -603,7 +648,6 @@ export function TranscriptView({ stu }: { stu: any }) {
       {/* Title band */}
       <div
         style={{
-          position: "relative",
           background: "#002060",
           borderRadius: 6,
           padding: "14px 20px",
@@ -618,78 +662,7 @@ export function TranscriptView({ stu }: { stu: any }) {
         <div style={{ fontSize: 13, color: "#C9A227", marginTop: 4, fontStyle: "italic" }}>
           Official Academic Transcript
         </div>
-        {/* Issued-by editor trigger — admin & above only (on-screen, not printed) */}
-        {canEditIssuer && !editingIssuer && (
-          <button
-            className="btn btn-sm"
-            style={{
-              position: "absolute",
-              top: 10,
-              right: 10,
-              background: "rgba(255,255,255,0.15)",
-              color: "#fff",
-              border: "1px solid rgba(255,255,255,0.4)",
-            }}
-            onClick={() => setEditingIssuer(true)}
-          >
-            <i className="fa-solid fa-pen" style={{ marginRight: 6 }} />
-            Issued By / Position
-          </button>
-        )}
       </div>
-
-      {/* Issued-by edit form (appears when editing) */}
-      {canEditIssuer && editingIssuer && (
-        <div
-          style={{
-            display: "flex",
-            flexDirection: "column",
-            gap: 8,
-            maxWidth: 420,
-            margin: "12px 0",
-            padding: 12,
-            background: "#f9f9f9",
-            border: "1px solid #e5e7eb",
-            borderRadius: 6,
-          }}
-        >
-          <div style={{ fontWeight: 700, fontSize: 12, color: "#002060" }}>Transcript Signatory</div>
-          <div className="form-group" style={{ margin: 0 }}>
-            <label style={{ fontWeight: 700 }}>Issued By</label>
-            <input
-              className="form-input"
-              value={issuerName}
-              placeholder="Boisi Dibuile"
-              onChange={(e) => setIssuerName(e.target.value)}
-            />
-          </div>
-          <div className="form-group" style={{ margin: 0 }}>
-            <label style={{ fontWeight: 700 }}>Position</label>
-            <input
-              className="form-input"
-              value={issuerTitle}
-              placeholder="Deputy Principal"
-              onChange={(e) => setIssuerTitle(e.target.value)}
-            />
-          </div>
-          <div style={{ display: "flex", gap: 8 }}>
-            <button className="btn btn-primary btn-sm" disabled={savingIssuer} onClick={saveIssuer}>
-              {savingIssuer ? "Saving…" : "Save"}
-            </button>
-            <button
-              className="btn btn-outline btn-sm"
-              disabled={savingIssuer}
-              onClick={() => {
-                setIssuerName(db.config.transcriptIssuer || "");
-                setIssuerTitle(db.config.transcriptIssuerTitle || "");
-                setEditingIssuer(false);
-              }}
-            >
-              Cancel
-            </button>
-          </div>
-        </div>
-      )}
 
       {/* Address / contact line */}
       <div style={{ textAlign: "center", fontSize: 10, color: "#555", marginTop: 6 }}>
