@@ -311,17 +311,21 @@ function printTranscript(
       .watermark { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
     }
     table { border-collapse: collapse; }
-    /* Faint centered B-monogram watermark, fixed so it repeats on every page. */
+    /* Centered B-monogram watermark. Overlaid ABOVE content (z-index high) and
+       fixed so it shows through the opaque table/panel backgrounds and repeats
+       on every printed page. pointer-events:none keeps it non-interactive. */
     .watermark {
       position: fixed;
       top: 50%;
       left: 50%;
       transform: translate(-50%, -50%);
-      height: 70%;
-      max-height: 620px;
-      opacity: 0.07;
-      z-index: 0;
+      height: 78%;
+      max-height: 660px;
+      opacity: 0.14;
+      z-index: 9999;
       pointer-events: none;
+      -webkit-print-color-adjust: exact;
+      print-color-adjust: exact;
     }
     body > *:not(.watermark) { position: relative; z-index: 1; }
   </style>
@@ -622,7 +626,7 @@ export function TranscriptView({ stu }: { stu: any }) {
   // ── On-screen preview ──────────────────────────────────────────────────────
   return (
     <div className="card" style={{ fontFamily: "Arial, sans-serif", position: "relative", overflow: "hidden" }}>
-      {/* Watermark — B monogram outline */}
+      {/* Watermark — B monogram outline, overlaid above content (matches print) */}
       <img
         src="/transcript_watermark.svg"
         alt=""
@@ -633,11 +637,11 @@ export function TranscriptView({ stu }: { stu: any }) {
           top: "50%",
           left: "50%",
           transform: "translate(-50%, -50%)",
-          height: "75%",
-          maxHeight: 620,
-          opacity: 0.07,
+          height: "78%",
+          maxHeight: 660,
+          opacity: 0.14,
           pointerEvents: "none",
-          zIndex: 0,
+          zIndex: 5,
         }}
       />
       <div style={{ position: "relative", zIndex: 1 }}>
