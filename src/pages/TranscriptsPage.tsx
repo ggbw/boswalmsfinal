@@ -250,6 +250,7 @@ function printTranscript(
 
   // Build the logo URL (absolute so it works in a new window)
   const logoUrl = window.location.origin + "/transcript_logo.png";
+  const watermarkUrl = window.location.origin + "/transcript_watermark.svg";
   const footerUrl = window.location.origin + "/transcript_footer.png";
 
   const semSections = Object.keys(semGroups)
@@ -310,15 +311,15 @@ function printTranscript(
       .watermark { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
     }
     table { border-collapse: collapse; }
-    /* Faint centered logo watermark, fixed so it repeats on every printed page. */
+    /* Faint centered B-monogram watermark, fixed so it repeats on every page. */
     .watermark {
       position: fixed;
       top: 50%;
       left: 50%;
-      transform: translate(-50%, -50%) rotate(-30deg);
-      width: 70%;
-      max-width: 520px;
-      opacity: 0.06;
+      transform: translate(-50%, -50%);
+      height: 70%;
+      max-height: 620px;
+      opacity: 0.07;
       z-index: 0;
       pointer-events: none;
     }
@@ -327,7 +328,7 @@ function printTranscript(
 </head>
 <body>
   <!-- Watermark -->
-  <img class="watermark" src="${logoUrl}" onerror="this.style.display='none'" />
+  <img class="watermark" src="${watermarkUrl}" onerror="this.style.display='none'" />
 
   <!-- Header (logo lockup) -->
   <div style="text-align:center;padding:6px 0 10px;border-bottom:2px solid #C9A227;margin-bottom:6px">
@@ -621,9 +622,9 @@ export function TranscriptView({ stu }: { stu: any }) {
   // ── On-screen preview ──────────────────────────────────────────────────────
   return (
     <div className="card" style={{ fontFamily: "Arial, sans-serif", position: "relative", overflow: "hidden" }}>
-      {/* Watermark */}
+      {/* Watermark — B monogram outline */}
       <img
-        src="/transcript_logo.png"
+        src="/transcript_watermark.svg"
         alt=""
         aria-hidden="true"
         onError={(e) => ((e.target as HTMLImageElement).style.display = "none")}
@@ -631,10 +632,10 @@ export function TranscriptView({ stu }: { stu: any }) {
           position: "absolute",
           top: "50%",
           left: "50%",
-          transform: "translate(-50%, -50%) rotate(-30deg)",
-          width: "70%",
-          maxWidth: 520,
-          opacity: 0.06,
+          transform: "translate(-50%, -50%)",
+          height: "75%",
+          maxHeight: 620,
+          opacity: 0.07,
           pointerEvents: "none",
           zIndex: 0,
         }}
