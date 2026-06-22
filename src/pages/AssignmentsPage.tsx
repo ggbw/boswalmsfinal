@@ -166,9 +166,15 @@ export default function AssignmentsPage() {
     const students = db.students.filter(s => s.classId === a.classId);
     if (students.length === 0) { toast('No students in this class', 'error'); return; }
 
-    const { data: existing } = await supabase
+    // Surface a load failure: a silent empty result would pre-fill 0 for every
+    // student and saving would overwrite real marks with zeros.
+    const { data: existing, error: loadErr } = await supabase
       .from('assessment_marks').select('*')
       .eq('assessment_id', a.id).eq('assessment_type', 'assignment');
+    if (loadErr) {
+      toast('Could not load existing marks — please try again.', 'error');
+      return;
+    }
 
     const marksMap: Record<string, number> = {};
     students.forEach(s => {
@@ -200,26 +206,27 @@ export default function AssignmentsPage() {
           </table>
         </div>
         <button className="btn btn-primary" style={{ marginTop: 14, width: '100%' }} onClick={async () => {
-          const errors: string[] = [];
-          for (const s of students) {
+          // One idempotent upsert for the whole class instead of a per-student
+          // insert/update loop. Keyed on the (student_id, assessment_id) unique
+          // constraint, so re-saving always works and can't fail by trying to
+          // insert over an existing row when the initial lookup came back stale.
+          const existingById: Record<string, string> = {};
+          (existing || []).forEach((x: any) => { existingById[x.student_id] = x.id; });
+          const rows = students.map(s => {
             const score = marksMap[s.studentId] ?? 0;
             // Normalise to 0-100
             const normalised = a.marks > 0 ? Math.round((score / a.marks) * 100) : score;
-            const ex = (existing || []).find((x: any) => x.student_id === s.studentId);
-            if (ex) {
-              const { error } = await supabase.from('assessment_marks').update({ score: normalised }).eq('id', ex.id);
-              if (error) errors.push(s.name);
-            } else {
-              const { error } = await supabase.from('assessment_marks').insert({
-                id: 'am_' + Date.now() + '_' + s.studentId,
-                student_id: s.studentId, assessment_id: a.id, assessment_type: 'assignment',
-                class_id: a.classId, module_id: a.moduleId, score: normalised,
-              });
-              if (error) errors.push(s.name);
-            }
-          }
-          if (errors.length > 0) {
-            toast(`Could not save marks for: ${errors.join(', ')}`, 'error');
+            return {
+              id: existingById[s.studentId] || ('am_' + Date.now() + '_' + s.studentId),
+              student_id: s.studentId, assessment_id: a.id, assessment_type: 'assignment',
+              class_id: a.classId, module_id: a.moduleId, score: normalised,
+            };
+          });
+          const { error } = await supabase
+            .from('assessment_marks')
+            .upsert(rows, { onConflict: 'student_id,assessment_id' });
+          if (error) {
+            toast(error.message || 'Marks could not be saved. Please try again.', 'error');
           } else {
             toast('Marks saved!', 'success'); closeModal(); reloadDb();
           }

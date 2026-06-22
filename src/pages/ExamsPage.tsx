@@ -182,12 +182,18 @@ export default function ExamsPage() {
     const students = db.students.filter(s => s.classId === exam.classId);
     if (students.length === 0) { toast('No students found for this class', 'error'); return; }
 
-    // Load existing assessment_marks for this exam
-    const { data: existing } = await supabase
+    // Load existing assessment_marks for this exam. We MUST surface a load
+    // failure here: if it silently returned nothing the form would pre-fill 0
+    // for every student, and saving would overwrite real marks with zeros.
+    const { data: existing, error: loadErr } = await supabase
       .from('assessment_marks')
       .select('*')
       .eq('assessment_id', exam.id)
       .eq('assessment_type', 'exam');
+    if (loadErr) {
+      toast('Could not load existing marks — please try again.', 'error');
+      return;
+    }
 
     const marksMap: Record<string, number> = {};
     students.forEach(s => {
@@ -219,62 +225,53 @@ export default function ExamsPage() {
           </table>
         </div>
         <button className="btn btn-primary" style={{ marginTop: 14, width: '100%' }} onClick={async () => {
-          const errors: string[] = [];
+          // Save the whole class in ONE idempotent upsert per table instead of a
+          // per-student insert/update loop. Upsert keys on each table's unique
+          // constraint, so re-saving always works whether or not a row already
+          // exists — this removes the old "insert-from-a-stale-snapshot" path
+          // that silently failed (and lost marks) whenever the initial lookup
+          // hiccupped, and the partial-failure window of N separate writes.
 
-          // Step 1: save to assessment_marks
-          for (const s of students) {
-            const score = marksMap[s.studentId] ?? 0;
-            const ex = (existing || []).find((x: any) => x.student_id === s.studentId);
-            if (ex) {
-              const { error } = await supabase.from('assessment_marks').update({ score }).eq('id', ex.id);
-              if (error) errors.push(`assessment_marks update: ${s.studentId}`);
-            } else {
-              const { error } = await supabase.from('assessment_marks').insert({
-                id: 'am_' + Date.now() + '_' + s.studentId,
-                student_id: s.studentId, assessment_id: exam.id, assessment_type: 'exam',
-                class_id: exam.classId, module_id: exam.moduleId, score,
-              });
-              if (error) errors.push(`assessment_marks insert: ${s.studentId}`);
-            }
-          }
+          // Step 1: assessment_marks (the report + transcript source of truth).
+          // Reuse the existing row id when known so the primary key stays stable;
+          // genuinely new rows get a fresh id.
+          const existingById: Record<string, string> = {};
+          (existing || []).forEach((x: any) => { existingById[x.student_id] = x.id; });
+          const asmRows = students.map(s => ({
+            id: existingById[s.studentId] || ('am_' + Date.now() + '_' + s.studentId),
+            student_id: s.studentId, assessment_id: exam.id, assessment_type: 'exam',
+            class_id: exam.classId, module_id: exam.moduleId,
+            score: marksMap[s.studentId] ?? 0,
+          }));
+          const { error: asmErr } = await supabase
+            .from('assessment_marks')
+            .upsert(asmRows, { onConflict: 'student_id,assessment_id' });
 
-          // Step 2: sync to marks table (final_exam column) for ResultsPage / Transcripts.
-          // The marks row is scoped to the CURRENT academic period so that a retake
-          // (a later year/semester) is recorded as a separate attempt instead of
-          // overwriting the original.
+          // Step 2: sync to the legacy marks table (final_exam) for the Reports
+          // overview. Scoped to the CURRENT academic period so a retake (later
+          // year/semester) is a separate attempt, not an overwrite. Only the
+          // final_exam column is sent, so coursework columns on existing rows are
+          // preserved; new rows fall back to the table's DEFAULT 0.
           const curYear = db.config.currentYear;
           const curSemester = db.config.currentSemester;
-          for (const s of students) {
-            const score = marksMap[s.studentId] ?? 0;
-            const { data: existingMark, error: fetchErr } = await supabase
-              .from('marks').select('id')
-              .eq('student_id', s.studentId)
-              .eq('module_id', exam.moduleId)
-              .eq('class_id', exam.classId)
-              .eq('year', curYear)
-              .eq('semester', curSemester)
-              .maybeSingle();
-            if (fetchErr) { errors.push(`marks lookup: ${s.studentId}`); continue; }
-            if (existingMark) {
-              const { error } = await supabase.from('marks').update({ final_exam: score })
-                .eq('id', existingMark.id);
-              if (error) errors.push(`marks update: ${s.studentId}`);
-            } else {
-              const { error } = await supabase.from('marks').insert({
-                student_id: s.studentId, module_id: exam.moduleId,
-                class_id: exam.classId, final_exam: score,
-                test1: 0, test2: 0, pract_test: 0, ind_ass: 0, grp_ass: 0, practical: 0,
-                year: curYear, semester: curSemester,
-              });
-              if (error) errors.push(`marks insert: ${s.studentId}`);
-            }
-          }
+          const markRows = students.map(s => ({
+            student_id: s.studentId, module_id: exam.moduleId, class_id: exam.classId,
+            final_exam: marksMap[s.studentId] ?? 0,
+            year: curYear, semester: curSemester,
+          }));
+          const { error: marksErr } = await supabase
+            .from('marks')
+            .upsert(markRows, { onConflict: 'student_id,module_id,class_id,year,semester' });
 
           await supabase.from('exams').update({ status: 'done' }).eq('id', exam.id);
-          if (errors.length > 0) {
-            toast(`${errors.length} mark(s) could not be saved. Please try again.`, 'error');
+
+          // Success is determined by the report/transcript source (assessment_marks).
+          // The legacy marks sync is best-effort and must never block saving.
+          if (asmErr) {
+            toast(asmErr.message || 'Marks could not be saved. Please try again.', 'error');
           } else {
-            toast('Marks saved!', 'success'); closeModal(); reloadDb();
+            toast(marksErr ? 'Marks saved (overview sync pending).' : 'Marks saved!', 'success');
+            closeModal(); reloadDb();
           }
         }}>Save Marks</button>
       </div>
