@@ -28,15 +28,31 @@ export default function ReportsPage() {
   const [asmMarks, setAsmMarks] = useState<AssessmentMark[]>([]);
   const [loading, setLoading] = useState(false);
 
-  // Load assessment_marks for selected class+module
+  // Load assessment_marks for selected class+module.
+  //
+  // Match marks by assessment_id (the exam/assignment they belong to) rather than
+  // the denormalised class_id/module_id columns stored on assessment_marks. Those
+  // columns are snapshotted from the exam at save time and go stale if the exam is
+  // later re-assigned to a different module or class — which would make already-
+  // saved marks silently vanish from this report even though they still appear on
+  // the Exams "Enter Marks" screen (that screen keys on assessment_id). Keying on
+  // assessment_id keeps the two views consistent.
   const loadMarks = useCallback(async (classId: string, moduleId: string) => {
     if (!classId || !moduleId) return;
     setLoading(true);
+    const assessmentIds = [
+      ...db.exams.filter((e) => e.classId === classId && e.moduleId === moduleId).map((e) => e.id),
+      ...db.assignments.filter((a) => a.classId === classId && a.moduleId === moduleId).map((a) => a.id),
+    ];
+    if (assessmentIds.length === 0) {
+      setAsmMarks([]);
+      setLoading(false);
+      return;
+    }
     const { data } = await supabase
       .from("assessment_marks")
       .select("student_id, assessment_id, score")
-      .eq("class_id", classId)
-      .eq("module_id", moduleId);
+      .in("assessment_id", assessmentIds);
     setAsmMarks(
       (data || []).map((x: any) => ({
         student_id: x.student_id,
@@ -45,7 +61,7 @@ export default function ReportsPage() {
       })),
     );
     setLoading(false);
-  }, []);
+  }, [db.exams, db.assignments]);
 
   useEffect(() => {
     if (view === "detail" && selClassId) {
