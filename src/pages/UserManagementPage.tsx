@@ -255,7 +255,17 @@ export default function UserManagementPage() {
           const { data, error } = await supabase.functions.invoke('create-user', {
             body: { email, password, name, role, dept },
           });
-          if (error || data?.error) { toast(data?.error || error?.message || 'Create failed', 'error'); }
+          // When the function returns non-2xx, supabase-js gives a generic
+          // "non-2xx status code" message and puts the real JSON body on
+          // error.context (a Response). Surface that so the actual reason shows.
+          let errMsg = '';
+          if (error) {
+            errMsg = error.message || 'Create failed';
+            try { const b = await (error as any).context?.json?.(); if (b?.error) errMsg = b.error; } catch { /* keep generic */ }
+          } else if (data?.error) {
+            errMsg = data.error;
+          }
+          if (errMsg) { toast(errMsg, 'error'); }
           else { toast('User created!', 'success'); closeModal(); loadUsers(); reloadDb(); }
         }}>Create User</button>
       </div>
