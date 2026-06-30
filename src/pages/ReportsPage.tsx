@@ -1,11 +1,13 @@
 import { useState, useEffect, useCallback, useMemo } from "react";
 import { useApp } from "@/context/AppContext";
-import { grade, gradeColor } from "@/data/db";
 import { supabase } from "@/integrations/supabase/client";
 import { getLecturerClasses } from "@/lib/lecturerHelpers";
 import { avg, categorizeModuleAssessments, computeStudentModuleMark } from "@/lib/moduleMark";
+import { letterGrade, letterBadgeClass, GRADE_SCALE, LETTER_ORDER, PASS_MARK } from "@/lib/grading";
 
-const GRADE_ORDER = ["Distinction", "Merit", "Credit", "Pass", "Fail"] as const;
+// Grade-distribution columns use the shared transcript letter scale so the report
+// and the transcript always agree.
+const GRADE_ORDER = LETTER_ORDER;
 
 interface AssessmentMark {
   student_id: string;
@@ -174,16 +176,18 @@ export default function ReportsPage() {
         cat,
         scoreOf: score,
       });
-      return { s, ...mark, decision: grade(mark.moduleMark) };
+      return { s, ...mark, decision: letterGrade(mark.moduleMark) };
     });
 
     const classAvg = rows.length ? Math.round(avg(rows.map((r) => r.moduleMark))) : null;
-    const gradeCounts: Record<string, number> = { Distinction: 0, Merit: 0, Credit: 0, Pass: 0, Fail: 0 };
+    const gradeCounts: Record<string, number> = Object.fromEntries(LETTER_ORDER.map((g) => [g, 0]));
     rows.forEach((r) => {
       gradeCounts[r.decision] = (gradeCounts[r.decision] || 0) + 1;
     });
+    // Pass rate uses the shared pass mark (40%): a fail is any mark below it.
+    const failCount = rows.filter((r) => r.moduleMark < PASS_MARK).length;
     const passPct = students.length
-      ? Math.round(((students.length - (gradeCounts.Fail || 0)) / students.length) * 100)
+      ? Math.round(((students.length - failCount) / students.length) * 100)
       : 0;
 
     const hasTheory = theoryCWExams.length > 0 || classAssignments.length > 0 || finalTheoryExam;
@@ -280,11 +284,7 @@ export default function ReportsPage() {
         [],
         [],
         ["", "", "Grading"],
-        ["", "", "0–49%    Fail"],
-        ["", "", "50–59%   Pass"],
-        ["", "", "60–69%   Credit"],
-        ["", "", "70–79%   Merit"],
-        ["", "", "80–100%  Distinction"],
+        ...GRADE_SCALE.map(([label, range]) => ["", "", `${label}   ${range}`]),
       ];
 
       const ws = XLSX.utils.aoa_to_sheet(wsData);
@@ -785,7 +785,7 @@ export default function ReportsPage() {
                         {r.moduleMark}%
                       </td>
                       <td style={{ textAlign: "center" }}>
-                        <span className={`badge ${gradeColor(r.decision)}`}>{r.decision}</span>
+                        <span className={`badge ${letterBadgeClass(r.decision)}`}>{r.decision}</span>
                       </td>
                     </tr>
                   ))}
@@ -798,7 +798,7 @@ export default function ReportsPage() {
                         {classAvg}%
                       </td>
                       <td style={{ textAlign: "center" }}>
-                        <span className={`badge ${gradeColor(grade(classAvg))}`}>{grade(classAvg)}</span>
+                        <span className={`badge ${letterBadgeClass(letterGrade(classAvg))}`}>{letterGrade(classAvg)}</span>
                       </td>
                     </tr>
                   )}
@@ -806,20 +806,14 @@ export default function ReportsPage() {
               </table>
             </div>
 
-            {/* Grading scale */}
+            {/* Grading scale — shared with the transcript */}
             <div style={{ display: "flex", gap: 10, marginTop: 14, flexWrap: "wrap" }}>
-              {[
-                ["0–49%", "Fail", "badge-fail"],
-                ["50–59%", "Pass", "badge-pass"],
-                ["60–69%", "Credit", "badge-credit"],
-                ["70–79%", "Merit", "badge-merit"],
-                ["80–100%", "Distinction", "badge-distinction"],
-              ].map(([range, label, cls]) => (
+              {GRADE_SCALE.map(([label, range]) => (
                 <div
                   key={label}
                   style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 12, color: "var(--text2)" }}
                 >
-                  <span className={`badge ${cls}`}>{label}</span> {range}
+                  <span className={`badge ${letterBadgeClass(label)}`}>{label}</span> {range}
                 </div>
               ))}
             </div>
@@ -898,7 +892,7 @@ export default function ReportsPage() {
                 // always agree. A student is graded on the average of the module
                 // marks they actually have marks for in this class.
                 const clsModuleIds = modulesForClass(cls.id).map((m) => m.id);
-                const counts: Record<string, number> = { Distinction: 0, Merit: 0, Credit: 0, Pass: 0, Fail: 0 };
+                const counts: Record<string, number> = Object.fromEntries(LETTER_ORDER.map((g) => [g, 0]));
                 students.forEach((s) => {
                   const moduleMarks: number[] = [];
                   clsModuleIds.forEach((mid) => {
@@ -919,12 +913,12 @@ export default function ReportsPage() {
                     moduleMarks.push(moduleMark);
                   });
                   if (moduleMarks.length) {
-                    const g = grade(Math.round(avg(moduleMarks)));
+                    const g = letterGrade(Math.round(avg(moduleMarks)));
                     if (counts[g] !== undefined) counts[g]++;
                   }
                 });
                 const passPct = students.length
-                  ? Math.round(((students.length - (counts.Fail || 0)) / students.length) * 100)
+                  ? Math.round(((students.length - (counts.F || 0)) / students.length) * 100)
                   : 0;
                 return (
                   <tr key={cls.id}>

@@ -3,41 +3,14 @@ import { useApp } from "@/context/AppContext";
 import { calcModuleMark } from "@/data/db";
 import { supabase } from "@/integrations/supabase/client";
 import { categorizeModuleAssessments, computeStudentModuleMark } from "@/lib/moduleMark";
+import { letterGrade, gradePoint, GRADE_SCALE } from "@/lib/grading";
 
 // Roles permitted to edit the transcript signatory ("admin and above").
 const CAN_EDIT_ISSUER = ["admin", "super_admin"];
 
 // ── Grading ───────────────────────────────────────────────────────────────────
-// University letter-grade scale (percentage → letter) with +/- bands.
-function letterGrade(pct: number): string {
-  if (pct >= 86) return "A";
-  if (pct >= 80) return "A-";
-  if (pct >= 75) return "B+";
-  if (pct >= 70) return "B";
-  if (pct >= 65) return "B-";
-  if (pct >= 60) return "C+";
-  if (pct >= 55) return "C";
-  if (pct >= 50) return "C-";
-  if (pct >= 40) return "D";
-  return "F";
-}
-
-// Grade points on a 4.0 scale.
-function gradePoint(letter: string): number {
-  const m: Record<string, number> = {
-    A: 4.0,
-    "A-": 3.7,
-    "B+": 3.3,
-    B: 3.0,
-    "B-": 2.7,
-    "C+": 2.3,
-    C: 2.0,
-    "C-": 1.7,
-    D: 1.0,
-    F: 0.0,
-  };
-  return m[letter] ?? 0;
-}
+// The letter-grade scale, grade points and displayed scale live in
+// "@/lib/grading" so the transcript and the class report share one definition.
 
 // Credit-weighted GPA: Σ(gradePoint × credits) / Σ(credits). Superseded
 // (earlier retake) attempts are excluded — only the latest attempt counts.
@@ -48,20 +21,6 @@ function computeGPA(mods: PassedModule[]): string {
   const weighted = counted.reduce((s, m) => s + gradePoint(m.grade) * m.credits, 0);
   return (weighted / totalCredits).toFixed(2);
 }
-
-// Grading scale displayed at the foot of the transcript.
-const GRADE_SCALE: [string, string][] = [
-  ["A", "86–100% · 4.0"],
-  ["A-", "80–85% · 3.7"],
-  ["B+", "75–79% · 3.3"],
-  ["B", "70–74% · 3.0"],
-  ["B-", "65–69% · 2.7"],
-  ["C+", "60–64% · 2.3"],
-  ["C", "55–59% · 2.0"],
-  ["C-", "50–54% · 1.7"],
-  ["D", "40–49% · 1.0"],
-  ["F", "0–39% · 0.0 (Fail)"],
-];
 
 function formatDate(dateStr?: string): string {
   if (!dateStr) return "—";

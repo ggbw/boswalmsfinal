@@ -5,6 +5,23 @@ const corsHeaders = {
   "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
 };
 
+// auth.admin.listUsers() returns a single page (default 50 users). Walking every
+// page makes "find the existing user" reliable no matter how many accounts exist —
+// without this, re-adding an email belonging to an older account fails with a
+// false "User exists but could not be found".
+async function findUserByEmail(adminClient: any, email: string) {
+  const target = email.toLowerCase();
+  for (let page = 1; page <= 100; page++) {
+    const { data, error } = await adminClient.auth.admin.listUsers({ page, perPage: 200 });
+    if (error) return null;
+    const users = data?.users ?? [];
+    if (users.length === 0) return null;
+    const found = users.find((u: any) => (u.email || "").toLowerCase() === target);
+    if (found) return found;
+  }
+  return null;
+}
+
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") {
     return new Response("ok", { headers: corsHeaders });
@@ -40,10 +57,9 @@ Deno.serve(async (req) => {
       .from("user_roles")
       .select("role")
       .eq("user_id", caller.id)
-      .eq("role", "admin")
-      .single();
+      .in("role", ["admin", "super_admin"]);
 
-    if (!roleData) {
+    if (!roleData || roleData.length === 0) {
       return new Response(JSON.stringify({ error: "Only admins can create users" }), {
         status: 403, headers: { ...corsHeaders, "Content-Type": "application/json" },
       });
@@ -70,8 +86,7 @@ Deno.serve(async (req) => {
     if (createError) {
       // If user already exists, find them and update instead
       if (createError.message.includes("already been registered")) {
-        const { data: listData } = await adminClient.auth.admin.listUsers();
-        const existing = listData?.users?.find((u: any) => u.email === email);
+        const existing = await findUserByEmail(adminClient, email);
         if (!existing) {
           return new Response(JSON.stringify({ error: "User exists but could not be found" }), {
             status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" },

@@ -249,8 +249,17 @@ export default function LecturersPage() {
             const { data, error: fnErr } = await supabase.functions.invoke("create-user", {
               body: { email: email.trim(), password: "Boswa@2024", name: name.trim(), role, dept, code },
             });
-            if (fnErr || data?.error) {
-              toast(data?.error || fnErr?.message || "Failed to create account", "error");
+            // Surface the function's real error body (on fnErr.context) instead of
+            // supabase-js's generic "non-2xx status code" message.
+            let errMsg = "";
+            if (fnErr) {
+              errMsg = fnErr.message || "Failed to create account";
+              try { const b = await (fnErr as any).context?.json?.(); if (b?.error) errMsg = b.error; } catch { /* keep generic */ }
+            } else if (data?.error) {
+              errMsg = data.error;
+            }
+            if (errMsg) {
+              toast(errMsg, "error");
               return;
             }
             toast("Lecturer created!", "success");

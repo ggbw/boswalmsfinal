@@ -6,6 +6,7 @@ export default function LoginScreen() {
   const { signIn } = useAuth();
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
+  const [showPassword, setShowPassword] = useState(false);
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
 
@@ -76,14 +77,39 @@ export default function LoginScreen() {
             onChange={(e) => setEmail(e.target.value)}
             onKeyDown={handleKeyDown}
           />
-          <input
-            className="login-input"
-            type="password"
-            placeholder="Password"
-            value={password}
-            onChange={(e) => setPassword(e.target.value)}
-            onKeyDown={handleKeyDown}
-          />
+          <div style={{ position: "relative", marginBottom: 12 }}>
+            <input
+              className="login-input"
+              type={showPassword ? "text" : "password"}
+              placeholder="Password"
+              value={password}
+              onChange={(e) => setPassword(e.target.value)}
+              onKeyDown={handleKeyDown}
+              style={{ marginBottom: 0, paddingRight: 42 }}
+            />
+            <button
+              type="button"
+              onClick={() => setShowPassword((v) => !v)}
+              aria-label={showPassword ? "Hide password" : "Show password"}
+              title={showPassword ? "Hide password" : "Show password"}
+              tabIndex={-1}
+              style={{
+                position: "absolute",
+                right: 10,
+                top: "50%",
+                transform: "translateY(-50%)",
+                background: "none",
+                border: "none",
+                cursor: "pointer",
+                color: "#8b949e",
+                padding: 4,
+                fontSize: 14,
+                lineHeight: 1,
+              }}
+            >
+              <i className={`fa-solid ${showPassword ? "fa-eye-slash" : "fa-eye"}`} />
+            </button>
+          </div>
           <button className="login-btn" onClick={handleLogin} disabled={loading}>
             {loading ? "Signing in..." : "Sign In"}
           </button>
