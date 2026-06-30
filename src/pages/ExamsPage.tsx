@@ -125,6 +125,7 @@ function ExamFormModal({
 export default function ExamsPage() {
   const { db, currentUser, showModal, closeModal, toast, reloadDb } = useApp();
   const role = currentUser?.role;
+  const [search, setSearch] = useState('');
 
   const isAdmin = role === 'admin';
   const isTeacher = role === 'lecturer' || role === 'hod' || role === 'hoy';
@@ -134,6 +135,17 @@ export default function ExamsPage() {
   if (isTeacher) {
     exams = exams.filter(e => e.createdBy === currentUser?.id);
   }
+
+  // Free-text search across exam name, type, status, date, module and class.
+  const q = search.trim().toLowerCase();
+  const filteredExams = !q
+    ? exams
+    : exams.filter(e => {
+        const mod = db.modules.find(m => m.id === e.moduleId);
+        const cls = db.classes.find(c => c.id === e.classId);
+        return [e.name, e.type, e.status, e.date, mod?.name, cls?.name]
+          .some(v => (v || '').toLowerCase().includes(q));
+      });
 
   const getLecturerModules = () =>
     getLecturerModulesList(db.lecturerModules, db.modules, currentUser?.id || '');
@@ -280,12 +292,21 @@ export default function ExamsPage() {
 
   return (<>
     <div className="page-header">
-      <div><div className="page-title"><i className="fa-solid fa-file-pen" style={{color:'var(--accent)',marginRight:8}}/>Examinations</div><div className="page-sub">{exams.length} exam(s)</div></div>
+      <div><div className="page-title"><i className="fa-solid fa-file-pen" style={{color:'var(--accent)',marginRight:8}}/>Examinations</div><div className="page-sub">{filteredExams.length} of {exams.length} exam(s)</div></div>
       {(isAdmin || isTeacher) && <button className="btn btn-primary btn-sm" onClick={handleCreateExam}><i className="fa-solid fa-plus" /> Create Exam</button>}
     </div>
-    <div className="card"><div className="table-wrap"><table>
+    <div className="card">
+      <div className="search-bar">
+        <input
+          className="search-input"
+          placeholder="Search exams by name, module, class, type, status or date…"
+          value={search}
+          onChange={e => setSearch(e.target.value)}
+        />
+      </div>
+      <div className="table-wrap"><table>
       <thead><tr><th>Exam Name</th><th>Module</th><th>Class</th><th>Date</th><th>Status</th>{(isAdmin || isTeacher) && <th>Actions</th>}</tr></thead>
-      <tbody>{exams.map(e => {
+      <tbody>{filteredExams.map(e => {
         const mod = db.modules.find(m => m.id === e.moduleId);
         const cls = db.classes.find(c => c.id === e.classId);
         return (
@@ -312,7 +333,14 @@ export default function ExamsPage() {
             )}
           </tr>
         );
-      })}</tbody>
+      })}
+      {filteredExams.length === 0 && (
+        <tr>
+          <td colSpan={(isAdmin || isTeacher) ? 6 : 5} style={{ textAlign: 'center', color: 'var(--text2)', padding: 32 }}>
+            {exams.length === 0 ? 'No exams found.' : 'No exams match your search.'}
+          </td>
+        </tr>
+      )}</tbody>
     </table></div></div>
   </>);
 }
