@@ -115,6 +115,7 @@ export default function AssignmentsPage() {
   const { db, currentUser, showModal, closeModal, toast, reloadDb } = useApp();
   const role = currentUser?.role;
   const [selectedAssignment, setSelectedAssignment] = useState<string | null>(null);
+  const [search, setSearch] = useState('');
 
   const isAdmin = role === 'admin';
   const isTeacher = role === 'lecturer' || role === 'hod' || role === 'hoy';
@@ -332,13 +333,33 @@ export default function AssignmentsPage() {
     return db.submissions.filter(sub => sub.assignmentId === assignmentId);
   };
 
+  // Free-text search across title, module, class, submission type, status and due date.
+  const q = search.trim().toLowerCase();
+  const filteredAssignments = !q
+    ? assignments
+    : assignments.filter(a => {
+        const mod = db.modules.find(m => m.id === a.moduleId);
+        const cls = db.classes.find(c => c.id === a.classId);
+        return [a.title, a.submissionType, a.status, a.dueDate, mod?.name, cls?.name]
+          .some(v => (v || '').toLowerCase().includes(q));
+      });
+
   return (<>
     <div className="page-header">
-      <div><div className="page-title"><i className="fa-solid fa-list-check" style={{color:'var(--accent)',marginRight:8}}/>Assignments</div><div className="page-sub">{assignments.length} assignment(s)</div></div>
+      <div><div className="page-title"><i className="fa-solid fa-list-check" style={{color:'var(--accent)',marginRight:8}}/>Assignments</div><div className="page-sub">{filteredAssignments.length} of {assignments.length} assignment(s)</div></div>
       {(isAdmin || isTeacher) && <button className="btn btn-primary btn-sm" onClick={handleCreateAssignment}><i className="fa-solid fa-plus" /> Create Assignment</button>}
     </div>
-    <div className="card"><div className="table-wrap"><table><thead><tr><th>Title</th><th>Module</th><th>Class</th><th>Due Date</th><th style={{textAlign:'center'}}>Marks</th><th>Type</th><th>Status</th><th>Submissions</th>{role === 'student' && <th>Action</th>}{(isAdmin || isTeacher) && <th>Actions</th>}</tr></thead>
-      <tbody>{assignments.map(a => {
+    <div className="card">
+      <div className="search-bar">
+        <input
+          className="search-input"
+          placeholder="Search assignments by title, module, class, type, status or due date…"
+          value={search}
+          onChange={e => setSearch(e.target.value)}
+        />
+      </div>
+      <div className="table-wrap"><table><thead><tr><th>Title</th><th>Module</th><th>Class</th><th>Due Date</th><th style={{textAlign:'center'}}>Marks</th><th>Type</th><th>Status</th><th>Submissions</th>{role === 'student' && <th>Action</th>}{(isAdmin || isTeacher) && <th>Actions</th>}</tr></thead>
+      <tbody>{filteredAssignments.map(a => {
         const mod = db.modules.find(m => m.id === a.moduleId);
         const cls = db.classes.find(c => c.id === a.classId);
         const mySubmission = currentStudent ? db.submissions.find(sub => sub.assignmentId === a.id && sub.studentId === currentStudent.id) : null;
@@ -383,7 +404,14 @@ export default function AssignmentsPage() {
             )}
           </tr>
         );
-      })}</tbody>
+      })}
+      {filteredAssignments.length === 0 && (
+        <tr>
+          <td colSpan={8 + (role === 'student' ? 1 : 0) + ((isAdmin || isTeacher) ? 1 : 0)} style={{ textAlign: 'center', color: 'var(--text2)', padding: 32 }}>
+            {assignments.length === 0 ? 'No assignments found.' : 'No assignments match your search.'}
+          </td>
+        </tr>
+      )}</tbody>
     </table></div></div>
 
     {/* Expanded assignment detail */}

@@ -316,7 +316,7 @@ export default function ExamsPage() {
             <td>{cls?.name}</td>
             <td style={{fontFamily:"'JetBrains Mono',monospace",fontSize:11}}>{e.date}</td>
             <td><span className={`badge ${e.status==='done'?'badge-credit':e.status==='confirmed'?'badge-pass':'badge-pending'}`}>{e.status}</span></td>
-            {(role === 'lecturer' || role === 'admin') && (
+            {(isAdmin || isTeacher) && (
               <td>
                 <div style={{ display: 'flex', gap: 4 }}>
                   <button className="btn btn-primary btn-sm" onClick={() => handleEnterMarks(e)}>
