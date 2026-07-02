@@ -210,6 +210,9 @@ function printTranscript(
   // Build the logo URL (absolute so it works in a new window)
   const logoUrl = window.location.origin + "/transcript_logo.png";
   const watermarkUrl = window.location.origin + "/transcript_watermark.svg";
+  // Letterhead / signature banner shown at the foot of the transcript. Falls
+  // back to the older plain contact bar if the letterhead asset isn't present.
+  const letterheadUrl = window.location.origin + "/transcript_letterhead.png";
   const footerUrl = window.location.origin + "/transcript_footer.png";
 
   const semSections = Object.keys(semGroups)
@@ -339,11 +342,6 @@ function printTranscript(
     I do hereby self-certify and affirm that this is the official transcript and record of
     <strong>${student.name}</strong> in the academic studies of ${studyYears}.
   </p>
-  <div style="font-size:12px;margin-bottom:16px;line-height:1.8">
-    <div><strong>Issued By:</strong> ${transcriptMeta?.issuer || "Boisi Dibuile"}</div>
-    <div><strong>Position:</strong> ${transcriptMeta?.title || "Deputy Principal"}</div>
-    <div><strong>Date:</strong> ${todayStr()}</div>
-  </div>
 
   <!-- Grading scale -->
   <div style="border-top:1px solid #ccc;padding-top:10px;margin-bottom:14px">
@@ -356,9 +354,9 @@ function printTranscript(
     </div>
   </div>
 
-  <!-- Footer image -->
+  <!-- Footer / letterhead banner -->
   <div style="text-align:center;margin-top:20px">
-    <img src="${footerUrl}" style="width:100%;max-width:700px;object-fit:contain" onerror="this.style.display='none'" />
+    <img src="${letterheadUrl}" style="width:100%;max-width:760px;object-fit:contain" onerror="this.onerror=null;this.src='${footerUrl}'" />
   </div>
 
   <!-- Print button (hidden when printing) -->
@@ -775,17 +773,6 @@ export function TranscriptView({ stu }: { stu: any }) {
         I do hereby self-certify and affirm that this is the official transcript and record of{" "}
         <strong>{stu.name}</strong> in the academic studies of {studyYears}.
       </p>
-      <div style={{ fontSize: 12, marginBottom: 14, lineHeight: 1.8 }}>
-        <div>
-          <strong>Issued By:</strong> {db.config.transcriptIssuer || "Boisi Dibuile"}
-        </div>
-        <div>
-          <strong>Position:</strong> {db.config.transcriptIssuerTitle || "Deputy Principal"}
-        </div>
-        <div>
-          <strong>Date:</strong> {todayStr()}
-        </div>
-      </div>
 
       {/* Grading key */}
       <div style={{ borderTop: "1px solid #ccc", paddingTop: 10, marginBottom: 14 }}>
@@ -808,8 +795,27 @@ export function TranscriptView({ stu }: { stu: any }) {
         </div>
       </div>
 
+      {/* Footer / letterhead banner */}
+      <div style={{ textAlign: "center", marginTop: 20 }}>
+        <img
+          src="/transcript_letterhead.png"
+          alt=""
+          aria-hidden="true"
+          onError={(e) => {
+            const img = e.target as HTMLImageElement;
+            if (!img.dataset.fallback) {
+              img.dataset.fallback = "1";
+              img.src = "/transcript_footer.png";
+            } else {
+              img.style.display = "none";
+            }
+          }}
+          style={{ width: "100%", maxWidth: 760, objectFit: "contain" }}
+        />
+      </div>
+
       {/* Print button */}
-      <div style={{ display: "flex", justifyContent: "flex-end" }}>
+      <div className="no-print" style={{ display: "flex", justifyContent: "flex-end", marginTop: 12 }}>
         <button className="btn btn-primary" onClick={handlePrint}>
           <i className="fa-solid fa-print" style={{ marginRight: 6 }} />
           Print / Save as PDF
