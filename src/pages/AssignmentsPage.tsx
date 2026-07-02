@@ -358,7 +358,7 @@ export default function AssignmentsPage() {
           onChange={e => setSearch(e.target.value)}
         />
       </div>
-      <div className="table-wrap"><table><thead><tr><th>Title</th><th>Module</th><th>Class</th><th>Due Date</th><th style={{textAlign:'center'}}>Marks</th><th>Type</th><th>Status</th><th>Submissions</th>{role === 'student' && <th>Action</th>}{(isAdmin || isTeacher) && <th>Actions</th>}</tr></thead>
+      <div className="table-wrap"><table><thead><tr><th>Title</th><th>Module</th><th>Class</th><th>Due Date</th><th style={{textAlign:'center'}}>Marks</th><th>Type</th><th>Status</th>{(isAdmin || isTeacher) && <th>Delete</th>}<th>Submissions</th>{role === 'student' && <th>Action</th>}{(isAdmin || isTeacher) && <th>Actions</th>}</tr></thead>
       <tbody>{filteredAssignments.map(a => {
         const mod = db.modules.find(m => m.id === a.moduleId);
         const cls = db.classes.find(c => c.id === a.classId);
@@ -374,11 +374,18 @@ export default function AssignmentsPage() {
             <td style={{fontFamily:"'JetBrains Mono',monospace",textAlign:'center'}}>{a.marks}</td>
             <td><span className={`badge ${a.submissionType==='hardcopy'?'badge-pending':'badge-active'}`}>{(a.submissionType||'softcopy').charAt(0).toUpperCase()+(a.submissionType||'softcopy').slice(1)}</span></td>
             <td>
-              {mySubmission 
+              {mySubmission
                 ? <span className="badge badge-credit">Submitted</span>
                 : <span className={`badge ${a.status==='graded'?'badge-credit':a.status==='active'?'badge-pass':'badge-inactive'}`}>{a.status}</span>
               }
             </td>
+            {(isAdmin || isTeacher) && (
+              <td onClick={e => e.stopPropagation()}>
+                <button className="btn btn-danger btn-sm" onClick={() => handleDeleteAssignment(a.id)}>
+                  <i className="fa-solid fa-trash" /> Delete
+                </button>
+              </td>
+            )}
             <td style={{textAlign:'center'}}>{submissionCount}</td>
             {role === 'student' && (
               <td onClick={e => e.stopPropagation()}>
@@ -396,9 +403,6 @@ export default function AssignmentsPage() {
                   <button className="btn btn-primary btn-sm" onClick={() => handleEnterMarks(a)}>
                     <i className="fa-solid fa-pen-to-square" /> Marks
                   </button>
-                  <button className="btn btn-outline btn-sm" style={{color:'var(--danger)'}} onClick={() => handleDeleteAssignment(a.id)}>
-                    <i className="fa-solid fa-trash" />
-                  </button>
                 </div>
               </td>
             )}
@@ -407,7 +411,7 @@ export default function AssignmentsPage() {
       })}
       {filteredAssignments.length === 0 && (
         <tr>
-          <td colSpan={8 + (role === 'student' ? 1 : 0) + ((isAdmin || isTeacher) ? 1 : 0)} style={{ textAlign: 'center', color: 'var(--text2)', padding: 32 }}>
+          <td colSpan={8 + (role === 'student' ? 1 : 0) + ((isAdmin || isTeacher) ? 2 : 0)} style={{ textAlign: 'center', color: 'var(--text2)', padding: 32 }}>
             {assignments.length === 0 ? 'No assignments found.' : 'No assignments match your search.'}
           </td>
         </tr>

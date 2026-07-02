@@ -305,7 +305,7 @@ export default function ExamsPage() {
         />
       </div>
       <div className="table-wrap"><table>
-      <thead><tr><th>Exam Name</th><th>Module</th><th>Class</th><th>Date</th><th>Status</th>{(isAdmin || isTeacher) && <th>Actions</th>}</tr></thead>
+      <thead><tr><th>Exam Name</th><th>Module</th><th>Class</th><th>Date</th><th>Status</th>{(isAdmin || isTeacher) && <th>Delete</th>}{(isAdmin || isTeacher) && <th>Actions</th>}</tr></thead>
       <tbody>{filteredExams.map(e => {
         const mod = db.modules.find(m => m.id === e.moduleId);
         const cls = db.classes.find(c => c.id === e.classId);
@@ -318,15 +318,19 @@ export default function ExamsPage() {
             <td><span className={`badge ${e.status==='done'?'badge-credit':e.status==='confirmed'?'badge-pass':'badge-pending'}`}>{e.status}</span></td>
             {(isAdmin || isTeacher) && (
               <td>
+                <button className="btn btn-danger btn-sm" onClick={() => handleDeleteExam(e)}>
+                  <i className="fa-solid fa-trash" /> Delete
+                </button>
+              </td>
+            )}
+            {(isAdmin || isTeacher) && (
+              <td>
                 <div style={{ display: 'flex', gap: 4 }}>
                   <button className="btn btn-primary btn-sm" onClick={() => handleEnterMarks(e)}>
                     <i className="fa-solid fa-pen-to-square" /> Enter Marks
                   </button>
                   <button className="btn btn-outline btn-sm" onClick={() => handleEditExam(e)}>
                     <i className="fa-solid fa-pen" /> Edit
-                  </button>
-                  <button className="btn btn-danger btn-sm" onClick={() => handleDeleteExam(e)}>
-                    <i className="fa-solid fa-trash" /> Delete
                   </button>
                 </div>
               </td>
@@ -336,7 +340,7 @@ export default function ExamsPage() {
       })}
       {filteredExams.length === 0 && (
         <tr>
-          <td colSpan={(isAdmin || isTeacher) ? 6 : 5} style={{ textAlign: 'center', color: 'var(--text2)', padding: 32 }}>
+          <td colSpan={(isAdmin || isTeacher) ? 7 : 5} style={{ textAlign: 'center', color: 'var(--text2)', padding: 32 }}>
             {exams.length === 0 ? 'No exams found.' : 'No exams match your search.'}
           </td>
         </tr>
