@@ -23,7 +23,8 @@
       "Bash(mkdir -p /tmp/motho2_extract)",
       "Read(//tmp/**)",
       "Bash(unzip -o \"/e/E-Downloads/motho2-main \\(3\\).zip\" -d .)",
-      "Bash(find /tmp/motho2_extract/motho2-main -name *.ts -o -name *.tsx)"
+      "Bash(find /tmp/motho2_extract/motho2-main -name *.ts -o -name *.tsx)",
+      "Bash(find /d/PROJECTS/Github/boswalmsfinal -type f \\\\\\(-name *.env* -o -name *config* -o -name *credentials* \\\\\\))"
     ]
   }
 }
