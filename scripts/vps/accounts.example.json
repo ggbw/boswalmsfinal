@@ -1,0 +1,8 @@
+[
+  {
+    "name": "boswa",
+    "apiKey": "<Hik-Connect OpenAPI appKey for boswabwcloud@gmail.com>",
+    "apiSecret": "<Hik-Connect OpenAPI appSecret for boswabwcloud@gmail.com>",
+    "enabled": true
+  }
+]
