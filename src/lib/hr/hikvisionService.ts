@@ -14,6 +14,22 @@ export async function testHikvisionConnection(
   }
 }
 
+export async function fetchHikConnectAttendance(
+  deviceSerial: string,
+  startTime: string,
+  endTime: string
+): Promise<{ success: boolean; data?: unknown[]; message: string }> {
+  try {
+    const { data, error } = await supabase.functions.invoke("hik-attendance", {
+      body: { action: "getAttendance", deviceSerial, startTime, endTime },
+    });
+    if (error) return { success: false, message: error.message };
+    return data as { success: boolean; data?: unknown[]; message: string };
+  } catch (e) {
+    return { success: false, message: String(e) };
+  }
+}
+
 export async function downloadHikvisionAttendance(
   deviceId: string,
   fromDate: string,

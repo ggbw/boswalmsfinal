@@ -15,6 +15,7 @@ import { useCallback, useEffect, useState } from 'react';
 import { useApp } from '@/context/AppContext';
 import { useUserRole } from '@/hooks/hr/useUserRole';
 import { supabase } from '@/integrations/supabase/client';
+import { fetchHikConnectAttendance } from '@/lib/hr/hikvisionService';
 
 interface AttendanceSettings {
   id: number;
@@ -70,6 +71,7 @@ export default function AttendanceSettingsPage() {
   // Inline edit state — tracks which device row is being edited
   const [editingId, setEditingId] = useState<number | null>(null);
   const [editForm, setEditForm] = useState({ device_name: '', location: '', api_key: '' });
+  const [syncingId, setSyncingId] = useState<number | null>(null);
 
   const refetch = useCallback(async () => {
     setLoading(true);
@@ -159,6 +161,22 @@ export default function AttendanceSettingsPage() {
     toast('Device updated', 'success');
     setEditingId(null);
     void refetch();
+  };
+
+  const handleSyncDevice = async (d: AttendanceDevice) => {
+    setSyncingId(d.id);
+    const now = new Date();
+    const today = now.toISOString().slice(0, 10);
+    const startTime = `${today}T00:00:00Z`;
+    const endTime = now.toISOString();
+    const result = await fetchHikConnectAttendance(d.device_serial, startTime, endTime);
+    setSyncingId(null);
+    if (result.success) {
+      toast(`Synced ${(result as { inserted?: number }).inserted ?? 0} new records from ${d.device_serial}`, 'success');
+      void refetch();
+    } else {
+      toast(result.message || 'Sync failed', 'error');
+    }
   };
 
   const handleToggleDevice = async (d: AttendanceDevice) => {
@@ -434,6 +452,15 @@ export default function AttendanceSettingsPage() {
                               </>
                             ) : (
                               <>
+                                <button
+                                  className="btn btn-primary btn-sm"
+                                  disabled={syncingId === d.id || !d.is_active}
+                                  onClick={() => void handleSyncDevice(d)}
+                                  data-testid={`device-sync-${d.id}`}
+                                >
+                                  <i className={`fa-solid ${syncingId === d.id ? 'fa-spinner fa-spin' : 'fa-rotate'}`} />{' '}
+                                  {syncingId === d.id ? 'Syncing…' : 'Sync Now'}
+                                </button>
                                 <button
                                   className="btn btn-outline btn-sm"
                                   onClick={() => startEdit(d)}

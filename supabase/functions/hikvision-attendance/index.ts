@@ -82,7 +82,7 @@ serve(async (req) => {
       )
     }
 
-    const baseUrl = `http://${device.device_ip}:${device.port}/ISAPI`
+    const baseUrl = `http://${device.device_ip}:${device.device_port}/ISAPI`
 
     // Helper: HTTP Digest Auth fetch
     async function digestFetch(url: string, options: any = {}) {

@@ -89,53 +89,67 @@ async function fetchAttendance(
   startTime: string,
   endTime: string,
 ): Promise<NormalizedRecord[]> {
-  const url =
-    `${HIK_BASE}/v1/attendance/records?` +
-    `deviceSerial=${encodeURIComponent(deviceSerial)}&` +
-    `startTime=${encodeURIComponent(startTime)}&` +
-    `endTime=${encodeURIComponent(endTime)}&` +
-    `pageNo=1&pageSize=500`;
+  const allRecords: NormalizedRecord[] = [];
+  const pageSize = 500;
+  let pageNo = 1;
 
-  const res = await fetch(url, {
-    headers: {
-      "Authorization": `Bearer ${token}`,
-      "X-Access-Token": token,
-      "Content-Type": "application/json",
-    },
-  });
+  while (true) {
+    const url =
+      `${HIK_BASE}/v1/attendance/records?` +
+      `deviceSerial=${encodeURIComponent(deviceSerial)}&` +
+      `startTime=${encodeURIComponent(startTime)}&` +
+      `endTime=${encodeURIComponent(endTime)}&` +
+      `pageNo=${pageNo}&pageSize=${pageSize}`;
 
-  const text = await res.text();
-  if (!res.ok) {
-    throw new Error(`Attendance fetch failed (${res.status}): ${text.slice(0, 200)}`);
+    const res = await fetch(url, {
+      headers: {
+        "Authorization": `Bearer ${token}`,
+        "X-Access-Token": token,
+        "Content-Type": "application/json",
+      },
+    });
+
+    const text = await res.text();
+    if (!res.ok) {
+      throw new Error(`Attendance fetch failed (${res.status}): ${text.slice(0, 200)}`);
+    }
+
+    let data: Record<string, unknown>;
+    try {
+      data = JSON.parse(text);
+    } catch {
+      throw new Error(`Attendance endpoint returned non-JSON. First 200 chars: ${text.slice(0, 200)}`);
+    }
+
+    const list =
+      ((data?.data as Record<string, unknown>)?.list as unknown[]) ??
+      (data?.data as unknown[]) ??
+      (data?.records as unknown[]) ??
+      [];
+
+    const pageRecords = (list as Record<string, unknown>[]).map((r) => {
+      const eventTypeRaw = String(r.eventType ?? r.checkType ?? r.type ?? "").toLowerCase();
+      let eventType: NormalizedRecord["eventType"] = "unknown";
+      if (eventTypeRaw.includes("in"))  eventType = "checkIn";
+      else if (eventTypeRaw.includes("out")) eventType = "checkOut";
+
+      return {
+        employeeNo:   String(r.employeeNo ?? r.employeeNoString ?? r.personId ?? ""),
+        personName:   String(r.personName ?? r.name ?? "Unknown"),
+        transTime:    String(r.transTime ?? r.time ?? r.checkInTime ?? ""),
+        eventType,
+        checkOutTime: (r.checkOutTime as string | null) ?? null,
+      };
+    });
+
+    allRecords.push(...pageRecords);
+
+    if (pageRecords.length < pageSize) break;
+    pageNo++;
+    if (pageNo > 20) break; // safety cap at 10,000 records
   }
 
-  let data: Record<string, unknown>;
-  try {
-    data = JSON.parse(text);
-  } catch {
-    throw new Error(`Attendance endpoint returned non-JSON. First 200 chars: ${text.slice(0, 200)}`);
-  }
-
-  const list =
-    ((data?.data as Record<string, unknown>)?.list as unknown[]) ??
-    (data?.data as unknown[]) ??
-    (data?.records as unknown[]) ??
-    [];
-
-  return (list as Record<string, unknown>[]).map((r) => {
-    const eventTypeRaw = String(r.eventType ?? r.checkType ?? r.type ?? "").toLowerCase();
-    let eventType: NormalizedRecord["eventType"] = "unknown";
-    if (eventTypeRaw.includes("in"))  eventType = "checkIn";
-    else if (eventTypeRaw.includes("out")) eventType = "checkOut";
-
-    return {
-      employeeNo:   String(r.employeeNo ?? r.employeeNoString ?? r.personId ?? ""),
-      personName:   String(r.personName ?? r.name ?? "Unknown"),
-      transTime:    String(r.transTime ?? r.time ?? r.checkInTime ?? ""),
-      eventType,
-      checkOutTime: (r.checkOutTime as string | null) ?? null,
-    };
-  });
+  return allRecords;
 }
 
 // ── Edge function entry point ──────────────────────────────────────────────
@@ -189,7 +203,46 @@ Deno.serve(async (req: Request) => {
     }
 
     const data = await fetchAttendance(token, deviceSerial, startTime, endTime);
-    return json({ success: true, data });
+
+    // ── 3. Persist fetched records into attendance_records ────────────────
+    let inserted = 0;
+    if (data.length > 0) {
+      const rows = data.map((r) => ({
+        device_serial: deviceSerial,
+        employee_id: r.employeeNo,
+        full_name: r.personName,
+        punch_at: r.transTime,
+        punch_date: r.transTime.slice(0, 10),
+        punch_time: r.transTime.slice(11, 16),
+        punch_state: r.eventType,
+        device_name: deviceSerial,
+        data_source: "hik-connect",
+        imported_at: new Date().toISOString(),
+      }));
+
+      const batchSize = 500;
+      for (let i = 0; i < rows.length; i += batchSize) {
+        const batch = rows.slice(i, i + batchSize);
+        const { data: upserted } = await supabase
+          .from("attendance_records")
+          .upsert(batch, {
+            onConflict: "device_serial,employee_id,punch_at",
+            ignoreDuplicates: true,
+          })
+          .select("id");
+        inserted += (upserted || []).length;
+      }
+
+      // Update last_sync on the device
+      await supabase
+        .from("attendance_devices")
+        .update({ last_sync: new Date().toISOString() })
+        .eq("device_serial", deviceSerial);
+
+      console.log(`[hik-attendance] Persisted ${inserted} new records for ${deviceSerial}`);
+    }
+
+    return json({ success: true, data, inserted });
 
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);
