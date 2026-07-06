@@ -172,7 +172,7 @@ export function useDbData() {
       ] = await Promise.all([
         supabase.from("terms").select("*"),
         supabase.from("marks").select("*"),
-        supabase.from("attendance").select("student_id,class_id,date,status"),
+        supabase.from("attendance").select("*"),
         supabase.from("student_modules").select("student_id,module_id,added_by,added_at"),
         supabase.from("exams").select("*"),
         supabase.from("assignments").select("id,title,module_id,class_id,due_date,marks,status,description,instructions,attachment_name,uploaded_by,uploaded_date,submission_type,created_by"),
@@ -193,7 +193,8 @@ export function useDbData() {
             year: m.year, semester: m.semester,
           })),
           attendance: (attendanceRes.data || []).map((a: any) => ({
-            studentId: a.student_id, classId: a.class_id, date: a.date, status: a.status,
+            studentId: a.student_id, classId: a.class_id, moduleId: a.module_id || "",
+            date: a.date, status: a.status, session: a.session || "start",
           })),
           studentModules: (studentModulesRes.data || []).map((sm: any) => ({
             studentId: sm.student_id, moduleId: sm.module_id,

@@ -125,6 +125,11 @@ export interface AttendanceRecord {
   classId: string;
   date: string;
   status: string;
+  // Per-module, twice-per-lesson attendance. `moduleId` scopes the register to a
+  // specific module ("" = no module / legacy rows). `session` is the register
+  // taken: 'start' (P/A/L) at the beginning of the lesson, 'end' (P/A) at the end.
+  moduleId?: string;
+  session?: "start" | "end";
 }
 export interface Department {
   id: string;

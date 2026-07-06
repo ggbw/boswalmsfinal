@@ -108,6 +108,20 @@ async function buildPassedModules(db: any, student: any): Promise<PassedModule[]
       (pm: any) => pm.programmeId === student.programme && pm.moduleId === moduleId,
     );
 
+  // The transcript must show ONLY modules the student actually takes. Two kinds
+  // of stray rows leak in otherwise: (a) "phantom" modules whose id is no longer
+  // in the modules table (deleted in config), and (b) marks recorded against a
+  // module for a DIFFERENT class the student isn't in. We keep a row only if the
+  // module is real AND either the mark is for the student's own class or the
+  // module is one they're enrolled in (class link + per-student overrides).
+  const enrolledModuleIds = new Set<string>([
+    ...db.modules.filter((m: any) => (m.classes || []).includes(student.classId)).map((m: any) => m.id),
+    ...(db.studentModules || []).filter((sm: any) => sm.studentId === student.id).map((sm: any) => sm.moduleId),
+  ]);
+  const studentTakesModule = (moduleId: string, classId: string) =>
+    db.modules.some((mo: any) => mo.id === moduleId) &&
+    (classId === student.classId || enrolledModuleIds.has(moduleId));
+
   const result: PassedModule[] = [];
   const seenPairs = new Set<string>();
   // Track (module · attempt year · attempt semester) so legacy rows don't
@@ -118,6 +132,8 @@ async function buildPassedModules(db: any, student: any): Promise<PassedModule[]
     const pairKey = `${x.moduleId}|${x.classId}`;
     if (seenPairs.has(pairKey)) return;
     seenPairs.add(pairKey);
+    // Skip modules the student doesn't actually take (phantom or other-class).
+    if (!studentTakesModule(x.moduleId, x.classId)) return;
 
     const mod = db.modules.find((mo: any) => mo.id === x.moduleId);
     const cls = db.classes.find((c: any) => c.id === x.classId);
@@ -159,6 +175,8 @@ async function buildPassedModules(db: any, student: any): Promise<PassedModule[]
   db.marks
     .filter((m: any) => m.studentId === student.studentId)
     .forEach((m: any) => {
+      // Same guard as above — only modules the student actually takes.
+      if (!studentTakesModule(m.moduleId, m.classId)) return;
       const cls = db.classes.find((c: any) => c.id === m.classId);
       const curr = currOf(m.moduleId);
       const year = curr?.year ?? cls?.year ?? m.year;

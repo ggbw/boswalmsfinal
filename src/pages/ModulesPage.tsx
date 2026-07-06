@@ -103,6 +103,19 @@ export default function ModulesPage() {
     );
   };
 
+  const deleteModule = async (mod: { id: string; name: string }) => {
+    if (!window.confirm(`Delete module "${mod.name}"? This removes its class assignments. Existing marks/exams are kept but will no longer link to a listed module.`)) return;
+    // Remove class links first (no FK cascade guaranteed), then the module row.
+    await supabase.from("module_classes").delete().eq("module_id", mod.id);
+    const { error } = await supabase.from("modules").delete().eq("id", mod.id);
+    if (error) {
+      toast(error.message, "error");
+      return;
+    }
+    toast("Module deleted", "success");
+    reloadDb();
+  };
+
   const showAddModule = () => {
     let code = "",
       name = "",
@@ -221,9 +234,16 @@ export default function ModulesPage() {
                     <td>{dept?.name}</td>
                     <td style={{ fontSize: 11 }}>{cls}</td>
                     {isAdmin && (
-                      <td>
+                      <td style={{ display: "flex", gap: 6 }}>
                         <button className="btn btn-outline btn-sm" onClick={() => showEditModule(m.id)}>
                           <i className="fa-solid fa-pen" /> Edit
+                        </button>
+                        <button
+                          className="btn btn-outline btn-sm"
+                          style={{ color: "var(--danger)" }}
+                          onClick={() => deleteModule(m)}
+                        >
+                          <i className="fa-solid fa-trash" /> Delete
                         </button>
                       </td>
                     )}

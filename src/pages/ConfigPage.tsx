@@ -420,6 +420,7 @@ export default function ConfigPage() {
     let customName = "";
     let useCustom = false;
     let hasPractical = true;
+    let selectedClasses: string[] = [];
     showModal(
       "Add Module",
       <div>
@@ -476,6 +477,26 @@ export default function ConfigPage() {
             With practical: Coursework 40% + Practical 20% + Final Exam 40%. Without: Coursework 60% + Final Exam 40%.
           </div>
         </div>
+        <div className="form-group">
+          <label>Assigned Classes (hold Ctrl/Cmd to select multiple)</label>
+          <select
+            className="form-select"
+            multiple
+            style={{ height: 120 }}
+            onChange={(e) => {
+              selectedClasses = Array.from(e.target.selectedOptions).map((o) => o.value);
+            }}
+          >
+            {db.classes.map((c) => (
+              <option key={c.id} value={c.id}>
+                {c.name}
+              </option>
+            ))}
+          </select>
+          <div style={{ fontSize: 11, color: "var(--text2)", marginTop: 4 }}>
+            A module only appears in a class's attendance, exams, marks and student views once it's assigned to that class.
+          </div>
+        </div>
         <button
           className="btn btn-primary"
           style={{ marginTop: 12 }}
@@ -489,11 +510,20 @@ export default function ConfigPage() {
             const { error } = await supabase.from("modules").insert({ id, name: finalName, code, dept: dept || null, has_practical: hasPractical });
             if (error) {
               toast(error.message, "error");
-            } else {
-              toast("Module added!", "success");
-              closeModal();
-              reloadDb();
+              return;
             }
+            if (selectedClasses.length > 0) {
+              const { error: mcErr } = await supabase
+                .from("module_classes")
+                .insert(selectedClasses.map((cid) => ({ module_id: id, class_id: cid })));
+              if (mcErr) {
+                toast(mcErr.message, "error");
+                return;
+              }
+            }
+            toast("Module added!", "success");
+            closeModal();
+            reloadDb();
           }}
         >
           Add Module
@@ -507,6 +537,7 @@ export default function ConfigPage() {
       code = mod.code,
       dept = mod.dept || "";
     let hasPractical = mod.hasPractical !== false;
+    let selectedClasses: string[] = [...(mod.classes || [])];
     showModal(
       "Edit Module",
       <div>
@@ -540,6 +571,27 @@ export default function ConfigPage() {
             With practical: Coursework 40% + Practical 20% + Final Exam 40%. Without: Coursework 60% + Final Exam 40%.
           </div>
         </div>
+        <div className="form-group">
+          <label>Assigned Classes (hold Ctrl/Cmd to select multiple)</label>
+          <select
+            className="form-select"
+            multiple
+            style={{ height: 120 }}
+            defaultValue={selectedClasses}
+            onChange={(e) => {
+              selectedClasses = Array.from(e.target.selectedOptions).map((o) => o.value);
+            }}
+          >
+            {db.classes.map((c) => (
+              <option key={c.id} value={c.id}>
+                {c.name}
+              </option>
+            ))}
+          </select>
+          <div style={{ fontSize: 11, color: "var(--text2)", marginTop: 4 }}>
+            A module only appears in a class's attendance, exams, marks and student views once it's assigned to that class.
+          </div>
+        </div>
         <div style={{ display: "flex", gap: 8, marginTop: 12 }}>
           <button
             className="btn btn-primary"
@@ -554,11 +606,22 @@ export default function ConfigPage() {
                 .eq("id", mod.id);
               if (error) {
                 toast(error.message, "error");
-              } else {
-                toast("Module updated!", "success");
-                closeModal();
-                reloadDb();
+                return;
               }
+              // Replace the module's class assignments with the current selection.
+              await supabase.from("module_classes").delete().eq("module_id", mod.id);
+              if (selectedClasses.length > 0) {
+                const { error: mcErr } = await supabase
+                  .from("module_classes")
+                  .insert(selectedClasses.map((cid) => ({ module_id: mod.id, class_id: cid })));
+                if (mcErr) {
+                  toast(mcErr.message, "error");
+                  return;
+                }
+              }
+              toast("Module updated!", "success");
+              closeModal();
+              reloadDb();
             }}
           >
             Save Changes

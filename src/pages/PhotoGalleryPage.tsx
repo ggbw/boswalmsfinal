@@ -3,6 +3,7 @@ import { useApp } from "@/context/AppContext";
 import { supabase } from "@/integrations/supabase/client";
 import { compressImage, createThumbnail } from "@/lib/imageCompression";
 import { getLecturerClassIds } from "@/lib/lecturerHelpers";
+import { buildZip, uniqueName } from "@/lib/zip";
 
 type ViewMode = "folders" | "student" | "custom_folder";
 
@@ -35,6 +36,7 @@ export default function PhotoGalleryPage() {
   const [selectedStudentId, setSelectedStudentId] = useState<string | null>(isStudent ? myStudentId : null);
   const [lightboxUrl, setLightboxUrl] = useState<string | null>(null);
   const [uploading, setUploading] = useState(false);
+  const [zipping, setZipping] = useState(false);
   const [deleteConfirm, setDeleteConfirm] = useState<string | null>(null);
   const [folderPrompt, setFolderPrompt] = useState<FileList | null>(null);
   const [folderNameInput, setFolderNameInput] = useState("");
@@ -303,9 +305,47 @@ export default function PhotoGalleryPage() {
     }
   };
 
-  const handleDownloadAll = async (photos: string[], studentName: string) => {
-    for (let i = 0; i < photos.length; i++) await handleDownloadPhoto(photos[i], studentName, i);
-    toast(`Downloaded ${photos.length} photo(s)`, "success");
+  // Bundle a whole folder into a single .zip and download it in one go
+  // (previously this fired one browser download per photo).
+  const handleDownloadAll = async (photos: string[], folderName: string) => {
+    if (photos.length === 0) return;
+    setZipping(true);
+    try {
+      const used = new Set<string>();
+      const entries: { name: string; data: Uint8Array }[] = [];
+      let failed = 0;
+      const safeFolder = folderName.replace(/[^a-zA-Z0-9._-]+/g, "_");
+      for (let i = 0; i < photos.length; i++) {
+        try {
+          const res = await fetch(photos[i]);
+          if (!res.ok) throw new Error(String(res.status));
+          const buf = new Uint8Array(await res.arrayBuffer());
+          entries.push({ name: uniqueName(`${safeFolder}_${i + 1}.webp`, used), data: buf });
+        } catch {
+          failed++;
+        }
+      }
+      if (entries.length === 0) {
+        toast("Failed to download photos", "error");
+        return;
+      }
+      const blob = buildZip(entries);
+      const link = document.createElement("a");
+      link.href = URL.createObjectURL(blob);
+      link.download = `${safeFolder}.zip`;
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      URL.revokeObjectURL(link.href);
+      toast(
+        failed > 0
+          ? `Downloaded ${entries.length} photo(s); ${failed} failed`
+          : `Downloaded ${entries.length} photo(s) as a zip`,
+        failed > 0 ? "error" : "success",
+      );
+    } finally {
+      setZipping(false);
+    }
   };
 
   const handleCreateFolder = async () => {
@@ -490,8 +530,8 @@ export default function PhotoGalleryPage() {
           </div>
           <div style={{ display: "flex", gap: 8 }}>
             {photos.length > 0 && (
-              <button className="btn btn-outline btn-sm" onClick={() => handleDownloadAll(photos, folderDisplayName)}>
-                <i className="fa-solid fa-download" /> Download All
+              <button className="btn btn-outline btn-sm" onClick={() => handleDownloadAll(photos, folderDisplayName)} disabled={zipping}>
+                {zipping ? <><i className="fa-solid fa-spinner fa-spin" /> Zipping...</> : <><i className="fa-solid fa-download" /> Download Folder (.zip)</>}
               </button>
             )}
             {canManage && (
@@ -791,8 +831,9 @@ export default function PhotoGalleryPage() {
               <button
                 className="btn btn-outline btn-sm"
                 onClick={() => handleDownloadAll(selectedPhotos, selectedStudent.name)}
+                disabled={zipping}
               >
-                <i className="fa-solid fa-download" /> Download All
+                {zipping ? <><i className="fa-solid fa-spinner fa-spin" /> Zipping...</> : <><i className="fa-solid fa-download" /> Download Folder (.zip)</>}
               </button>
             )}
             {canManage && (

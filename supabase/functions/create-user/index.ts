@@ -103,17 +103,22 @@ Deno.serve(async (req) => {
     }
 
     // Upsert profile (in case trigger already created it)
-    await adminClient.from("profiles").upsert({
+    const { error: profileErr } = await adminClient.from("profiles").upsert({
       user_id: userId,
       name, dept: dept || null, code: code || null,
       email, student_ref: student_ref || null, student_id: student_id || null,
     }, { onConflict: "user_id" });
+    if (profileErr) throw profileErr;
 
-    // Upsert role (avoid duplicate key error)
-    await adminClient.from("user_roles").upsert({
-      user_id: userId,
-      role,
-    }, { onConflict: "user_id" });
+    // Set the role. NOTE: user_roles has a UNIQUE(user_id, role) constraint —
+    // there is NO single-column unique on user_id — so an upsert with
+    // onConflict:"user_id" fails (and, previously, that error was swallowed,
+    // leaving the account with no role → dumped into the applicant portal =
+    // "cannot log in"). Delete any existing rows then insert exactly one,
+    // and surface the error so creation actually fails if the role can't be set.
+    await adminClient.from("user_roles").delete().eq("user_id", userId);
+    const { error: roleErr } = await adminClient.from("user_roles").insert({ user_id: userId, role });
+    if (roleErr) throw roleErr;
 
     return new Response(JSON.stringify({ user: { id: userId, email } }), {
       status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" },
