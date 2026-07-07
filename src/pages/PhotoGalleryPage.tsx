@@ -55,6 +55,10 @@ export default function PhotoGalleryPage() {
   const [renameModal, setRenameModal] = useState<{ oldName: string } | null>(null);
   const [renameInput, setRenameInput] = useState("");
   const [deleteFolderConfirm, setDeleteFolderConfirm] = useState<string | null>(null);
+  // Rename/delete for a folder INSIDE a student's bucket (path "studentId/sub").
+  const [subFolderRename, setSubFolderRename] = useState<{ studentId: string; oldSub: string } | null>(null);
+  const [subFolderRenameInput, setSubFolderRenameInput] = useState("");
+  const [subFolderDelete, setSubFolderDelete] = useState<{ studentId: string; sub: string } | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const profileInputRef = useRef<HTMLInputElement>(null);
   const customFileInputRef = useRef<HTMLInputElement>(null);
@@ -419,6 +423,47 @@ export default function PhotoGalleryPage() {
     setRenameModal(null);
     setRenameInput("");
     if (selectedCustomFolder === oldName) setSelectedCustomFolder(newName);
+    await loadPhotos();
+  };
+
+  // Rename a folder inside a student's bucket by copying its files to the new
+  // path and removing the old ones (Supabase storage has no folder rename).
+  const handleRenameSubfolder = async () => {
+    if (!subFolderRename) return;
+    const { studentId, oldSub } = subFolderRename;
+    const newSub = validFolderName(subFolderRenameInput);
+    if (!newSub) { toast("Enter a valid folder name (no '/' or '.')", "error"); return; }
+    if (newSub === oldSub) { setSubFolderRename(null); return; }
+    const oldPath = `${studentId}/${oldSub}`;
+    const newPath = `${studentId}/${newSub}`;
+    const { data: files } = await supabase.storage.from("student-photos").list(oldPath, { limit: 500 });
+    if (!files || files.length === 0) {
+      await supabase.storage.from("student-photos").upload(`${newPath}/.keep`, new Blob([""]), { upsert: true });
+    } else {
+      const errors: string[] = [];
+      for (const f of files) {
+        const { error } = await supabase.storage.from("student-photos").copy(`${oldPath}/${f.name}`, `${newPath}/${f.name}`);
+        if (error) errors.push(f.name);
+      }
+      if (errors.length) { toast(`Failed to move ${errors.length} file(s)`, "error"); return; }
+      await supabase.storage.from("student-photos").remove(files.map((f) => `${oldPath}/${f.name}`));
+    }
+    toast(`Renamed to "${newSub}"`, "success");
+    setSubFolderRename(null);
+    setSubFolderRenameInput("");
+    await loadPhotos();
+  };
+
+  const handleDeleteSubfolder = async () => {
+    if (!subFolderDelete) return;
+    const { studentId, sub } = subFolderDelete;
+    const path = `${studentId}/${sub}`;
+    const { data: files } = await supabase.storage.from("student-photos").list(path, { limit: 500 });
+    if (files && files.length > 0) {
+      await supabase.storage.from("student-photos").remove(files.map((f) => `${path}/${f.name}`));
+    }
+    toast(`Folder "${sub}" deleted`, "success");
+    setSubFolderDelete(null);
     await loadPhotos();
   };
 
@@ -902,6 +947,40 @@ export default function PhotoGalleryPage() {
           </div>
         )}
 
+        {/* Rename a student sub-folder */}
+        {subFolderRename && (
+          <div style={{ position: "fixed", inset: 0, zIndex: 900, background: "rgba(0,0,0,0.7)", display: "flex", alignItems: "center", justifyContent: "center" }}>
+            <div className="card" style={{ padding: 28, maxWidth: 400, width: "90%" }}>
+              <div style={{ fontWeight: 700, fontSize: 15, marginBottom: 6, color: "var(--text1)" }}>Rename Folder</div>
+              <div style={{ fontSize: 12, color: "var(--text2)", marginBottom: 14 }}>Enter a new name for <strong>"{subFolderRename.oldSub}"</strong>.</div>
+              <input className="form-input" placeholder="New folder name" value={subFolderRenameInput} autoFocus
+                onChange={(e) => setSubFolderRenameInput(e.target.value)}
+                onKeyDown={(e) => { if (e.key === "Enter") handleRenameSubfolder(); }} />
+              <div style={{ display: "flex", gap: 10, marginTop: 16, justifyContent: "flex-end" }}>
+                <button className="btn btn-outline btn-sm" onClick={() => { setSubFolderRename(null); setSubFolderRenameInput(""); }}>Cancel</button>
+                <button className="btn btn-primary btn-sm" onClick={handleRenameSubfolder}>Rename</button>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* Delete a student sub-folder */}
+        {subFolderDelete && (
+          <div style={{ position: "fixed", inset: 0, zIndex: 900, background: "rgba(0,0,0,0.7)", display: "flex", alignItems: "center", justifyContent: "center" }}>
+            <div className="card" style={{ padding: 28, maxWidth: 380, width: "90%", textAlign: "center" }}>
+              <div style={{ fontSize: 36, marginBottom: 12 }}>🗑️</div>
+              <div style={{ fontWeight: 700, fontSize: 16, marginBottom: 8, color: "var(--text1)" }}>Delete Folder?</div>
+              <div style={{ color: "var(--text2)", fontSize: 13, marginBottom: 20 }}>
+                All photos inside <strong>"{subFolderDelete.sub}"</strong> will be permanently deleted.
+              </div>
+              <div style={{ display: "flex", gap: 10, justifyContent: "center" }}>
+                <button className="btn btn-outline btn-sm" onClick={() => setSubFolderDelete(null)}>Cancel</button>
+                <button className="btn btn-sm" style={{ background: "#dc2626", color: "#fff", border: "none" }} onClick={handleDeleteSubfolder}>Delete</button>
+              </div>
+            </div>
+          </div>
+        )}
+
         {/* Folders inside this student's bucket */}
         {subfolders.length > 0 && (
           <div style={{ marginBottom: 16 }}>
@@ -915,7 +994,22 @@ export default function PhotoGalleryPage() {
                 const thumb = thumbMap[pathKey];
                 return (
                   <div key={sub} className="folder-card card" onClick={() => openSubfolder(selectedStudentId!, sub)}
-                    style={{ padding: 0, cursor: "pointer", overflow: "hidden", border: "1px solid var(--accent)" }}>
+                    style={{ padding: 0, cursor: "pointer", overflow: "hidden", border: "1px solid var(--accent)", position: "relative" }}>
+                    {canManage && (
+                      <div style={{ position: "absolute", top: 6, right: 6, zIndex: 2, display: "flex", gap: 4 }}
+                        onClick={(e) => e.stopPropagation()}>
+                        <button title="Rename folder"
+                          onClick={() => { setSubFolderRenameInput(sub); setSubFolderRename({ studentId: selectedStudentId!, oldSub: sub }); }}
+                          style={{ background: "rgba(0,0,0,0.55)", border: "none", color: "#fff", borderRadius: 5, padding: "4px 7px", cursor: "pointer", fontSize: 11 }}>
+                          <i className="fa-solid fa-pen" />
+                        </button>
+                        <button title="Delete folder"
+                          onClick={() => setSubFolderDelete({ studentId: selectedStudentId!, sub })}
+                          style={{ background: "rgba(220,38,38,0.75)", border: "none", color: "#fff", borderRadius: 5, padding: "4px 7px", cursor: "pointer", fontSize: 11 }}>
+                          <i className="fa-solid fa-trash" />
+                        </button>
+                      </div>
+                    )}
                     <div style={{ height: 100, background: "var(--bg3)", position: "relative", display: "flex", alignItems: "center", justifyContent: "center" }}>
                       {thumb ? (
                         <img src={thumb} alt={sub} style={{ width: "100%", height: "100%", objectFit: "cover" }} />

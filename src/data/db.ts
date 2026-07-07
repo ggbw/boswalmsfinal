@@ -225,6 +225,7 @@ export interface DB {
     programmes: Programme[];
     transcriptIssuer?: string;
     transcriptIssuerTitle?: string;
+    transcriptSignature?: string;
     offerLetterSignatory?: string;
     offerLetterSignatoryTitle?: string;
     offerLetterSignatureUrl?: string;

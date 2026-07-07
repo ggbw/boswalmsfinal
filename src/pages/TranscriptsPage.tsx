@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { useApp } from "@/context/AppContext";
 import { calcModuleMark } from "@/data/db";
 import { supabase } from "@/integrations/supabase/client";
@@ -97,8 +97,9 @@ function footerBannerHTML(): string {
     `<span style="display:inline-flex;align-items:center;justify-content:center;width:26px;height:26px;background:#f2882d;border-radius:6px;flex:none">${icon}</span>` +
     `<span style="font-size:11px;color:#fff;white-space:nowrap">${text}</span></div>`;
   return (
-    `<div style="background:#16233f;padding:14px 20px;border-radius:6px;margin-top:20px">` +
-    `<div style="display:flex;flex-wrap:wrap;gap:14px 22px;align-items:center;justify-content:center">` +
+    // Full-width bar spanning the whole page; contact items spread edge-to-edge.
+    `<div style="background:#16233f;padding:16px 30px;margin-top:22px;width:100%;box-sizing:border-box">` +
+    `<div style="display:flex;flex-wrap:wrap;gap:12px 18px;align-items:center;justify-content:space-between">` +
     item(ICONS.phone, SCHOOL_CONTACT.tel) +
     item(ICONS.fax, SCHOOL_CONTACT.fax) +
     item(ICONS.at, SCHOOL_CONTACT.email) +
@@ -259,12 +260,32 @@ async function buildPassedModules(db: any, student: any): Promise<PassedModule[]
     (a, b) => a.year - b.year || a.semester - b.semester || a.code.localeCompare(b.code),
   );
 }
+// Signatory block (signature image + "Issued By" name + position) shown near the
+// foot of the transcript. Shared by the print window and the on-screen preview so
+// they always match. Renders nothing if no signatory has been configured.
+function signatoryBlockHTML(issuer?: string, title?: string, signature?: string): string {
+  if (!issuer && !title && !signature) return "";
+  const sig = signature
+    ? `<img src="${signature}" alt="Signature" style="height:56px;max-width:220px;object-fit:contain;display:block;margin:0 auto 2px" />`
+    : `<div style="height:56px"></div>`;
+  return (
+    `<div style="display:flex;justify-content:flex-end;margin:22px 0 6px">` +
+    `<div style="text-align:center;min-width:230px">` +
+    sig +
+    `<div style="border-top:1px solid #333;padding-top:4px">` +
+    (issuer ? `<div style="font-weight:700;font-size:12px;color:#000">${issuer}</div>` : "") +
+    (title ? `<div style="font-size:11px;color:#555">${title}</div>` : "") +
+    `<div style="font-size:10px;color:#888;margin-top:2px;font-style:italic">Issued By</div>` +
+    `</div></div></div>`
+  );
+}
+
 // ── Print transcript in a new window ─────────────────────────────────────────
 function printTranscript(
   student: any,
   prog: any,
   passedModules: PassedModule[],
-  transcriptMeta?: { issuer?: string; title?: string },
+  transcriptMeta?: { issuer?: string; title?: string; signature?: string },
 ) {
   const studyYears = prog?.startYear ? `${prog.startYear}–${prog.startYear + (prog.years || 3)}` : "—";
 
@@ -410,6 +431,9 @@ function printTranscript(
     <strong>${student.name}</strong> in the academic studies of ${studyYears}.
   </p>
 
+  <!-- Signatory (signature + issued by / position) -->
+  ${signatoryBlockHTML(transcriptMeta?.issuer, transcriptMeta?.title, transcriptMeta?.signature)}
+
   <!-- Grading scale -->
   <div style="border-top:1px solid #ccc;padding-top:10px;margin-bottom:14px">
     <div style="font-size:11px;font-weight:700;color:#002060;margin-bottom:6px">Grading Scale</div>
@@ -457,6 +481,82 @@ function IssuerSettingsForm() {
   const [issuerName, setIssuerName] = useState(db.config.transcriptIssuer || "");
   const [issuerTitle, setIssuerTitle] = useState(db.config.transcriptIssuerTitle || "");
   const [saving, setSaving] = useState(false);
+  const canvasRef = useRef<HTMLCanvasElement>(null);
+  const drawing = useRef(false);
+  const [hasSig, setHasSig] = useState(!!db.config.transcriptSignature);
+
+  // Preload the currently-saved signature onto the canvas so the admin can see
+  // and keep it (or clear/replace it).
+  useEffect(() => {
+    const canvas = canvasRef.current;
+    const ctx = canvas?.getContext("2d");
+    if (!canvas || !ctx) return;
+    ctx.lineWidth = 2.2;
+    ctx.lineCap = "round";
+    ctx.lineJoin = "round";
+    ctx.strokeStyle = "#111";
+    const existing = db.config.transcriptSignature;
+    if (existing) {
+      const img = new Image();
+      img.onload = () => ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+      img.src = existing;
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  const posOf = (e: any) => {
+    const canvas = canvasRef.current!;
+    const rect = canvas.getBoundingClientRect();
+    const cx = "touches" in e ? e.touches[0].clientX : e.clientX;
+    const cy = "touches" in e ? e.touches[0].clientY : e.clientY;
+    return { x: (cx - rect.left) * (canvas.width / rect.width), y: (cy - rect.top) * (canvas.height / rect.height) };
+  };
+  const startDraw = (e: any) => {
+    const ctx = canvasRef.current!.getContext("2d")!;
+    ctx.strokeStyle = "#111";
+    ctx.lineWidth = 2.2;
+    ctx.lineCap = "round";
+    const p = posOf(e);
+    ctx.beginPath();
+    ctx.moveTo(p.x, p.y);
+    drawing.current = true;
+  };
+  const moveDraw = (e: any) => {
+    if (!drawing.current) return;
+    e.preventDefault();
+    const ctx = canvasRef.current!.getContext("2d")!;
+    const p = posOf(e);
+    ctx.lineTo(p.x, p.y);
+    ctx.stroke();
+    setHasSig(true);
+  };
+  const endDraw = () => {
+    drawing.current = false;
+  };
+  const clearSig = () => {
+    const c = canvasRef.current;
+    if (c) c.getContext("2d")!.clearRect(0, 0, c.width, c.height);
+    setHasSig(false);
+  };
+  const uploadSig = (file: File) => {
+    const reader = new FileReader();
+    reader.onload = () => {
+      const img = new Image();
+      img.onload = () => {
+        const c = canvasRef.current!;
+        const ctx = c.getContext("2d")!;
+        ctx.clearRect(0, 0, c.width, c.height);
+        // Fit the uploaded image inside the pad, preserving aspect ratio.
+        const scale = Math.min(c.width / img.width, c.height / img.height);
+        const w = img.width * scale;
+        const h = img.height * scale;
+        ctx.drawImage(img, (c.width - w) / 2, (c.height - h) / 2, w, h);
+        setHasSig(true);
+      };
+      img.src = reader.result as string;
+    };
+    reader.readAsDataURL(file);
+  };
 
   const save = async () => {
     const configId = (db.config as any)?.id;
@@ -465,11 +565,13 @@ function IssuerSettingsForm() {
       return;
     }
     setSaving(true);
+    const signature = hasSig && canvasRef.current ? canvasRef.current.toDataURL("image/png") : null;
     const { error } = await supabase
       .from("school_config")
       .update({
         transcript_issuer: issuerName.trim() || null,
         transcript_issuer_title: issuerTitle.trim() || null,
+        transcript_signature: signature,
       } as any)
       .eq("id", configId);
     setSaving(false);
@@ -501,6 +603,44 @@ function IssuerSettingsForm() {
           placeholder="Deputy Principal"
           onChange={(e) => setIssuerTitle(e.target.value)}
         />
+      </div>
+      <div className="form-group">
+        <label>Signature</label>
+        <div style={{ border: "1px solid var(--border)", borderRadius: 8, background: "#fff", padding: 6 }}>
+          <canvas
+            ref={canvasRef}
+            width={440}
+            height={120}
+            style={{ width: "100%", height: 120, touchAction: "none", cursor: "crosshair", display: "block", borderRadius: 4 }}
+            onMouseDown={startDraw}
+            onMouseMove={moveDraw}
+            onMouseUp={endDraw}
+            onMouseLeave={endDraw}
+            onTouchStart={startDraw}
+            onTouchMove={moveDraw}
+            onTouchEnd={endDraw}
+          />
+        </div>
+        <div style={{ display: "flex", gap: 8, marginTop: 8, alignItems: "center", flexWrap: "wrap" }}>
+          <span style={{ fontSize: 12, color: "var(--text2)" }}>Draw above, or</span>
+          <label className="btn btn-outline btn-sm" style={{ margin: 0, cursor: "pointer" }}>
+            <i className="fa-solid fa-upload" style={{ marginRight: 6 }} />
+            Upload image
+            <input
+              type="file"
+              accept="image/*"
+              style={{ display: "none" }}
+              onChange={(e) => e.target.files?.[0] && uploadSig(e.target.files[0])}
+            />
+          </label>
+          <button type="button" className="btn btn-outline btn-sm" onClick={clearSig}>
+            <i className="fa-solid fa-eraser" style={{ marginRight: 6 }} />
+            Clear
+          </button>
+        </div>
+        <div style={{ fontSize: 11, color: "var(--text2)", marginTop: 4 }}>
+          Appears above “Issued By” on every printed transcript. A PNG with a transparent (or white) background looks best.
+        </div>
       </div>
       <div style={{ display: "flex", gap: 8, marginTop: 8 }}>
         <button className="btn btn-primary" disabled={saving} onClick={save}>
@@ -547,7 +687,7 @@ export default function TranscriptsPage() {
         {canEditIssuer && (
           <button
             className="btn btn-outline btn-sm"
-            onClick={() => showModal("Transcript Signatory — Issued By / Position", <IssuerSettingsForm />)}
+            onClick={() => showModal("Transcript Signatory — Issued By / Position / Signature", <IssuerSettingsForm />)}
           >
             <i className="fa-solid fa-pen" style={{ marginRight: 6 }} />
             Issued By / Position
@@ -664,6 +804,7 @@ export function TranscriptView({ stu }: { stu: any }) {
     printTranscript(stu, prog, passedModules, {
       issuer: db.config.transcriptIssuer,
       title: db.config.transcriptIssuerTitle,
+      signature: db.config.transcriptSignature,
     });
 
   // ── On-screen preview ──────────────────────────────────────────────────────
@@ -859,6 +1000,17 @@ export function TranscriptView({ stu }: { stu: any }) {
         I do hereby self-certify and affirm that this is the official transcript and record of{" "}
         <strong>{stu.name}</strong> in the academic studies of {studyYears}.
       </p>
+
+      {/* Signatory (signature + issued by / position) */}
+      <div
+        dangerouslySetInnerHTML={{
+          __html: signatoryBlockHTML(
+            db.config.transcriptIssuer,
+            db.config.transcriptIssuerTitle,
+            db.config.transcriptSignature,
+          ),
+        }}
+      />
 
       {/* Grading key */}
       <div style={{ borderTop: "1px solid #ccc", paddingTop: 10, marginBottom: 14 }}>
