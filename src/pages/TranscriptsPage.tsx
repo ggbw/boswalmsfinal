@@ -387,7 +387,7 @@ function printTranscript(
   <!-- Header (logo lockup) -->
   <div style="text-align:center;padding:6px 0 10px;border-bottom:2px solid #C9A227;margin-bottom:6px">
     <img src="${logoUrl}" style="height:120px;max-width:100%;object-fit:contain;display:block;margin:0 auto" onerror="this.style.display='none'" />
-    <div style="font-size:12px;color:#777;margin-top:8px;font-style:italic;letter-spacing:0.5px">Official Academic Transcript</div>
+    <div style="font-size:14px;color:#16233f;margin-top:6px;font-weight:600;letter-spacing:.3px">Bosswa Culinary Institute of Botswana</div>
   </div>
 
   <!-- Address / contact line -->
@@ -837,8 +837,8 @@ export function TranscriptView({ stu }: { stu: any }) {
           onError={(e) => ((e.target as HTMLImageElement).style.display = "none")}
           style={{ height: 120, maxWidth: "100%", objectFit: "contain", display: "block", margin: "0 auto" }}
         />
-        <div style={{ fontSize: 13, color: "#777", marginTop: 8, fontStyle: "italic", letterSpacing: 0.5 }}>
-          Official Academic Transcript
+        <div style={{ fontSize: 14, color: "#16233f", marginTop: 6, fontWeight: 600, letterSpacing: 0.3 }}>
+          Bosswa Culinary Institute of Botswana
         </div>
       </div>
 

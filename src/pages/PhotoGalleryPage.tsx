@@ -405,24 +405,22 @@ export default function PhotoGalleryPage() {
   };
 
   const handleRenameFolder = async (oldName: string, newName: string) => {
-    newName = newName.trim();
-    if (!newName || newName === oldName) { setRenameModal(null); return; }
-    // List all files in the old folder
-    const { data: files } = await supabase.storage.from("student-photos").list(oldName, { limit: 500 });
-    if (!files) { toast("Could not list folder contents", "error"); return; }
-    // Copy each file to new folder
-    const errors: string[] = [];
-    for (const f of files) {
-      const { error } = await supabase.storage.from("student-photos").copy(`${oldName}/${f.name}`, `${newName}/${f.name}`);
-      if (error) errors.push(f.name);
+    const clean = validFolderName(newName);
+    if (!clean) { toast("Enter a valid folder name (no '/' or '.')", "error"); return; }
+    if (clean === oldName) { setRenameModal(null); return; }
+    // List the folder's files. Skip nested-folder placeholder entries (id === null).
+    const { data: files, error: listErr } = await supabase.storage.from("student-photos").list(oldName, { limit: 500 });
+    if (listErr) { toast(`Could not open folder: ${listErr.message}`, "error"); return; }
+    const realFiles = (files || []).filter((f) => f.id !== null);
+    // Move (atomic rename) each file to the new folder; surface the real error.
+    for (const f of realFiles) {
+      const { error } = await supabase.storage.from("student-photos").move(`${oldName}/${f.name}`, `${clean}/${f.name}`);
+      if (error) { toast(`Rename failed: ${error.message}`, "error"); return; }
     }
-    if (errors.length) { toast(`Failed to move ${errors.length} file(s)`, "error"); return; }
-    // Delete old folder files
-    await supabase.storage.from("student-photos").remove(files.map((f) => `${oldName}/${f.name}`));
-    toast(`Renamed to "${newName}"`, "success");
+    toast(`Renamed to "${clean}"`, "success");
     setRenameModal(null);
     setRenameInput("");
-    if (selectedCustomFolder === oldName) setSelectedCustomFolder(newName);
+    if (selectedCustomFolder === oldName) setSelectedCustomFolder(clean);
     await loadPhotos();
   };
 
@@ -436,17 +434,16 @@ export default function PhotoGalleryPage() {
     if (newSub === oldSub) { setSubFolderRename(null); return; }
     const oldPath = `${studentId}/${oldSub}`;
     const newPath = `${studentId}/${newSub}`;
-    const { data: files } = await supabase.storage.from("student-photos").list(oldPath, { limit: 500 });
-    if (!files || files.length === 0) {
+    const { data: files, error: listErr } = await supabase.storage.from("student-photos").list(oldPath, { limit: 500 });
+    if (listErr) { toast(`Could not open folder: ${listErr.message}`, "error"); return; }
+    const realFiles = (files || []).filter((f) => f.id !== null);
+    if (realFiles.length === 0) {
       await supabase.storage.from("student-photos").upload(`${newPath}/.keep`, new Blob([""]), { upsert: true });
     } else {
-      const errors: string[] = [];
-      for (const f of files) {
-        const { error } = await supabase.storage.from("student-photos").copy(`${oldPath}/${f.name}`, `${newPath}/${f.name}`);
-        if (error) errors.push(f.name);
+      for (const f of realFiles) {
+        const { error } = await supabase.storage.from("student-photos").move(`${oldPath}/${f.name}`, `${newPath}/${f.name}`);
+        if (error) { toast(`Rename failed: ${error.message}`, "error"); return; }
       }
-      if (errors.length) { toast(`Failed to move ${errors.length} file(s)`, "error"); return; }
-      await supabase.storage.from("student-photos").remove(files.map((f) => `${oldPath}/${f.name}`));
     }
     toast(`Renamed to "${newSub}"`, "success");
     setSubFolderRename(null);
