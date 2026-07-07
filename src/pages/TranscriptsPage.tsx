@@ -352,13 +352,16 @@ function printTranscript(
   <meta charset="UTF-8"/>
   <title>Transcript — ${student.name}</title>
   <style>
-    * { margin: 0; padding: 0; box-sizing: border-box; }
+    /* print-color-adjust:exact everywhere so background colours (the navy footer
+       bar, orange contact tiles, table headers, semester bars) actually print —
+       browsers strip backgrounds by default, which was blanking the footer. */
+    * { margin: 0; padding: 0; box-sizing: border-box; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
     body { font-family: Arial, sans-serif; font-size: 12px; color: #000; background: #fff; padding: 20px 30px; }
     @page { size: A4; margin: 15mm 15mm 20mm 15mm; }
     @media print {
       body { padding: 0; }
       .no-print { display: none !important; }
-      .watermark { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+      * { -webkit-print-color-adjust: exact !important; print-color-adjust: exact !important; }
     }
     table { border-collapse: collapse; }
     /* Centered B-monogram watermark. Overlaid ABOVE content (z-index high) and
