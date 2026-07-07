@@ -77,41 +77,6 @@ const SCHOOL_CONTACT_LINE =
   `${SCHOOL_CONTACT.address}  ·  ${SCHOOL_CONTACT.pobox}  ·  ☎ ${SCHOOL_CONTACT.tel}` +
   `  ·  ✉ ${SCHOOL_CONTACT.email}  ·  ${SCHOOL_CONTACT.web}`;
 
-// The banner that sits at the FOOT of the transcript (on screen and in print).
-// Built as inline HTML/SVG — no image asset and no icon font — so it looks
-// identical in the printed PDF (a standalone window where FontAwesome isn't
-// loaded) as it does on screen. Navy bar, orange icon tiles, then the website +
-// institute name, matching the school letterhead footer.
-function footerBannerHTML(): string {
-  const svg = (path: string) =>
-    `<svg width="13" height="13" viewBox="0 0 24 24" fill="#fff" style="display:block">${path}</svg>`;
-  const ICONS = {
-    phone: svg('<path d="M6.6 10.8c1.4 2.8 3.8 5.2 6.6 6.6l2.2-2.2c.3-.3.7-.4 1-.2 1.1.4 2.3.6 3.6.6.6 0 1 .4 1 1V20c0 .6-.4 1-1 1C10.6 21 3 13.4 3 4c0-.6.4-1 1-1h3.5c.6 0 1 .4 1 1 0 1.3.2 2.5.6 3.6.1.4 0 .8-.3 1l-2.2 2.2z"/>'),
-    fax: svg('<path d="M6 3h12v4H6V3zm13 5H5a3 3 0 00-3 3v6h4v4h12v-4h4v-6a3 3 0 00-3-3zm-3 11H8v-5h8v5z"/>'),
-    at: '<span style="color:#fff;font-weight:800;font-size:14px;line-height:1">@</span>',
-    pin: svg('<path d="M12 2a7 7 0 00-7 7c0 5 7 13 7 13s7-8 7-13a7 7 0 00-7-7zm0 9.5A2.5 2.5 0 1112 6a2.5 2.5 0 010 5.5z"/>'),
-    envelope: svg('<path d="M3 5h18a1 1 0 011 1v12a1 1 0 01-1 1H3a1 1 0 01-1-1V6a1 1 0 011-1zm9 7L4 7v.5l8 5 8-5V7l-8 5z"/>'),
-  };
-  const item = (icon: string, text: string) =>
-    `<div style="display:flex;align-items:center;gap:8px">` +
-    `<span style="display:inline-flex;align-items:center;justify-content:center;width:26px;height:26px;background:#f2882d;border-radius:6px;flex:none">${icon}</span>` +
-    `<span style="font-size:11px;color:#fff;white-space:nowrap">${text}</span></div>`;
-  return (
-    // Full-width bar spanning the whole page; contact items spread edge-to-edge.
-    `<div style="background:#16233f;padding:16px 30px;margin-top:22px;width:100%;box-sizing:border-box">` +
-    `<div style="display:flex;flex-wrap:wrap;gap:12px 18px;align-items:center;justify-content:space-between">` +
-    item(ICONS.phone, SCHOOL_CONTACT.tel) +
-    item(ICONS.fax, SCHOOL_CONTACT.fax) +
-    item(ICONS.at, SCHOOL_CONTACT.email) +
-    item(ICONS.pin, SCHOOL_CONTACT.address) +
-    item(ICONS.envelope, SCHOOL_CONTACT.pobox) +
-    `</div>` +
-    `<div style="text-align:center;margin-top:12px;font-weight:700;font-size:13px;letter-spacing:.3px;color:#fff">` +
-    `<span style="color:#f2882d">${SCHOOL_CONTACT.web}</span>&nbsp;&nbsp;Boswa Culinary Institute of Botswana</div>` +
-    `</div>`
-  );
-}
-
 // ── Build a student's transcript modules ─────────────────────────────────────
 // Real marks live in `assessment_marks` (one row per exam/assignment). Each
 // module's weighted mark is computed the same way the Class Report does, via the
@@ -446,7 +411,9 @@ function printTranscript(
   </div>
 
   <!-- Footer / letterhead banner -->
-  ${footerBannerHTML()}
+  <div style="margin-top:22px">
+    <img src="${window.location.origin}/transcript_footer.png" style="width:100%;display:block;object-fit:contain" onerror="this.style.display='none'" />
+  </div>
 
   <!-- Print button (hidden when printing) -->
   <div class="no-print" style="text-align:center;margin-top:20px">
@@ -1033,8 +1000,16 @@ export function TranscriptView({ stu }: { stu: any }) {
         </div>
       </div>
 
-      {/* Footer / letterhead banner — same markup as the printed version */}
-      <div dangerouslySetInnerHTML={{ __html: footerBannerHTML() }} />
+      {/* Footer / letterhead banner */}
+      <div style={{ marginTop: 22 }}>
+        <img
+          src="/transcript_footer.png"
+          alt=""
+          aria-hidden="true"
+          onError={(e) => ((e.target as HTMLImageElement).style.display = "none")}
+          style={{ width: "100%", display: "block", objectFit: "contain" }}
+        />
+      </div>
 
       {/* Print button */}
       <div className="no-print" style={{ display: "flex", justifyContent: "flex-end", marginTop: 12 }}>
