@@ -156,17 +156,25 @@ export default function ReportsPage() {
 
     // Get all exams and assignments for this class+module
     const classExams = db.exams.filter((e) => e.classId === cls.id && e.moduleId === moduleId);
-    const classAssignments = db.assignments.filter((a) => a.classId === cls.id && a.moduleId === moduleId);
-
-    // Categorise into the buckets the weighting needs (shared with the transcript).
-    const cat = categorizeModuleAssessments(classExams, classAssignments);
-    const { theoryCWExams, finalTheoryExam, practicalCWExams, recipeExams, finalPracExam, finalPracTheo } = cat;
+    const allClassAssignments = db.assignments.filter((a) => a.classId === cls.id && a.moduleId === moduleId);
 
     // Helper: get score for a student+assessment
     const score = (studentId: string, assessmentId: string) => {
       const m = asmMarks.find((x) => x.student_id === studentId && x.assessment_id === assessmentId);
       return m ? m.score : null;
     };
+
+    // Drop assignment columns (the yellow ones) that have no marks at all —
+    // stale/left-over assessments from an old mapping otherwise show as empty
+    // columns and drag the coursework average down. A column is kept only if at
+    // least one student has a recorded mark for it.
+    const classAssignments = allClassAssignments.filter((a) =>
+      students.some((s) => score(s.studentId, a.id) != null),
+    );
+
+    // Categorise into the buckets the weighting needs (shared with the transcript).
+    const cat = categorizeModuleAssessments(classExams, classAssignments);
+    const { theoryCWExams, finalTheoryExam, practicalCWExams, recipeExams, finalPracExam, finalPracTheo } = cat;
 
     // Build rows using the shared weighted computation.
     const rows = students.map((s) => {

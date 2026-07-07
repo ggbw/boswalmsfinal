@@ -180,6 +180,13 @@ export default function PhotoGalleryPage() {
     });
   }, [db.students, classFilter, search, allowedClassIds]);
 
+  // Custom folders also respond to the search box (previously only student
+  // folders were filtered).
+  const filteredCustomFolders = useMemo(
+    () => customFolders.filter((n) => !search || n.toLowerCase().includes(search.toLowerCase())),
+    [customFolders, search],
+  );
+
   const selectedStudent = selectedStudentId ? db.students.find((s) => s.id === selectedStudentId) : null;
   const selectedPhotos = selectedStudentId ? photoMap[selectedStudentId] || [] : [];
   const profilePhotoUrl = selectedStudentId ? thumbMap[selectedStudentId] : null;
@@ -1115,7 +1122,7 @@ export default function PhotoGalleryPage() {
             <label>Search</label>
             <input
               className="form-input"
-              placeholder="Search by name or ID..."
+              placeholder="Search students or folders..."
               value={search}
               onChange={(e) => setSearch(e.target.value)}
             />
@@ -1199,13 +1206,13 @@ export default function PhotoGalleryPage() {
       )}
 
       {/* Custom folders section */}
-      {customFolders.length > 0 && (
+      {filteredCustomFolders.length > 0 && (
         <>
           <div style={{ fontWeight: 700, fontSize: 13, color: "var(--text2)", marginBottom: 8, marginTop: 4, textTransform: "uppercase", letterSpacing: 1 }}>
             <i className="fa-solid fa-folder-open" style={{ marginRight: 6, color: "var(--accent)" }} /> Custom Folders
           </div>
           <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(170px, 1fr))", gap: 14, marginBottom: 24 }}>
-            {customFolders.map((name) => {
+            {filteredCustomFolders.map((name) => {
               const photoCount = photoMap[name]?.length || 0;
               const thumb = thumbMap[name];
               return (

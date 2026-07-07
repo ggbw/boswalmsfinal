@@ -77,6 +77,40 @@ const SCHOOL_CONTACT_LINE =
   `${SCHOOL_CONTACT.address}  ·  ${SCHOOL_CONTACT.pobox}  ·  ☎ ${SCHOOL_CONTACT.tel}` +
   `  ·  ✉ ${SCHOOL_CONTACT.email}  ·  ${SCHOOL_CONTACT.web}`;
 
+// The banner that sits at the FOOT of the transcript (on screen and in print).
+// Built as inline HTML/SVG — no image asset and no icon font — so it looks
+// identical in the printed PDF (a standalone window where FontAwesome isn't
+// loaded) as it does on screen. Navy bar, orange icon tiles, then the website +
+// institute name, matching the school letterhead footer.
+function footerBannerHTML(): string {
+  const svg = (path: string) =>
+    `<svg width="13" height="13" viewBox="0 0 24 24" fill="#fff" style="display:block">${path}</svg>`;
+  const ICONS = {
+    phone: svg('<path d="M6.6 10.8c1.4 2.8 3.8 5.2 6.6 6.6l2.2-2.2c.3-.3.7-.4 1-.2 1.1.4 2.3.6 3.6.6.6 0 1 .4 1 1V20c0 .6-.4 1-1 1C10.6 21 3 13.4 3 4c0-.6.4-1 1-1h3.5c.6 0 1 .4 1 1 0 1.3.2 2.5.6 3.6.1.4 0 .8-.3 1l-2.2 2.2z"/>'),
+    fax: svg('<path d="M6 3h12v4H6V3zm13 5H5a3 3 0 00-3 3v6h4v4h12v-4h4v-6a3 3 0 00-3-3zm-3 11H8v-5h8v5z"/>'),
+    at: '<span style="color:#fff;font-weight:800;font-size:14px;line-height:1">@</span>',
+    pin: svg('<path d="M12 2a7 7 0 00-7 7c0 5 7 13 7 13s7-8 7-13a7 7 0 00-7-7zm0 9.5A2.5 2.5 0 1112 6a2.5 2.5 0 010 5.5z"/>'),
+    envelope: svg('<path d="M3 5h18a1 1 0 011 1v12a1 1 0 01-1 1H3a1 1 0 01-1-1V6a1 1 0 011-1zm9 7L4 7v.5l8 5 8-5V7l-8 5z"/>'),
+  };
+  const item = (icon: string, text: string) =>
+    `<div style="display:flex;align-items:center;gap:8px">` +
+    `<span style="display:inline-flex;align-items:center;justify-content:center;width:26px;height:26px;background:#f2882d;border-radius:6px;flex:none">${icon}</span>` +
+    `<span style="font-size:11px;color:#fff;white-space:nowrap">${text}</span></div>`;
+  return (
+    `<div style="background:#16233f;padding:14px 20px;border-radius:6px;margin-top:20px">` +
+    `<div style="display:flex;flex-wrap:wrap;gap:14px 22px;align-items:center;justify-content:center">` +
+    item(ICONS.phone, SCHOOL_CONTACT.tel) +
+    item(ICONS.fax, SCHOOL_CONTACT.fax) +
+    item(ICONS.at, SCHOOL_CONTACT.email) +
+    item(ICONS.pin, SCHOOL_CONTACT.address) +
+    item(ICONS.envelope, SCHOOL_CONTACT.pobox) +
+    `</div>` +
+    `<div style="text-align:center;margin-top:12px;font-weight:700;font-size:13px;letter-spacing:.3px;color:#fff">` +
+    `<span style="color:#f2882d">${SCHOOL_CONTACT.web}</span>&nbsp;&nbsp;Boswa Culinary Institute of Botswana</div>` +
+    `</div>`
+  );
+}
+
 // ── Build a student's transcript modules ─────────────────────────────────────
 // Real marks live in `assessment_marks` (one row per exam/assignment). Each
 // module's weighted mark is computed the same way the Class Report does, via the
@@ -93,6 +127,7 @@ async function buildPassedModules(db: any, student: any): Promise<PassedModule[]
     classId: x.class_id,
     assessmentId: x.assessment_id,
     score: Number(x.score),
+    rawScore: x.score, // kept un-coerced so a blank ("no mark") ≠ a real 0
   }));
   const scoreOf = (_studentId: string, assessmentId: string) => {
     const m = asm.find((x: any) => x.assessmentId === assessmentId);
@@ -134,6 +169,18 @@ async function buildPassedModules(db: any, student: any): Promise<PassedModule[]
     seenPairs.add(pairKey);
     // Skip modules the student doesn't actually take (phantom or other-class).
     if (!studentTakesModule(x.moduleId, x.classId)) return;
+    // Skip outdated modules carried over from an old mapping: they have an
+    // assessment row but NO actual marks, so they'd show as a blank "F". A real
+    // score of 0 is a genuine mark and is kept; only truly-blank scores skip.
+    const hasRealMark = asm.some(
+      (a: any) =>
+        a.moduleId === x.moduleId &&
+        a.classId === x.classId &&
+        a.rawScore !== null &&
+        a.rawScore !== undefined &&
+        String(a.rawScore).trim() !== "",
+    );
+    if (!hasRealMark) return;
 
     const mod = db.modules.find((mo: any) => mo.id === x.moduleId);
     const cls = db.classes.find((c: any) => c.id === x.classId);
@@ -177,6 +224,12 @@ async function buildPassedModules(db: any, student: any): Promise<PassedModule[]
     .forEach((m: any) => {
       // Same guard as above — only modules the student actually takes.
       if (!studentTakesModule(m.moduleId, m.classId)) return;
+      // Skip legacy rows with no marks at all (all components blank/zero) — these
+      // are the outdated old-mapping modules that render as a blank "F".
+      const hasAnyLegacyMark = [m.test1, m.test2, m.practTest, m.indAss, m.grpAss, m.finalExam, m.practical].some(
+        (v: any) => v !== null && v !== undefined && Number(v) > 0,
+      );
+      if (!hasAnyLegacyMark) return;
       const cls = db.classes.find((c: any) => c.id === m.classId);
       const curr = currOf(m.moduleId);
       const year = curr?.year ?? cls?.year ?? m.year;
@@ -228,10 +281,6 @@ function printTranscript(
   // Build the logo URL (absolute so it works in a new window)
   const logoUrl = window.location.origin + "/transcript_logo.png";
   const watermarkUrl = window.location.origin + "/transcript_watermark.svg";
-  // Letterhead / signature banner shown at the foot of the transcript. Falls
-  // back to the older plain contact bar if the letterhead asset isn't present.
-  const letterheadUrl = window.location.origin + "/transcript_letterhead.png";
-  const footerUrl = window.location.origin + "/transcript_footer.png";
 
   const semSections = Object.keys(semGroups)
     .map((semKey) => {
@@ -373,9 +422,7 @@ function printTranscript(
   </div>
 
   <!-- Footer / letterhead banner -->
-  <div style="text-align:center;margin-top:20px">
-    <img src="${letterheadUrl}" style="width:100%;max-width:760px;object-fit:contain" onerror="this.onerror=null;this.src='${footerUrl}'" />
-  </div>
+  ${footerBannerHTML()}
 
   <!-- Print button (hidden when printing) -->
   <div class="no-print" style="text-align:center;margin-top:20px">
@@ -470,6 +517,7 @@ function IssuerSettingsForm() {
 export default function TranscriptsPage() {
   const { db, currentUser, showModal } = useApp();
   const [search, setSearch] = useState("");
+  const [classFilter, setClassFilter] = useState("");
   const role = currentUser?.role;
   const canEditIssuer = CAN_EDIT_ISSUER.includes(role || "");
 
@@ -484,7 +532,13 @@ export default function TranscriptsPage() {
     return <TranscriptView stu={stu} />;
   }
 
-  const filtered = db.students.filter((s) => !search || s.name.toLowerCase().includes(search.toLowerCase()) || s.studentId.toLowerCase().includes(search.toLowerCase()));
+  const filtered = db.students.filter(
+    (s) =>
+      (!classFilter || s.classId === classFilter) &&
+      (!search ||
+        s.name.toLowerCase().includes(search.toLowerCase()) ||
+        s.studentId.toLowerCase().includes(search.toLowerCase())),
+  );
 
   return (
     <>
@@ -501,13 +555,27 @@ export default function TranscriptsPage() {
         )}
       </div>
       <div className="card">
-        <div className="search-bar">
+        <div className="search-bar" style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
           <input
             className="search-input"
             placeholder="Search student…"
             value={search}
             onChange={(e) => setSearch(e.target.value)}
+            style={{ flex: 1, minWidth: 200 }}
           />
+          <select
+            className="form-select"
+            value={classFilter}
+            onChange={(e) => setClassFilter(e.target.value)}
+            style={{ maxWidth: 260 }}
+          >
+            <option value="">All Classes</option>
+            {db.classes.map((c) => (
+              <option key={c.id} value={c.id}>
+                {c.name}
+              </option>
+            ))}
+          </select>
         </div>
         <div className="table-wrap">
           <table>
@@ -813,24 +881,8 @@ export function TranscriptView({ stu }: { stu: any }) {
         </div>
       </div>
 
-      {/* Footer / letterhead banner */}
-      <div style={{ textAlign: "center", marginTop: 20 }}>
-        <img
-          src="/transcript_letterhead.png"
-          alt=""
-          aria-hidden="true"
-          onError={(e) => {
-            const img = e.target as HTMLImageElement;
-            if (!img.dataset.fallback) {
-              img.dataset.fallback = "1";
-              img.src = "/transcript_footer.png";
-            } else {
-              img.style.display = "none";
-            }
-          }}
-          style={{ width: "100%", maxWidth: 760, objectFit: "contain" }}
-        />
-      </div>
+      {/* Footer / letterhead banner — same markup as the printed version */}
+      <div dangerouslySetInnerHTML={{ __html: footerBannerHTML() }} />
 
       {/* Print button */}
       <div className="no-print" style={{ display: "flex", justifyContent: "flex-end", marginTop: 12 }}>
