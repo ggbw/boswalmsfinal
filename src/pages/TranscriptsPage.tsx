@@ -98,7 +98,7 @@ function footerBannerHTML(): string {
     `<span style="font-size:11px;color:#fff;white-space:nowrap">${text}</span></div>`;
   return (
     // Full-width bar spanning the whole page; contact items spread edge-to-edge.
-    `<div style="background:#16233f;padding:16px 30px;margin-top:22px;width:100%;box-sizing:border-box">` +
+    `<div style="background:#16233f;padding:16px 30px;width:100%;box-sizing:border-box">` +
     `<div style="display:flex;flex-wrap:wrap;gap:12px 18px;align-items:center;justify-content:space-between">` +
     item(ICONS.phone, SCHOOL_CONTACT.tel) +
     item(ICONS.fax, SCHOOL_CONTACT.fax) +
@@ -269,7 +269,7 @@ function signatoryBlockHTML(issuer?: string, title?: string, signature?: string)
     ? `<img src="${signature}" alt="Signature" style="height:56px;max-width:220px;object-fit:contain;display:block;margin:0 auto 2px" />`
     : `<div style="height:56px"></div>`;
   return (
-    `<div style="display:flex;justify-content:flex-end;margin:22px 0 6px">` +
+    `<div style="display:flex;justify-content:flex-end;margin:22px 0 6px;page-break-inside:avoid">` +
     `<div style="text-align:center;min-width:230px">` +
     sig +
     `<div style="border-top:1px solid #333;padding-top:4px">` +
@@ -357,7 +357,11 @@ function printTranscript(
        browsers strip backgrounds by default, which was blanking the footer. */
     * { margin: 0; padding: 0; box-sizing: border-box; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
     body { font-family: Arial, sans-serif; font-size: 12px; color: #000; background: #fff; padding: 20px 30px; }
-    @page { size: A4; margin: 15mm 15mm 20mm 15mm; }
+    /* Extra bottom margin reserves a per-page strip for the repeating footer. */
+    @page { size: A4; margin: 15mm 15mm 34mm 15mm; }
+    /* Fixed footer → Chrome repeats it at the bottom of EVERY printed page,
+       sitting inside the reserved bottom margin so it never overlaps content. */
+    .pfooter { position: fixed; left: 15mm; right: 15mm; bottom: 8mm; z-index: 60; }
     @media print {
       body { padding: 0; }
       .no-print { display: none !important; }
@@ -437,8 +441,8 @@ function printTranscript(
   <!-- Signatory (signature + issued by / position) -->
   ${signatoryBlockHTML(transcriptMeta?.issuer, transcriptMeta?.title, transcriptMeta?.signature)}
 
-  <!-- Grading scale -->
-  <div style="border-top:1px solid #ccc;padding-top:10px;margin-bottom:14px">
+  <!-- Grading scale — forced onto the next page (signatory stays on page 1). -->
+  <div style="border-top:1px solid #ccc;padding-top:10px;margin-bottom:14px;page-break-before:always">
     <div style="font-size:11px;font-weight:700;color:#002060;margin-bottom:6px">Grading Scale</div>
     <div style="display:flex;gap:6px;flex-wrap:wrap">
       ${GRADE_SCALE.map(
@@ -448,8 +452,8 @@ function printTranscript(
     </div>
   </div>
 
-  <!-- Footer / letterhead banner -->
-  ${footerBannerHTML()}
+  <!-- Footer / letterhead banner — fixed so it repeats on every printed page. -->
+  <div class="pfooter">${footerBannerHTML()}</div>
 
   <!-- Print button (hidden when printing) -->
   <div class="no-print" style="text-align:center;margin-top:20px">
@@ -1037,7 +1041,7 @@ export function TranscriptView({ stu }: { stu: any }) {
       </div>
 
       {/* Footer / letterhead banner — same markup as the printed version */}
-      <div dangerouslySetInnerHTML={{ __html: footerBannerHTML() }} />
+      <div style={{ marginTop: 22 }} dangerouslySetInnerHTML={{ __html: footerBannerHTML() }} />
 
       {/* Print button */}
       <div className="no-print" style={{ display: "flex", justifyContent: "flex-end", marginTop: 12 }}>
