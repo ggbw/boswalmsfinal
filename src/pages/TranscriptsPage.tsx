@@ -266,10 +266,10 @@ async function buildPassedModules(db: any, student: any): Promise<PassedModule[]
 function signatoryBlockHTML(issuer?: string, title?: string, signature?: string): string {
   if (!issuer && !title && !signature) return "";
   const sig = signature
-    ? `<img src="${signature}" alt="Signature" style="height:56px;max-width:220px;object-fit:contain;display:block;margin:0 auto 2px" />`
-    : `<div style="height:56px"></div>`;
+    ? `<img src="${signature}" alt="Signature" style="height:46px;max-width:200px;object-fit:contain;display:block;margin:0 auto 2px" />`
+    : `<div style="height:46px"></div>`;
   return (
-    `<div style="display:flex;justify-content:flex-end;margin:22px 0 6px;page-break-inside:avoid">` +
+    `<div style="display:flex;justify-content:flex-end;margin:14px 0 6px;page-break-inside:avoid">` +
     `<div style="text-align:center;min-width:230px">` +
     sig +
     `<div style="border-top:1px solid #333;padding-top:4px">` +
@@ -311,33 +311,33 @@ function printTranscript(
         .map(
           (m, i) => `
       <tr style="background:${i % 2 === 0 ? "#D9D9D9" : "#fff"};${m.superseded ? "color:#999;text-decoration:line-through" : ""}">
-        <td style="padding:5px 10px">${m.name}${m.superseded ? ' <span style="font-size:9px;font-style:italic;text-decoration:none">(superseded by retake)</span>' : ""}</td>
-        <td style="padding:5px 10px;text-align:center;font-family:monospace;font-size:11px">${m.code}</td>
-        <td style="padding:5px 10px;text-align:center;font-weight:700">${m.mark}%</td>
-        <td style="padding:5px 10px;text-align:center;font-weight:700">${m.grade}</td>
-        <td style="padding:5px 10px;text-align:center">${m.superseded ? "—" : m.credits}</td>
+        <td style="padding:3px 10px">${m.name}${m.superseded ? ' <span style="font-size:9px;font-style:italic;text-decoration:none">(superseded by retake)</span>' : ""}</td>
+        <td style="padding:3px 10px;text-align:center;font-family:monospace;font-size:11px">${m.code}</td>
+        <td style="padding:3px 10px;text-align:center;font-weight:700">${m.mark}%</td>
+        <td style="padding:3px 10px;text-align:center;font-weight:700">${m.grade}</td>
+        <td style="padding:3px 10px;text-align:center">${m.superseded ? "—" : m.credits}</td>
       </tr>`,
         )
         .join("");
 
       return `
-      <div style="margin-bottom:18px">
-        <div style="background:#1F3864;color:#fff;padding:6px 12px;font-weight:700;font-size:12px;border-radius:4px 4px 0 0">
+      <div style="margin-bottom:10px">
+        <div style="background:#1F3864;color:#fff;padding:4px 12px;font-weight:700;font-size:12px;border-radius:4px 4px 0 0">
           ${semKey}
         </div>
         <table style="width:100%;border-collapse:collapse;font-size:12px">
           <thead>
             <tr style="background:#002060;color:#fff">
-              <th style="padding:6px 10px;text-align:left">Module Names</th>
-              <th style="padding:6px 10px;text-align:center">Module Code</th>
-              <th style="padding:6px 10px;text-align:center">Marks %</th>
-              <th style="padding:6px 10px;text-align:center">Grade</th>
-              <th style="padding:6px 10px;text-align:center">Credits</th>
+              <th style="padding:4px 10px;text-align:left">Module Names</th>
+              <th style="padding:4px 10px;text-align:center">Module Code</th>
+              <th style="padding:4px 10px;text-align:center">Marks %</th>
+              <th style="padding:4px 10px;text-align:center">Grade</th>
+              <th style="padding:4px 10px;text-align:center">Credits</th>
             </tr>
           </thead>
           <tbody>${rows}</tbody>
         </table>
-        <div style="font-size:12px;font-weight:700;display:flex;gap:20px;padding:6px 10px;background:#f4f4f4;border:1px solid #ddd;border-radius:0 0 4px 4px">
+        <div style="font-size:12px;font-weight:700;display:flex;gap:20px;padding:4px 10px;background:#f4f4f4;border:1px solid #ddd;border-radius:0 0 4px 4px">
           <span>Semester GPA = ${semGpa}</span>
           <span>Credit Hours = ${semCredits * 10} hrs</span>
           <span>Credit Points = ${semCredits} Cr</span>
@@ -357,17 +357,18 @@ function printTranscript(
        browsers strip backgrounds by default, which was blanking the footer. */
     * { margin: 0; padding: 0; box-sizing: border-box; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
     body { font-family: Arial, sans-serif; font-size: 12px; color: #000; background: #fff; padding: 20px 30px; }
-    /* Extra bottom margin reserves a per-page strip for the repeating footer. */
-    @page { size: A4; margin: 15mm 15mm 34mm 15mm; }
-    /* Fixed footer → Chrome repeats it at the bottom of EVERY printed page,
-       sitting inside the reserved bottom margin so it never overlaps content. */
-    .pfooter { position: fixed; left: 15mm; right: 15mm; bottom: 8mm; z-index: 60; }
+    @page { size: A4; margin: 12mm 14mm 12mm 14mm; }
     @media print {
       body { padding: 0; }
       .no-print { display: none !important; }
       * { -webkit-print-color-adjust: exact !important; print-color-adjust: exact !important; }
     }
     table { border-collapse: collapse; }
+    /* The footer lives in a <tfoot>, which the browser repeats at the bottom of
+       EVERY printed page; all transcript content sits in the <tbody>. */
+    .doc { width: 100%; }
+    .doc > tbody > tr > td, .doc > tfoot > tr > td { padding: 0; border: none; vertical-align: top; }
+    .pfoot-cell { padding-top: 8px !important; }
     /* Centered B-monogram watermark. Overlaid ABOVE content (z-index high) and
        fixed so it shows through the opaque table/panel backgrounds and repeats
        on every printed page. pointer-events:none keeps it non-interactive. */
@@ -391,17 +392,25 @@ function printTranscript(
   <!-- Watermark -->
   <img class="watermark" src="${watermarkUrl}" onerror="this.style.display='none'" />
 
+  <!-- All content lives in the tbody; the tfoot footer repeats on every page. -->
+  <table class="doc">
+    <tfoot>
+      <tr><td class="pfoot-cell">${footerBannerHTML()}</td></tr>
+    </tfoot>
+    <tbody>
+      <tr><td>
+
   <!-- Header (logo lockup) -->
-  <div style="text-align:center;padding:6px 0 10px;border-bottom:2px solid #C9A227;margin-bottom:6px">
-    <img src="${logoUrl}" style="height:120px;max-width:100%;object-fit:contain;display:block;margin:0 auto" onerror="this.style.display='none'" />
-    <div style="font-size:14px;color:#16233f;margin-top:6px;font-weight:600;letter-spacing:.3px">Bosswa Culinary Institute of Botswana</div>
+  <div style="text-align:center;padding:0 0 5px;border-bottom:2px solid #C9A227;margin-bottom:6px">
+    <img src="${logoUrl}" style="height:80px;max-width:100%;object-fit:contain;display:block;margin:0 auto" onerror="this.style.display='none'" />
+    <div style="font-size:13px;color:#16233f;margin-top:4px;font-weight:600;letter-spacing:.3px">Bosswa Culinary Institute of Botswana</div>
   </div>
 
   <!-- Address / contact line -->
-  <div style="text-align:center;font-size:10px;color:#555;margin-bottom:14px">${SCHOOL_CONTACT_LINE}</div>
+  <div style="text-align:center;font-size:10px;color:#555;margin-bottom:8px">${SCHOOL_CONTACT_LINE}</div>
 
   <!-- Student info -->
-  <div style="display:grid;grid-template-columns:1fr 1fr;gap:4px 32px;margin-bottom:14px;background:#f9f9f9;padding:12px;border-radius:6px;font-size:12px;border-bottom:2px solid #C9A227">
+  <div style="display:grid;grid-template-columns:1fr 1fr;gap:2px 32px;margin-bottom:8px;background:#f9f9f9;padding:8px 12px;border-radius:6px;font-size:12px;border-bottom:2px solid #C9A227">
     <div><strong style="color:#002060">Student Name:</strong> ${student.name}</div>
     <div><strong style="color:#002060">Date of Admission:</strong> ${student.enrolmentDate ? formatDate(student.enrolmentDate) : "—"}</div>
     <div><strong style="color:#002060">Student Number:</strong> ${student.studentId}</div>
@@ -433,16 +442,16 @@ function printTranscript(
   }
 
   <!-- Certification -->
-  <p style="font-size:12px;color:#555;font-style:italic;margin:14px 0 8px">
+  <p style="font-size:12px;color:#555;font-style:italic;margin:8px 0 6px">
     I do hereby self-certify and affirm that this is the official transcript and record of
     <strong>${student.name}</strong> in the academic studies of ${studyYears}.
   </p>
 
-  <!-- Signatory (signature + issued by / position) -->
+  <!-- Signatory (signature + issued by / position) — stays on page 1 -->
   ${signatoryBlockHTML(transcriptMeta?.issuer, transcriptMeta?.title, transcriptMeta?.signature)}
 
-  <!-- Grading scale — forced onto the next page (signatory stays on page 1). -->
-  <div style="border-top:1px solid #ccc;padding-top:10px;margin-bottom:14px;page-break-before:always">
+  <!-- Grading scale — forced onto the next page -->
+  <div style="border-top:1px solid #ccc;padding-top:10px;margin-bottom:6px;page-break-before:always">
     <div style="font-size:11px;font-weight:700;color:#002060;margin-bottom:6px">Grading Scale</div>
     <div style="display:flex;gap:6px;flex-wrap:wrap">
       ${GRADE_SCALE.map(
@@ -452,8 +461,9 @@ function printTranscript(
     </div>
   </div>
 
-  <!-- Footer / letterhead banner — fixed so it repeats on every printed page. -->
-  <div class="pfooter">${footerBannerHTML()}</div>
+      </td></tr>
+    </tbody>
+  </table>
 
   <!-- Print button (hidden when printing) -->
   <div class="no-print" style="text-align:center;margin-top:20px">
