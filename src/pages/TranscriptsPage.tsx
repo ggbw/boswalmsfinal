@@ -361,19 +361,22 @@ function printTranscript(
        A4 width and touch the physical bottom edge; the top margin keeps a header
        gap on every page. Content re-insets itself via .sheet padding. */
     @page { size: A4; margin: 12mm 0 0 0; }
-    .sheet { width: 100%; }
-    /* Full-bleed letterhead footer. On screen it renders inline after the content;
-       in print it is fixed to the bottom of EVERY page (Chrome repeats fixed
-       elements per page, exactly like the watermark). */
+    .sheet { position: relative; width: 100%; }
+    /* Full-bleed letterhead footer — full A4 width, and in print pinned to the
+       bottom of page 1 only (absolute inside the .sheet page-1 box). On screen it
+       just renders inline after the content. */
     .print-footer { width: 100%; }
     @media print {
       body { padding: 0; }
       .no-print { display: none !important; }
-      /* 14mm side inset for content (matches the old @page side margin); generous
-         bottom pad so the last page's content clears the fixed footer. Top spacing
-         comes from @page. */
-      .sheet { padding: 0 14mm 34mm 14mm; }
-      .print-footer { position: fixed; left: 0; right: 0; bottom: 0; }
+      /* .sheet is the page-1 box: ~full printable height (A4 297mm minus the 12mm
+         top margin, with a small buffer to avoid spilling onto a blank page), so
+         the absolutely-pinned footer sits at the bottom of page 1. 14mm side inset
+         for content; bottom pad reserves the footer band so content can't overlap. */
+      .sheet { min-height: 283mm; padding: 0 14mm 30mm 14mm; }
+      .print-footer { position: absolute; left: 0; right: 0; bottom: 0; }
+      /* Grading scale on its own page, with the same side inset. */
+      .page2 { padding: 0 14mm; page-break-before: always; }
       * { -webkit-print-color-adjust: exact !important; print-color-adjust: exact !important; }
     }
     /* Centered B-monogram watermark. Overlaid ABOVE content (z-index high) and
@@ -453,21 +456,23 @@ function printTranscript(
   <!-- Signatory (signature + issued by / position) — stays on page 1 -->
   ${signatoryBlockHTML(transcriptMeta?.issuer, transcriptMeta?.title, transcriptMeta?.signature)}
 
-  <!-- Grading scale — forced onto the next page -->
-  <div style="border-top:1px solid #ccc;padding-top:10px;margin-bottom:6px;page-break-before:always">
-    <div style="font-size:11px;font-weight:700;color:#002060;margin-bottom:6px">Grading Scale</div>
-    <div style="display:flex;gap:6px;flex-wrap:wrap">
-      ${GRADE_SCALE.map(
-        ([r, d]) =>
-          `<div style="font-size:10px;background:#f0f0f0;border:1px solid #ddd;border-radius:4px;padding:3px 10px"><strong>${r}</strong> — ${d}</div>`,
-      ).join("")}
+  <!-- Letterhead footer — full A4 width, pinned to the bottom of page 1 only. -->
+  <div class="print-footer">${footerBannerHTML()}</div>
+
+  </div>
+
+  <!-- Grading scale — its own page (no footer). -->
+  <div class="page2">
+    <div style="border-top:1px solid #ccc;padding-top:10px;margin-bottom:6px">
+      <div style="font-size:11px;font-weight:700;color:#002060;margin-bottom:6px">Grading Scale</div>
+      <div style="display:flex;gap:6px;flex-wrap:wrap">
+        ${GRADE_SCALE.map(
+          ([r, d]) =>
+            `<div style="font-size:10px;background:#f0f0f0;border:1px solid #ddd;border-radius:4px;padding:3px 10px"><strong>${r}</strong> — ${d}</div>`,
+        ).join("")}
+      </div>
     </div>
   </div>
-
-  </div>
-
-  <!-- Letterhead footer — spans the full A4 width and sits at the foot of every page. -->
-  <div class="print-footer">${footerBannerHTML()}</div>
 
   <!-- Print button (hidden when printing) -->
   <div class="no-print" style="text-align:center;margin-top:20px">
