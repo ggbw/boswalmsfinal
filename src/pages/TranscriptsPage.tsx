@@ -530,22 +530,36 @@ function IssuerSettingsForm() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
+  // Map a pointer event to canvas-space coords. Guards against a zero-size rect
+  // (mid-layout) which would otherwise send strokes off-canvas (invisible).
   const posOf = (e: any) => {
     const canvas = canvasRef.current!;
     const rect = canvas.getBoundingClientRect();
-    const cx = "touches" in e ? e.touches[0].clientX : e.clientX;
-    const cy = "touches" in e ? e.touches[0].clientY : e.clientY;
-    return { x: (cx - rect.left) * (canvas.width / rect.width), y: (cy - rect.top) * (canvas.height / rect.height) };
+    const w = rect.width || canvas.width;
+    const h = rect.height || canvas.height;
+    return { x: (e.clientX - rect.left) * (canvas.width / w), y: (e.clientY - rect.top) * (canvas.height / h) };
   };
-  const startDraw = (e: any) => {
-    const ctx = canvasRef.current!.getContext("2d")!;
+  const configureCtx = (ctx: CanvasRenderingContext2D) => {
     ctx.strokeStyle = "#111";
     ctx.lineWidth = 2.2;
     ctx.lineCap = "round";
+    ctx.lineJoin = "round";
+  };
+  // Pointer events (not mouse/touch) so mouse, pen and touch all work uniformly;
+  // setPointerCapture keeps receiving moves even if the pointer leaves the pad.
+  const startDraw = (e: any) => {
+    const canvas = canvasRef.current!;
+    try { canvas.setPointerCapture?.(e.pointerId); } catch {}
+    const ctx = canvas.getContext("2d")!;
+    configureCtx(ctx);
     const p = posOf(e);
     ctx.beginPath();
     ctx.moveTo(p.x, p.y);
+    // Draw a tiny dot so a single tap/click still leaves a visible mark.
+    ctx.lineTo(p.x + 0.1, p.y + 0.1);
+    ctx.stroke();
     drawing.current = true;
+    setHasSig(true);
   };
   const moveDraw = (e: any) => {
     if (!drawing.current) return;
@@ -650,13 +664,11 @@ function IssuerSettingsForm() {
             width={440}
             height={120}
             style={{ width: "100%", height: 120, touchAction: "none", cursor: "crosshair", display: "block", borderRadius: 4 }}
-            onMouseDown={startDraw}
-            onMouseMove={moveDraw}
-            onMouseUp={endDraw}
-            onMouseLeave={endDraw}
-            onTouchStart={startDraw}
-            onTouchMove={moveDraw}
-            onTouchEnd={endDraw}
+            onPointerDown={startDraw}
+            onPointerMove={moveDraw}
+            onPointerUp={endDraw}
+            onPointerLeave={endDraw}
+            onPointerCancel={endDraw}
           />
         </div>
         <div style={{ display: "flex", gap: 8, marginTop: 8, alignItems: "center", flexWrap: "wrap" }}>
