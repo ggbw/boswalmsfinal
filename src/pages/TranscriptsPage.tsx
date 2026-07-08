@@ -357,18 +357,25 @@ function printTranscript(
        browsers strip backgrounds by default, which was blanking the footer. */
     * { margin: 0; padding: 0; box-sizing: border-box; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
     body { font-family: Arial, sans-serif; font-size: 12px; color: #000; background: #fff; padding: 20px 30px; }
-    @page { size: A4; margin: 12mm 14mm 12mm 14mm; }
+    /* Zero side + bottom page margins so the letterhead footer can span the full
+       A4 width and touch the physical bottom edge; the top margin keeps a header
+       gap on every page. Content re-insets itself via .sheet padding. */
+    @page { size: A4; margin: 12mm 0 0 0; }
+    .sheet { width: 100%; }
+    /* Full-bleed letterhead footer. On screen it renders inline after the content;
+       in print it is fixed to the bottom of EVERY page (Chrome repeats fixed
+       elements per page, exactly like the watermark). */
+    .print-footer { width: 100%; }
     @media print {
       body { padding: 0; }
       .no-print { display: none !important; }
+      /* 14mm side inset for content (matches the old @page side margin); generous
+         bottom pad so the last page's content clears the fixed footer. Top spacing
+         comes from @page. */
+      .sheet { padding: 0 14mm 34mm 14mm; }
+      .print-footer { position: fixed; left: 0; right: 0; bottom: 0; }
       * { -webkit-print-color-adjust: exact !important; print-color-adjust: exact !important; }
     }
-    table { border-collapse: collapse; }
-    /* The footer lives in a <tfoot>, which the browser repeats at the bottom of
-       EVERY printed page; all transcript content sits in the <tbody>. */
-    .doc { width: 100%; }
-    .doc > tbody > tr > td, .doc > tfoot > tr > td { padding: 0; border: none; vertical-align: top; }
-    .pfoot-cell { padding-top: 8px !important; }
     /* Centered B-monogram watermark. Overlaid ABOVE content (z-index high) and
        fixed so it shows through the opaque table/panel backgrounds and repeats
        on every printed page. pointer-events:none keeps it non-interactive. */
@@ -392,13 +399,9 @@ function printTranscript(
   <!-- Watermark -->
   <img class="watermark" src="${watermarkUrl}" onerror="this.style.display='none'" />
 
-  <!-- All content lives in the tbody; the tfoot footer repeats on every page. -->
-  <table class="doc">
-    <tfoot>
-      <tr><td class="pfoot-cell">${footerBannerHTML()}</td></tr>
-    </tfoot>
-    <tbody>
-      <tr><td>
+  <!-- All transcript content. The full-bleed letterhead footer below is pinned to
+       the bottom of every printed page via position:fixed (see .print-footer). -->
+  <div class="sheet">
 
   <!-- Header (logo lockup) -->
   <div style="text-align:center;padding:0 0 5px;border-bottom:2px solid #C9A227;margin-bottom:6px">
@@ -461,9 +464,10 @@ function printTranscript(
     </div>
   </div>
 
-      </td></tr>
-    </tbody>
-  </table>
+  </div>
+
+  <!-- Letterhead footer — spans the full A4 width and sits at the foot of every page. -->
+  <div class="print-footer">${footerBannerHTML()}</div>
 
   <!-- Print button (hidden when printing) -->
   <div class="no-print" style="text-align:center;margin-top:20px">
