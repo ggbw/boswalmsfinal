@@ -776,6 +776,7 @@ export default function TranscriptsPage() {
                           printTranscript(s, prog, passed, {
                             issuer: db.config.transcriptIssuer,
                             title: db.config.transcriptIssuerTitle,
+                            signature: db.config.transcriptSignature,
                           });
                         }}
                       >
