@@ -357,10 +357,10 @@ function printTranscript(
        browsers strip backgrounds by default, which was blanking the footer. */
     * { margin: 0; padding: 0; box-sizing: border-box; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
     body { font-family: Arial, sans-serif; font-size: 12px; color: #000; background: #fff; padding: 20px 30px; }
-    /* Zero side + bottom page margins so the letterhead footer can span the full
-       A4 width and touch the physical bottom edge; the top margin keeps a header
-       gap on every page. Content re-insets itself via .sheet padding. */
-    @page { size: A4; margin: 12mm 0 0 0; }
+    /* Zero page margin: full-bleed footer AND it leaves the browser no margin
+       area in which to print its default date/title/URL header & footer. All
+       content spacing is handled by per-page padding on .sheet / .page2. */
+    @page { size: A4; margin: 0; }
     .sheet { position: relative; width: 100%; }
     /* Full-bleed letterhead footer — full A4 width, and in print pinned to the
        bottom of page 1 only (absolute inside the .sheet page-1 box). On screen it
@@ -369,14 +369,14 @@ function printTranscript(
     @media print {
       body { padding: 0; }
       .no-print { display: none !important; }
-      /* .sheet is the page-1 box: ~full printable height (A4 297mm minus the 12mm
-         top margin, with a small buffer to avoid spilling onto a blank page), so
-         the absolutely-pinned footer sits at the bottom of page 1. 14mm side inset
-         for content; bottom pad reserves the footer band so content can't overlap. */
-      .sheet { min-height: 283mm; padding: 0 14mm 30mm 14mm; }
+      /* .sheet is the page-1 box: ~full A4 height (295mm, a hair under 297mm to
+         avoid spilling onto a blank page) so the absolutely-pinned footer sits at
+         the bottom of page 1. 12mm top pad replaces the removed @page top margin;
+         14mm side inset; bottom pad reserves the footer band. */
+      .sheet { min-height: 295mm; padding: 12mm 14mm 30mm 14mm; }
       .print-footer { position: absolute; left: 0; right: 0; bottom: 0; }
-      /* Grading scale on its own page, with the same side inset. */
-      .page2 { padding: 0 14mm; page-break-before: always; }
+      /* Grading scale on its own page, same insets (incl. the top gap). */
+      .page2 { padding: 12mm 14mm; page-break-before: always; }
       * { -webkit-print-color-adjust: exact !important; print-color-adjust: exact !important; }
     }
     /* Centered B-monogram watermark. Overlaid ABOVE content (z-index high) and
