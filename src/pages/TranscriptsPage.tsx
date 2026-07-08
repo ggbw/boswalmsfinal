@@ -584,6 +584,17 @@ function IssuerSettingsForm() {
     reader.readAsDataURL(file);
   };
 
+  // True if the pad has any non-transparent pixel — more reliable than the
+  // hasSig flag, whose setState can lag behind a Save click and silently persist
+  // a blank canvas. Safe from tainting: we only ever draw same-origin data URLs.
+  const canvasHasInk = (c: HTMLCanvasElement) => {
+    const ctx = c.getContext("2d");
+    if (!ctx) return false;
+    const { data } = ctx.getImageData(0, 0, c.width, c.height);
+    for (let i = 3; i < data.length; i += 4) if (data[i] !== 0) return true;
+    return false;
+  };
+
   const save = async () => {
     const configId = (db.config as any)?.id;
     if (!configId) {
@@ -591,7 +602,8 @@ function IssuerSettingsForm() {
       return;
     }
     setSaving(true);
-    const signature = hasSig && canvasRef.current ? canvasRef.current.toDataURL("image/png") : null;
+    const c = canvasRef.current;
+    const signature = c && (hasSig || canvasHasInk(c)) ? c.toDataURL("image/png") : null;
     const { error } = await supabase
       .from("school_config")
       .update({
