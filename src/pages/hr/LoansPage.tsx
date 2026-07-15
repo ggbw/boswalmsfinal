@@ -341,6 +341,14 @@ export default function LoansPage() {
     void refetch();
   };
 
+  const handleDelete = async (a: AdvanceSalaryWithEmployee) => {
+    if (!window.confirm(`Delete loan ${a.reference}? This cannot be undone.`)) return;
+    const { error } = await supabase.from('advance_salaries').delete().eq('id', a.id);
+    if (error) { toast(error.message, 'error'); return; }
+    toast(`Loan ${a.reference} deleted.`, 'info');
+    void refetch();
+  };
+
   const totalOutstanding = advances
     .filter((a) => a.status === 'Approved')
     .reduce((s, a) => s + (a.remaining_amount ?? 0), 0);
@@ -525,8 +533,13 @@ export default function LoansPage() {
                             </>
                           )}
                           {writeOk && a.status === 'Approved' && (
-                            <button className="btn btn-outline btn-sm" onClick={() => void handleComplete(a)} title="Mark completed">
+                            <button className="btn btn-outline btn-sm" onClick={() => void handleComplete(a)} style={{ marginRight: 4 }} title="Mark completed">
                               <i className="fa-solid fa-flag-checkered" />
+                            </button>
+                          )}
+                          {writeOk && (
+                            <button className="btn btn-danger btn-sm" onClick={() => void handleDelete(a)} title="Delete">
+                              <i className="fa-solid fa-trash" />
                             </button>
                           )}
                         </td>
