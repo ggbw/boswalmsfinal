@@ -1,0 +1,596 @@
+<title>Boswa CIB — User Manual</title>
+<style>
+  :root{
+    --navy:#0b1f4a;
+    --navy-deep:#071230;
+    --navy-mid:#16295c;
+    --gold:#c9a227;
+    --gold-soft:#e3c766;
+    --paper:#f3f5f9;
+    --surface:#ffffff;
+    --ink:#1f2328;
+    --ink-soft:#57606f;
+    --ink-faint:#8a93a3;
+    --line:#dde2ea;
+    --radius:10px;
+    --shadow:0 1px 3px rgba(11,31,74,.08), 0 10px 28px rgba(11,31,74,.07);
+    --serif:Georgia,"Iowan Old Style","Palatino Linotype","Book Antiqua",serif;
+    --sans:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
+    --mono:ui-monospace,"SFMono-Regular",Consolas,"Liberation Mono",monospace;
+  }
+  @media (prefers-color-scheme: dark){
+    :root{
+      --paper:#0a1226;
+      --surface:#111b36;
+      --ink:#e7ecf7;
+      --ink-soft:#a9b4cc;
+      --ink-faint:#7381a0;
+      --line:#22315e;
+      --shadow:0 1px 3px rgba(0,0,0,.35), 0 10px 28px rgba(0,0,0,.35);
+      --gold:#e2ba3d;
+    }
+  }
+  :root[data-theme="dark"]{
+    --paper:#0a1226; --surface:#111b36; --ink:#e7ecf7; --ink-soft:#a9b4cc;
+    --ink-faint:#7381a0; --line:#22315e; --shadow:0 1px 3px rgba(0,0,0,.35), 0 10px 28px rgba(0,0,0,.35);
+    --gold:#e2ba3d;
+  }
+  :root[data-theme="light"]{
+    --paper:#f3f5f9; --surface:#ffffff; --ink:#1f2328; --ink-soft:#57606f;
+    --ink-faint:#8a93a3; --line:#dde2ea; --shadow:0 1px 3px rgba(11,31,74,.08), 0 10px 28px rgba(11,31,74,.07);
+    --gold:#c9a227;
+  }
+
+  *{box-sizing:border-box;}
+  html,body{margin:0;padding:0;}
+  body{
+    background:var(--paper);
+    color:var(--ink);
+    font-family:var(--sans);
+    font-size:15px;
+    line-height:1.65;
+    -webkit-font-smoothing:antialiased;
+  }
+  h1,h2,h3{font-family:var(--serif); text-wrap:balance; color:var(--ink); font-weight:700;}
+  p{max-width:66ch;}
+  a{color:var(--navy);}
+  :root[data-theme="dark"] a, @media (prefers-color-scheme:dark){ a{color:var(--gold-soft);} }
+
+  code, .kbd, .role-code{
+    font-family:var(--mono);
+    font-size:12.5px;
+    background:rgba(201,162,39,.14);
+    color:var(--navy);
+    padding:1px 6px;
+    border-radius:5px;
+    white-space:nowrap;
+  }
+  :root[data-theme="dark"] code, :root[data-theme="dark"] .role-code{ color:var(--gold-soft); background:rgba(226,186,61,.14); }
+
+  /* ---------- Shell ---------- */
+  .shell{display:flex; min-height:100vh;}
+
+  .rail{
+    width:270px;
+    flex-shrink:0;
+    background:linear-gradient(185deg,var(--navy-deep) 0%, var(--navy) 55%, var(--navy-mid) 100%);
+    color:#dbe3f5;
+    position:sticky; top:0; height:100vh; overflow-y:auto;
+    padding:26px 20px 30px;
+  }
+  .rail-brand{display:flex; align-items:center; gap:12px; margin-bottom:22px;}
+  .rail-mark{
+    width:38px; height:38px; border-radius:9px; flex-shrink:0;
+    background:linear-gradient(135deg,var(--gold),#f0cf6d);
+    color:var(--navy-deep); font-family:var(--serif); font-weight:800; font-size:19px;
+    display:flex; align-items:center; justify-content:center;
+  }
+  .rail-brand .name{font-weight:700; font-size:14px; color:#f4f7ff; letter-spacing:.2px;}
+  .rail-brand .sub{font-size:10.5px; color:#93a3cc; margin-top:1px;}
+  .rail hr{border:none; border-top:1px solid rgba(255,255,255,.12); margin:18px 0;}
+  .rail nav{display:flex; flex-direction:column; gap:1px;}
+  .rail .grp-label{
+    font-size:10px; text-transform:uppercase; letter-spacing:1.1px; color:#7c8cbd;
+    margin:16px 0 6px; padding:0 10px;
+  }
+  .rail .grp-label:first-of-type{margin-top:0;}
+  .rail a.tl{
+    display:block; padding:7px 10px; border-radius:7px; font-size:12.5px;
+    color:#c7d2ee; text-decoration:none; line-height:1.35;
+  }
+  .rail a.tl:hover{background:rgba(255,255,255,.07); color:#fff;}
+  .print-btn{
+    margin-top:22px; width:100%; padding:10px 0; border-radius:8px;
+    background:transparent; border:1px solid var(--gold); color:var(--gold-soft);
+    font-family:var(--sans); font-weight:700; font-size:12.5px; letter-spacing:.3px;
+    cursor:pointer;
+  }
+  .print-btn:hover{background:rgba(201,162,39,.12);}
+  .print-btn:focus-visible, a.tl:focus-visible{outline:2px solid var(--gold); outline-offset:2px;}
+
+  /* ---------- Content ---------- */
+  .doc{flex:1; min-width:0; max-width:900px; margin:0 auto; padding:0 48px 90px;}
+
+  .cover{
+    margin:0 -48px 40px; padding:64px 48px 46px;
+    background:radial-gradient(ellipse at top,rgba(255,255,255,.05),transparent 60%), linear-gradient(160deg,var(--navy-deep),var(--navy) 60%,var(--navy-mid));
+    color:#eef2fb;
+  }
+  .cover .eyebrow{
+    font-family:var(--mono); font-size:11px; letter-spacing:1.5px; text-transform:uppercase;
+    color:var(--gold-soft); margin-bottom:14px;
+  }
+  .cover h1{color:#fff; font-size:40px; margin:0 0 10px; max-width:16ch;}
+  .cover .tag{color:#b9c4e6; font-size:15.5px; max-width:52ch; margin:0 0 26px;}
+  .cover .meta{display:flex; gap:26px; flex-wrap:wrap; font-size:12px; color:#9fadd6;}
+  .cover .meta b{color:#e9edfb; font-weight:600;}
+
+  section.chapter{margin-bottom:46px; scroll-margin-top:24px;}
+  .chapter .kicker{
+    font-family:var(--mono); font-size:11px; letter-spacing:1.2px; text-transform:uppercase;
+    color:var(--gold); margin-bottom:6px;
+  }
+  .chapter h2{font-size:25px; margin:0 0 6px;}
+  .chapter .lede{color:var(--ink-soft); font-size:14.5px; margin:0 0 20px; max-width:64ch;}
+
+  .card{
+    background:var(--surface); border:1px solid var(--line); border-radius:var(--radius);
+    box-shadow:var(--shadow); padding:20px 22px; margin-bottom:14px;
+  }
+  .card h3{font-size:15.5px; margin:0 0 8px; font-family:var(--sans); font-weight:700; color:var(--navy);}
+  :root[data-theme="dark"] .card h3{color:var(--gold-soft);}
+  .card ul{margin:6px 0 0; padding-left:19px;}
+  .card li{margin-bottom:5px; font-size:14px;}
+  .card p{font-size:14px; margin:0 0 6px;}
+  .grid2{display:grid; grid-template-columns:1fr 1fr; gap:14px;}
+  @media (max-width:720px){.grid2{grid-template-columns:1fr;}}
+
+  .role-strip{display:flex; flex-wrap:wrap; gap:6px; margin:10px 0 18px;}
+  .pill{
+    font-family:var(--mono); font-size:11px; padding:4px 10px; border-radius:999px;
+    background:rgba(11,31,74,.06); border:1px solid var(--line); color:var(--ink-soft);
+  }
+  :root[data-theme="dark"] .pill{background:rgba(226,186,61,.06);}
+
+  table{border-collapse:collapse; width:100%; font-size:13px;}
+  .table-wrap{overflow-x:auto; border:1px solid var(--line); border-radius:var(--radius); margin-bottom:14px;}
+  th,td{padding:9px 12px; text-align:left; border-bottom:1px solid var(--line); vertical-align:top;}
+  th{
+    background:var(--navy); color:#eef2fb; font-size:10.5px; text-transform:uppercase;
+    letter-spacing:.6px; font-weight:600;
+  }
+  tr:last-child td{border-bottom:none;}
+  td.yes{color:#1a7f37; font-weight:700; text-align:center;}
+  :root[data-theme="dark"] td.yes{color:#4ade80;}
+  td.no{color:var(--ink-faint); text-align:center;}
+
+  .callout{
+    border-left:3px solid var(--gold); background:rgba(201,162,39,.08);
+    padding:12px 16px; border-radius:0 8px 8px 0; font-size:13.5px; margin-bottom:14px;
+  }
+  .callout b{color:var(--navy);}
+  :root[data-theme="dark"] .callout b{color:var(--gold-soft);}
+  .callout.warn{border-left-color:#cf222e; background:rgba(207,34,46,.08);}
+
+  .steps{list-style:none; margin:0; padding:0; counter-reset:step;}
+  .steps li{
+    counter-increment:step; position:relative; padding-left:34px; margin-bottom:12px; font-size:14px;
+  }
+  .steps li::before{
+    content:counter(step); position:absolute; left:0; top:-1px;
+    width:23px; height:23px; border-radius:50%; background:var(--navy); color:#fff;
+    font-family:var(--mono); font-size:11.5px; font-weight:700;
+    display:flex; align-items:center; justify-content:center;
+  }
+  :root[data-theme="dark"] .steps li::before{background:var(--gold); color:var(--navy-deep);}
+
+  footer.docfoot{
+    border-top:1px solid var(--line); margin-top:50px; padding-top:20px;
+    font-size:11.5px; color:var(--ink-faint); display:flex; justify-content:space-between; flex-wrap:wrap; gap:8px;
+  }
+
+  @media (max-width:860px){
+    .rail{position:fixed; left:-280px; z-index:10; transition:left .2s;}
+    .rail.open{left:0; box-shadow:0 0 40px rgba(0,0,0,.4);}
+    .doc{max-width:100%; padding:0 20px 70px;}
+    .cover{margin:0 -20px 32px; padding:52px 20px 36px;}
+  }
+
+  /* ---------- Print ---------- */
+  @media print{
+    .rail{display:none;}
+    .doc{max-width:100%; padding:0 6mm; margin:0;}
+    .cover{margin:0 0 26px; padding:26px 4mm; background:var(--navy) !important; -webkit-print-color-adjust:exact; print-color-adjust:exact;}
+    .card{box-shadow:none; break-inside:avoid;}
+    section.chapter{break-inside:avoid-page;}
+    a{color:inherit; text-decoration:none;}
+    body{background:#fff;}
+  }
+</style>
+
+<div class="shell">
+  <aside class="rail" id="rail">
+    <div class="rail-brand">
+      <div class="rail-mark">B</div>
+      <div>
+        <div class="name">Boswa CIB</div>
+        <div class="sub">School Management System</div>
+      </div>
+    </div>
+    <button class="print-btn" onclick="window.print()">⭳ Download / Print as PDF</button>
+    <nav aria-label="Manual contents">
+      <div class="grp-label">Orientation</div>
+      <a class="tl" href="#welcome">1. Welcome &amp; overview</a>
+      <a class="tl" href="#roles">2. Roles &amp; access</a>
+      <a class="tl" href="#start">3. Signing in &amp; first steps</a>
+      <a class="tl" href="#navigating">4. Finding your way around</a>
+
+      <div class="grp-label">Academic — staff</div>
+      <a class="tl" href="#students">5. Student records</a>
+      <a class="tl" href="#teaching">6. Classes, modules &amp; attendance</a>
+      <a class="tl" href="#assessment">7. Exams, assignments &amp; results</a>
+      <a class="tl" href="#transcripts">8. Transcripts</a>
+      <a class="tl" href="#admissions">9. Admissions &amp; progression</a>
+      <a class="tl" href="#setup">10. Configuration &amp; users</a>
+
+      <div class="grp-label">Students &amp; applicants</div>
+      <a class="tl" href="#student-view">11. For students</a>
+      <a class="tl" href="#apply">12. Applying for admission</a>
+
+      <div class="grp-label">HR &amp; payroll</div>
+      <a class="tl" href="#hr">13. HR &amp; payroll management</a>
+      <a class="tl" href="#self-service">14. Employee self-service</a>
+      <a class="tl" href="#biometric">15. Biometric attendance</a>
+
+      <div class="grp-label">Reference</div>
+      <a class="tl" href="#faq">16. Tips &amp; troubleshooting</a>
+    </nav>
+  </aside>
+
+  <main class="doc">
+    <div class="cover">
+      <div class="eyebrow">User Manual · v1.0</div>
+      <h1>Boswa CIB</h1>
+      <p class="tag">A complete guide to the Boswa Culinary Institute of Botswana's School Management &amp; HR system — for students, lecturers, department heads, administrators, applicants and HR staff.</p>
+      <div class="meta">
+        <span><b>Published</b> 15 July 2026</span>
+        <span><b>Covers</b> Academic + HR modules</span>
+        <span><b>Support</b> Automate Africa</span>
+      </div>
+    </div>
+
+    <section class="chapter" id="welcome">
+      <div class="kicker">Chapter 1</div>
+      <h2>Welcome &amp; overview</h2>
+      <p class="lede">Boswa CIB is the web-based system Boswa Culinary Institute of Botswana uses to run its academic and administrative operations — from a prospective student's first application, through classes, exams and transcripts, to staff payroll and time-and-attendance.</p>
+
+      <div class="card">
+        <h3>What it does</h3>
+        <p>The system is split into two connected halves, both reached from the same sign-in screen:</p>
+        <ul>
+          <li><b>Academic (School Management)</b> — admissions, student records, classes and modules, timetables, attendance registers, exams and assignments, results, and official transcripts.</li>
+          <li><b>HR &amp; Payroll</b> — employee records, contracts, payslips, leave and loan requests, employee documents, and biometric clock-in attendance. Visible only to HR staff, managers, and the Super Admin.</li>
+        </ul>
+      </div>
+      <div class="card">
+        <h3>How to access it</h3>
+        <p>Boswa CIB runs entirely in your web browser — there is nothing to install. Open the system's web address, sign in with the email and password issued to you, and you'll land on a dashboard tailored to your role. No two staff members necessarily see the same menu: the sidebar and dashboard adapt automatically to what your role is permitted to do.</p>
+      </div>
+    </section>
+
+    <section class="chapter" id="roles">
+      <div class="kicker">Chapter 2</div>
+      <h2>Roles &amp; access at a glance</h2>
+      <p class="lede">Every account has exactly one role, assigned by an administrator. Your role decides which sidebar sections you see and which pages you can open.</p>
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th>Role</th><th>Who this is</th><th>What they mainly do</th></tr></thead>
+          <tbody>
+            <tr><td><span class="role-code">super_admin</span></td><td>System owner</td><td>Everything Admin can do, plus full HR &amp; Payroll management, workflow rules, and HR user accounts.</td></tr>
+            <tr><td><span class="role-code">admin</span></td><td>School administrator</td><td>Full academic side: students, admissions, exams, transcripts, configuration, user accounts. Does not see the HR module.</td></tr>
+            <tr><td><span class="role-code">hr</span></td><td>Human Resources staff</td><td>Employees, payroll, contracts, leave and loan approvals, HR attendance, HR configuration.</td></tr>
+            <tr><td><span class="role-code">manager</span></td><td>Department/line manager</td><td>Read access to HR reports and leave/loan approvals for their team, plus their own self-service.</td></tr>
+            <tr><td><span class="role-code">hoy</span> <i>(shown as "HOA")</i></td><td>Head of Year</td><td>Oversight across all classes in a year: grades overview, promotion decisions, reports, plus their own teaching.</td></tr>
+            <tr><td><span class="role-code">hod</span></td><td>Head of Department</td><td>Students and module mapping within their department, plus their own teaching load.</td></tr>
+            <tr><td><span class="role-code">lecturer</span></td><td>Teaching staff</td><td>Their own classes: attendance, exams, assignments, marks, notes.</td></tr>
+            <tr><td><span class="role-code">employee</span></td><td>Non-teaching staff</td><td>Self-service only — payslips, leave, loans, own employee file.</td></tr>
+            <tr><td><span class="role-code">student</span></td><td>Enrolled student</td><td>Their own modules, timetable, assignments, results and transcript.</td></tr>
+            <tr><td><span class="role-code">applicant</span></td><td>Prospective student</td><td>Tracks their application status in a dedicated Applicant Portal until enrolled.</td></tr>
+          </tbody>
+        </table>
+      </div>
+      <div class="callout"><b>Note:</b> <span class="role-code">admin</span> is intentionally kept out of the HR &amp; Payroll module — HR data is only visible to <span class="role-code">super_admin</span>, <span class="role-code">hr</span>, and (in read/approval form) <span class="role-code">manager</span>.</div>
+    </section>
+
+    <section class="chapter" id="start">
+      <div class="kicker">Chapter 3</div>
+      <h2>Signing in &amp; first steps</h2>
+      <ol class="steps">
+        <li>Go to the Boswa CIB sign-in page. Enter the <b>email</b> and <b>password</b> given to you by your administrator, then select <b>Sign In</b>. Use the eye icon to reveal your password if you want to check it before submitting.</li>
+        <li>If this is your very first sign-in, you'll be asked to <b>set a new password</b> before you can do anything else — this screen cannot be dismissed until you complete it.</li>
+        <li>You'll land on your <b>Dashboard</b>, with a sidebar on the left scoped to your role (see Chapter 2) and a top bar showing the current academic year and semester.</li>
+        <li>To sign out at any time, open the user menu at the bottom of the sidebar and select the sign-out icon.</li>
+      </ol>
+      <div class="callout">Not a student or staff member yet? Use <b>Apply for Admission</b> on the sign-in screen instead of signing in — see Chapter 12.</div>
+    </section>
+
+    <section class="chapter" id="navigating">
+      <div class="kicker">Chapter 4</div>
+      <h2>Finding your way around</h2>
+      <div class="grid2">
+        <div class="card">
+          <h3>Sidebar</h3>
+          <p>Grouped into sections (Main, Academic, Operations, Management, HR Management, Self Service, …). Sections with sub-items expand when clicked. A red badge on a menu item — e.g. Leaves or Notifications — means something needs your attention, such as a pending approval.</p>
+        </div>
+        <div class="card">
+          <h3>Top bar</h3>
+          <p>Shows a breadcrumb for the page you're on, the active <b>academic year and semester</b>, and a notification bell. If information looks out of date or a class doesn't appear, check that the correct year/semester is active (Configuration, admin only).</p>
+        </div>
+        <div class="card">
+          <h3>Working with records</h3>
+          <p>Most sections follow the same pattern: a searchable/filterable list, an <b>Add</b> or <b>+</b> button that opens a pop-up form, and a confirmation message ("toast") in the corner once you save. Click a row to view or edit its details.</p>
+        </div>
+        <div class="card">
+          <h3>My Profile</h3>
+          <p>Update your name, email and department, change your password, and — for students — upload a profile photo. Reached from your name at the bottom of the sidebar.</p>
+        </div>
+      </div>
+    </section>
+
+    <section class="chapter" id="students">
+      <div class="kicker">Chapter 5 · Admin / HOD / HOY / Lecturer</div>
+      <h2>Student records</h2>
+      <p class="lede">The <b>Students</b> page is the master directory of every enrolled student, scoped to what your role can see (a lecturer sees only students in their own classes; a HOD sees their department).</p>
+      <div class="card">
+        <ul>
+          <li><b>Search &amp; filter</b> by name, student ID, or class. A "missing enrolment date" filter flags incomplete records.</li>
+          <li>Open a student to see five tabs: <b>Personal Details</b>, <b>Contact &amp; Identity</b>, <b>Guardian / Next of Kin</b>, <b>Academic</b>, and <b>Marks</b>.</li>
+          <li><b>Retakes</b> — if a student fails a module, you can create a new attempt for a later year/semester directly from their Marks tab. The original attempt is kept on record and automatically marked "superseded" once the retake is graded — only the latest attempt counts toward their GPA.</li>
+        </ul>
+      </div>
+      <p class="lede" style="margin-top:22px;"><b>Lecturers</b> and <b>Classes</b> (admin/super admin) manage the teaching staff directory and class/cohort setup that everything else — timetables, attendance, exams — is built on.</p>
+    </section>
+
+    <section class="chapter" id="teaching">
+      <div class="kicker">Chapter 6 · Admin / HOD / HOY / Lecturer</div>
+      <h2>Classes, modules, timetable &amp; attendance</h2>
+      <div class="grid2">
+        <div class="card">
+          <h3>Modules &amp; Module Mapping</h3>
+          <p>Modules are subjects/units, each flagged as having a practical component or not — this flag controls which exam and mark types are available later. HODs use <b>Module Mapping</b> to link modules to programmes at the correct study year/semester.</p>
+        </div>
+        <div class="card">
+          <h3>Timetable</h3>
+          <p>Class schedules, viewable by staff for the classes they teach, and by students as "My Timetable."</p>
+        </div>
+      </div>
+      <div class="card">
+        <h3>Marking Attendance</h3>
+        <p>Open <b>Attendance</b>, choose a class, module and date, then pick which register you're taking:</p>
+        <ul>
+          <li><b>Lesson Start</b> — mark each student Present, Absent, or Late.</li>
+          <li><b>Lesson End</b> — mark each student Present or Absent.</li>
+        </ul>
+        <p>Everyone defaults to Present; click a student's status pill to change it, watch the live Present/Absent/Late counters update, then <b>Save</b>. Switch to the <b>Summary</b> tab for a class-level attendance report over time.</p>
+      </div>
+    </section>
+
+    <section class="chapter" id="assessment">
+      <div class="kicker">Chapter 7 · Admin / HOD / HOY / Lecturer</div>
+      <h2>Exams, assignments, results &amp; grades</h2>
+      <div class="grid2">
+        <div class="card">
+          <h3>Exams</h3>
+          <p>Create an exam with a name, module, class, date, start/end time and room. The list of available exam <b>types</b> changes automatically: theory-only modules only offer Written/Final Theory/Oral Exam, while modules with a practical component also offer Practical/Recipe/Final Practical types.</p>
+        </div>
+        <div class="card">
+          <h3>Assignments</h3>
+          <p>Create coursework with a title, description, module, class, due date, total marks, submission type, and an optional attachment (up to 10 MB) that students can download.</p>
+        </div>
+        <div class="card">
+          <h3>Results</h3>
+          <p>View computed marks per student per module — coursework, practical, final exam, overall total and letter grade — using the same grading formula used on transcripts and reports.</p>
+        </div>
+        <div class="card">
+          <h3>Reports (HOD / HOY / Admin)</h3>
+          <p>Class- and module-level summaries of marks and grade distribution, for tracking how a cohort is performing.</p>
+        </div>
+      </div>
+    </section>
+
+    <section class="chapter" id="transcripts">
+      <div class="kicker">Chapter 8 · Admin / HOD / HOY / Student</div>
+      <h2>Transcripts</h2>
+      <p class="lede">The official academic transcript is the most formal document the system produces, and it's built to look and behave like one: a letterhead, a security watermark, and a real signature — not just a table of marks.</p>
+      <div class="card">
+        <h3>Viewing &amp; printing a transcript</h3>
+        <p>Staff open <b>Transcripts</b>, search for a student, and select <b>View</b> for an on-screen preview or <b>Print</b> to open the formatted document ready for <span class="kbd">Ctrl/Cmd+P</span> or straight to a printer. Students see their own transcript automatically under <b>My Transcript</b> — no search needed.</p>
+      </div>
+      <div class="card">
+        <h3>What's on it</h3>
+        <ul>
+          <li><b>Header</b> — the Boswa crest, institute name, and contact details (address, PO Box, phone, email, website).</li>
+          <li><b>Marks by semester</b> — every module attempted, its mark and letter grade, credits, and a per-semester and overall <b>GPA</b> (credit-weighted). If a module was retaken, the earlier attempt shows struck through as superseded, and doesn't count toward the GPA.</li>
+          <li><b>Certification statement</b> and a <b>signature block</b> — the signatory's name, title, and a genuine signature image.</li>
+          <li><b>Watermark</b> — a faint Boswa monogram behind the text on every page, so photocopies and edits are harder to pass off as originals.</li>
+          <li><b>Letterhead footer</b> — the institute's contact banner reprinted at the foot of the page.</li>
+        </ul>
+      </div>
+      <div class="card">
+        <h3>Setting the signatory <span class="pill">admin / super_admin only</span></h3>
+        <p>From the button in the Transcripts page header, administrators can set who signs every transcript issued going forward:</p>
+        <ul>
+          <li>Type the <b>Issued By</b> name and <b>Position</b> (e.g. "Deputy Principal").</li>
+          <li>Provide a signature either by <b>drawing it</b> directly on the signature pad (mouse, touch or stylus all work — use <b>Clear</b> to redo it) or by <b>uploading an image</b> of a signature.</li>
+          <li>Save. The new signatory and signature immediately appear on every transcript from then on.</li>
+        </ul>
+      </div>
+    </section>
+
+    <section class="chapter" id="admissions">
+      <div class="kicker">Chapter 9 · Admin / Super Admin</div>
+      <h2>Admissions &amp; progression</h2>
+      <div class="card">
+        <h3>Admissions</h3>
+        <p>Every application submitted through the public Apply page (Chapter 12) lands here. Search or filter by status — <span class="role-code">submitted</span>, <span class="role-code">under_review</span>, <span class="role-code">accepted</span>, <span class="role-code">rejected</span>, <span class="role-code">awaiting_enrollment</span>, <span class="role-code">enrolled</span> — and open one to review the applicant's details, programme choices, and uploaded documents (ID and qualification). Opening an application automatically moves it to "Under Review."</p>
+        <ul>
+          <li><b>Accept</b> — optionally add a note; the applicant is notified and an offer letter is generated for them to download.</li>
+          <li><b>Reject</b> — record a reason, which the applicant will see on their status page.</li>
+        </ul>
+      </div>
+      <div class="card">
+        <h3>Progression</h3>
+        <p>At the end of a semester, select students by class and approve or reject their promotion to the next year/semester. The system checks that marks have been recorded and that no module is failing before it will let you approve a promotion.</p>
+      </div>
+    </section>
+
+    <section class="chapter" id="setup">
+      <div class="kicker">Chapter 10 · Admin / Super Admin</div>
+      <h2>Configuration &amp; user accounts</h2>
+      <div class="grid2">
+        <div class="card">
+          <h3>Configuration</h3>
+          <p>Five tabs govern the whole academic structure:</p>
+          <ul>
+            <li><b>Programmes</b> — name, type (Diploma/Certificate/Degree), NQF level, years, semesters per year, and intake months.</li>
+            <li><b>Departments</b>, <b>Modules</b>, <b>Mapping</b> and <b>Rooms</b> — the building blocks everything else (classes, timetables, exams) draws from.</li>
+          </ul>
+          <p>This is also where the current <b>academic year and semester</b> are set — the value shown in the top bar everywhere in the system.</p>
+        </div>
+        <div class="card">
+          <h3>User Management</h3>
+          <p>A combined directory of every login account — staff and students. Search, filter by staff/student, <b>reset a password</b>, or <b>delete</b> an account. Deleting is permanent and cannot be undone, so it always asks for confirmation first.</p>
+        </div>
+        <div class="card">
+          <h3>Notifications</h3>
+          <p>Post announcements that appear as a banner on every user's dashboard, and manage the notification bell feed.</p>
+        </div>
+        <div class="card">
+          <h3>Photo Gallery</h3>
+          <p>Upload and organise student and event photos into folders. Students only ever see their own photos; staff can browse and download whole folders as a ZIP.</p>
+        </div>
+      </div>
+    </section>
+
+    <section class="chapter" id="student-view">
+      <div class="kicker">Chapter 11 · Student</div>
+      <h2>For students</h2>
+      <p class="lede">A student's sidebar is intentionally short — just what you need to follow your own studies.</p>
+      <div class="card">
+        <ul>
+          <li><b>My Dashboard</b> — your class, programme, current year/semester, module count, attendance percentage, and upcoming assignments at a glance.</li>
+          <li><b>My Modules</b>, <b>My Timetable</b>, <b>Notes</b> — what you're studying, when, and shared course materials.</li>
+          <li><b>Assignments</b> — coursework set for your class, with due dates and any attached files.</li>
+          <li><b>My Results</b> — your marks and grade for every module once your lecturer has entered them.</li>
+          <li><b>My Transcript</b> — your official academic record, viewable and printable at any time (Chapter 8).</li>
+          <li><b>My Profile</b> — change your password or update your profile photo.</li>
+        </ul>
+      </div>
+    </section>
+
+    <section class="chapter" id="apply">
+      <div class="kicker">Chapter 12 · Public</div>
+      <h2>Applying for admission</h2>
+      <div class="card">
+        <h3>Browsing programmes &amp; applying</h3>
+        <p>Anyone can visit the Apply page (linked from the sign-in screen) without an account. Browse the list of programmes, expand one to see the modules it covers by year and semester, then select <b>Apply Now</b> on your first-choice programme.</p>
+        <p>The registration form collects your account details, personal information, guardian/next-of-kin details, your programme choices and intake, and uploads of your ID and qualification documents. You'll be asked to tick a declaration before submitting.</p>
+      </div>
+      <div class="card">
+        <h3>Tracking your application</h3>
+        <p>After submitting, sign in with the account you just created to see your personal <b>Applicant Portal</b>, showing a progress tracker: <b>Submitted → Under Review → Accepted → Enrolled</b> (or Rejected, with a reason shown).</p>
+        <p>Once accepted, you can download your <b>offer letter</b> and select <b>Accept Offer &amp; Submit Sponsorship</b> to provide how your studies will be funded — the final step before enrolment.</p>
+      </div>
+    </section>
+
+    <section class="chapter" id="hr">
+      <div class="kicker">Chapter 13 · Super Admin / HR / Manager</div>
+      <h2>HR &amp; payroll management</h2>
+      <p class="lede">A separate "HR Management" section of the sidebar, visible only to HR staff, the Super Admin, and — in mostly read/approval form — Managers.</p>
+      <div class="grid2">
+        <div class="card">
+          <h3>Employees</h3>
+          <p>Staff directory and individual employee files, organised into departments and employee groups.</p>
+        </div>
+        <div class="card">
+          <h3>Payroll</h3>
+          <p><b>Payslips</b> (search, filter by pay period/status, confirm or delete), a detailed payslip breakdown with a downloadable PDF, <b>batch generation</b> for a whole pay run, a <b>Payroll Report</b>, and <b>Pay Components</b> to define salary elements.</p>
+        </div>
+        <div class="card">
+          <h3>Contracts</h3>
+          <p>Employee contracts (wage, start date, status) built from reusable <b>Contract Templates</b>.</p>
+        </div>
+        <div class="card">
+          <h3>Leaves</h3>
+          <p>Employees' leave balances and requests, with a multi-stage <b>approval workflow</b> — larger requests can automatically escalate to a higher approver. Configure <b>Leave Types</b> and pull a <b>Leave Report</b>.</p>
+        </div>
+        <div class="card">
+          <h3>Loans / Advances</h3>
+          <p>Salary advance and loan requests and approvals, <b>Loan Types</b>, and a <b>Loan Report</b>.</p>
+        </div>
+        <div class="card">
+          <h3>Documents</h3>
+          <p>Store employee documents with automatic <b>expiry alerts</b> — configure which document types need expiry tracking in Document Settings.</p>
+        </div>
+      </div>
+      <div class="callout"><b>Super Admin only:</b> <b>Workflow Management</b> (design the approval stages for Leave/Loan/general requests and who owns each stage), <b>Employee Groups</b>, and <b>HR User Management</b>.</div>
+    </section>
+
+    <section class="chapter" id="self-service">
+      <div class="kicker">Chapter 14 · Employee / Manager / Lecturer / HOD / HOY / HR</div>
+      <h2>Employee self-service</h2>
+      <div class="card">
+        <ul>
+          <li><b>My File</b> — your own employee record.</li>
+          <li><b>My Payslips</b> — download your own payslips.</li>
+          <li><b>My Leaves</b> — apply for leave, track a request through each approval stage, and check your balance and a leave calendar.</li>
+          <li><b>My Loans</b> — apply for a salary advance or loan and track its status.</li>
+        </ul>
+      </div>
+    </section>
+
+    <section class="chapter" id="biometric">
+      <div class="kicker">Chapter 15 · HR / Super Admin</div>
+      <h2>Biometric attendance</h2>
+      <p class="lede">Staff clock-in/out is captured by a biometric terminal (face, card or fingerprint) at the Boswa campus — separate from the academic class-attendance registers in Chapter 6.</p>
+      <div class="card">
+        <ul>
+          <li><b>Live Dashboard</b> — most recent punches as they arrive (synced roughly every 5 minutes).</li>
+          <li><b>Attendance Report</b> — summarised staff attendance over a date range.</li>
+          <li><b>Raw Punches</b> — every individual clock event, for auditing.</li>
+          <li><b>Devices &amp; Settings</b> — configured work-start times, grace periods, and Saturday rules.</li>
+        </ul>
+        <p style="margin-top:10px;">This page only ever displays what has already synced from the terminal — if a staff member's punches aren't appearing, it usually means the device hasn't reported them yet, or their Person ID isn't set up on the terminal. Contact your system administrator if data looks missing for more than a few minutes.</p>
+      </div>
+    </section>
+
+    <section class="chapter" id="faq">
+      <div class="kicker">Chapter 16</div>
+      <h2>Tips &amp; troubleshooting</h2>
+      <div class="grid2">
+        <div class="card">
+          <h3>A class or student is missing</h3>
+          <p>Check that the correct <b>academic year and semester</b> are active — most academic lists (like the Dashboard's "Active Classes") only show records for the currently selected period. An administrator sets this in Configuration.</p>
+        </div>
+        <div class="card">
+          <h3>I forgot my password</h3>
+          <p>You can't reset your own password from the sign-in screen. Ask an administrator to reset it for you from <b>User Management</b> (academic side) or <b>HR User Management</b> (HR side) — you'll be prompted to set a new one on your next sign-in.</p>
+        </div>
+        <div class="card">
+          <h3>A student can't see their marks</h3>
+          <p>Marks only appear once a lecturer has entered them for that module. If a mark is missing entirely, ask the module's lecturer to check the Results/Marks entry for that student.</p>
+        </div>
+        <div class="card">
+          <h3>The transcript signature looks wrong</h3>
+          <p>The signature and "Issued By" details are set once, centrally, and apply to every transcript from then on — see Chapter 8. Only <span class="role-code">admin</span>/<span class="role-code">super_admin</span> can change them.</p>
+        </div>
+      </div>
+      <div class="callout warn"><b>Still stuck?</b> Boswa CIB is maintained by <b>Automate Africa</b>. For anything this manual doesn't cover, contact your school administrator, who can escalate to the support team.</div>
+    </section>
+
+    <footer class="docfoot">
+      <span>Boswa CIB User Manual · v1.0 · 15 July 2026</span>
+      <span>Bosswa Culinary Institute of Botswana · Maun, Botswana</span>
+    </footer>
+  </main>
+</div>
