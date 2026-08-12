@@ -2076,6 +2076,7 @@ export type Database = {
           semester_start_date: string | null
           transcript_issuer: string | null
           transcript_issuer_title: string | null
+          transcript_signature: string | null
         }
         Insert: {
           current_semester?: number
@@ -2087,6 +2088,7 @@ export type Database = {
           semester_start_date?: string | null
           transcript_issuer?: string | null
           transcript_issuer_title?: string | null
+          transcript_signature?: string | null
         }
         Update: {
           current_semester?: number
@@ -2098,6 +2100,7 @@ export type Database = {
           semester_start_date?: string | null
           transcript_issuer?: string | null
           transcript_issuer_title?: string | null
+          transcript_signature?: string | null
         }
         Relationships: []
       }
