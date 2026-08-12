@@ -42,8 +42,11 @@ export default function ProfilePage() {
   if (!u) return null;
 
   const handleChangePassword = async () => {
-    if (!newPwd || newPwd.length < 6) {
-      toast("Password must be at least 6 characters", "error");
+    // 8 characters, matching the forced first-login screen (ForcePasswordChange).
+    // These used to disagree — 6 here, 8 there — so a password accepted in one
+    // place was rejected in the other.
+    if (!newPwd || newPwd.length < 8) {
+      toast("Password must be at least 8 characters", "error");
       return;
     }
     if (newPwd !== confirmPwd) {

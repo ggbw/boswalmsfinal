@@ -5,6 +5,24 @@ const corsHeaders = {
   "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
 };
 
+// Unique single-use temporary password. Replaces the shared "BoswaStaff2026!"
+// every account used to get. Ambiguous characters (0/O, 1/l/I) are excluded so
+// it can be read off a printout and typed without confusion.
+const PWD_ALPHABET =
+  "ABCDEFGHJKLMNPQRSTUVWXYZ" + "abcdefghijkmnpqrstuvwxyz" + "23456789"; // 56 chars
+function generatePassword(groups = 3, size = 4): string {
+  const limit = 256 - (256 % PWD_ALPHABET.length); // reject above this to avoid modulo bias
+  const chars: string[] = [];
+  const buf = new Uint8Array(1);
+  while (chars.length < groups * size) {
+    crypto.getRandomValues(buf);
+    if (buf[0] < limit) chars.push(PWD_ALPHABET[buf[0] % PWD_ALPHABET.length]);
+  }
+  return Array.from({ length: groups }, (_, g) =>
+    chars.slice(g * size, (g + 1) * size).join("")
+  ).join("-");
+}
+
 // auth.admin.listUsers() returns a single page (default 50 users). Walking every
 // page makes "find the existing user" reliable no matter how many accounts exist —
 // without this, re-adding an email belonging to an older account fails with a
@@ -65,23 +83,34 @@ Deno.serve(async (req) => {
       });
     }
 
-    const { email, password, name, role, dept, code, student_ref, student_id } = await req.json();
+    const {
+      email, password, name, role, dept, code, student_ref, student_id,
+      must_change_password = true,
+    } = await req.json();
 
-    if (!email || !password || !name || !role) {
-      return new Response(JSON.stringify({ error: "Missing required fields: email, password, name, role" }), {
+    if (!email || !name || !role) {
+      return new Response(JSON.stringify({ error: "Missing required fields: email, name, role" }), {
         status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" },
       });
     }
 
+    // `password` is now optional. When the caller doesn't supply one we mint a
+    // unique temporary password and return it, so no two accounts ever share
+    // the same starting credential.
+    const tempPassword: string = password || generatePassword();
+
     // Try to create the user with service role
     const { data: newUser, error: createError } = await adminClient.auth.admin.createUser({
       email,
-      password,
+      password: tempPassword,
       email_confirm: true,
       user_metadata: { name },
     });
 
     let userId: string;
+    // Whether tempPassword is actually this account's password. False when the
+    // account already existed — we deliberately do NOT reset a working login.
+    let passwordApplied = true;
 
     if (createError) {
       // If user already exists, find them and update instead
@@ -93,6 +122,7 @@ Deno.serve(async (req) => {
           });
         }
         userId = existing.id;
+        passwordApplied = false;
       } else {
         return new Response(JSON.stringify({ error: createError.message }), {
           status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" },
@@ -103,10 +133,14 @@ Deno.serve(async (req) => {
     }
 
     // Upsert profile (in case trigger already created it)
+    // must_change_password drives the blocking first-login screen
+    // (ForcePasswordChange, mounted in AppLayout). It was never being set here,
+    // which is why LMS accounts were never asked to change their password.
     const { error: profileErr } = await adminClient.from("profiles").upsert({
       user_id: userId,
       name, dept: dept || null, code: code || null,
       email, student_ref: student_ref || null, student_id: student_id || null,
+      must_change_password: passwordApplied ? must_change_password : undefined,
     }, { onConflict: "user_id" });
     if (profileErr) throw profileErr;
 
@@ -120,7 +154,14 @@ Deno.serve(async (req) => {
     const { error: roleErr } = await adminClient.from("user_roles").insert({ user_id: userId, role });
     if (roleErr) throw roleErr;
 
-    return new Response(JSON.stringify({ user: { id: userId, email } }), {
+    return new Response(JSON.stringify({
+      user: { id: userId, email },
+      // The admin has to be able to hand this to the person. It is single-use:
+      // must_change_password forces a reset at first login.
+      temp_password: passwordApplied ? tempPassword : null,
+      password_applied: passwordApplied,
+      must_change_password: passwordApplied ? must_change_password : null,
+    }), {
       status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" },
     });
   } catch (error: unknown) {

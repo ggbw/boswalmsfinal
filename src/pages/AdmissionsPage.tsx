@@ -273,7 +273,6 @@ export default function AdmissionsPage() {
   // ── Enroll ──
   const handleEnroll = (a: Application) => {
     let sid = "BCI" + new Date().getFullYear() + "-" + Math.floor(1000 + Math.random() * 9000);
-    let password = "BoswaStudent2026!";
 
     showModal(
       "Enroll Student — " + a.applicant_name,
@@ -303,12 +302,16 @@ export default function AdmissionsPage() {
             />
           </div>
           <div className="form-group">
-            <label>Student Password</label>
-            <input
-              className="form-input"
-              defaultValue={password}
-              onChange={(e) => { password = e.target.value; }}
-            />
+            <label>Sign-in details</label>
+            {/* There used to be a password field here, pre-filled with the shared
+                "BoswaStudent2026!". It was never applied — doEnroll ignored it —
+                so an admin reading it off this screen handed the student a
+                password that did not work. Applicants already have their own
+                password from the application portal, and enrolling keeps it. */}
+            <div style={{ padding: "8px 0", fontSize: 12, color: "var(--text2)", lineHeight: 1.6 }}>
+              Keeps the password they set when they applied. Use <strong>Reset Pwd</strong> in User
+              Management if they need a new one.
+            </div>
           </div>
         </div>
         <div style={{ fontSize: 11, color: "#888", marginBottom: 14 }}>
@@ -319,7 +322,7 @@ export default function AdmissionsPage() {
             className="btn btn-primary"
             style={{ flex: 1 }}
             onClick={async () => {
-              await doEnroll(a, sid, password, toast, closeModal, load, reloadDb);
+              await doEnroll(a, sid, toast, closeModal, load, reloadDb);
             }}
           >
             <i className="fa-solid fa-user-graduate" style={{ marginRight: 6 }} /> Enroll Student
@@ -778,7 +781,6 @@ export default function AdmissionsPage() {
 async function doEnroll(
   a: Application,
   studentId: string,
-  password: string,
   toast: any,
   closeModal: any,
   load: any,
@@ -813,12 +815,25 @@ async function doEnroll(
   }
 
   // 2 — Upgrade user role from applicant → student
+  // Both writes are checked: if the role doesn't flip, the person stays in the
+  // applicant portal; if the profile link doesn't stick, they sign in but the
+  // app can't find their student record. Either failure reads to them as
+  // "I can't log in", so it must not pass silently.
   if (a.applicant_user_id) {
-    await supabase.from("user_roles").update({ role: "student" }).eq("user_id", a.applicant_user_id);
-    await supabase
+    const { error: roleErr } = await supabase
+      .from("user_roles").update({ role: "student" }).eq("user_id", a.applicant_user_id);
+    if (roleErr) {
+      toast("Student record created, but their role could not be changed to student: " + roleErr.message, "error");
+      return;
+    }
+    const { error: profErr } = await supabase
       .from("profiles")
       .update({ student_ref: sId, student_id: studentId })
       .eq("user_id", a.applicant_user_id);
+    if (profErr) {
+      toast("Student record created, but their profile could not be linked: " + profErr.message, "error");
+      return;
+    }
   }
 
   // 3 — Mark application enrolled

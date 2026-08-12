@@ -13,6 +13,37 @@ interface UserRow {
   student_id?: string;
 }
 
+// Unique single-use temporary password, matching the generator in the
+// create-user / provision-student-accounts edge functions. Ambiguous characters
+// (0/O, 1/l/I) are excluded so it can be read off a printout and typed.
+const PWD_ALPHABET =
+  'ABCDEFGHJKLMNPQRSTUVWXYZ' + 'abcdefghijkmnpqrstuvwxyz' + '23456789'; // 56 chars
+function generatePassword(groups = 3, size = 4): string {
+  const limit = 256 - (256 % PWD_ALPHABET.length); // reject above this to avoid modulo bias
+  const chars: string[] = [];
+  const buf = new Uint8Array(1);
+  while (chars.length < groups * size) {
+    crypto.getRandomValues(buf);
+    if (buf[0] < limit) chars.push(PWD_ALPHABET[buf[0] % PWD_ALPHABET.length]);
+  }
+  return Array.from({ length: groups }, (_, g) =>
+    chars.slice(g * size, (g + 1) * size).join(''),
+  ).join('-');
+}
+
+// Temporary passwords only exist in this response — they are hashed on the way
+// into the database and can never be read back. If the admin loses them the
+// only remedy is another reset, so make saving them easy.
+function downloadCsv(filename: string, rows: string[][]) {
+  const esc = (v: string) => `"${String(v ?? '').replace(/"/g, '""')}"`;
+  const csv = rows.map(r => r.map(esc).join(',')).join('\r\n');
+  const url = URL.createObjectURL(new Blob([csv], { type: 'text/csv;charset=utf-8' }));
+  const a = document.createElement('a');
+  a.href = url; a.download = filename;
+  document.body.appendChild(a); a.click(); document.body.removeChild(a);
+  URL.revokeObjectURL(url);
+}
+
 export default function UserManagementPage() {
   const { toast, showModal, closeModal, reloadDb, db } = useApp();
   const [users, setUsers] = useState<UserRow[]>([]);
@@ -79,16 +110,23 @@ export default function UserManagementPage() {
       if (!profile) { toast('This student does not have a login account yet. Provision their account first.', 'error'); return; }
       targetUserId = profile.user_id;
     }
-    let newPwd = u.source === 'student' ? 'BoswaStudent2026!' : 'BoswaStaff2026!';
+    let newPwd = generatePassword();
     showModal('Reset Password: ' + u.name, (
       <div>
         <div className="form-group">
           <label>New Password</label>
           <input className="form-input" type="text" defaultValue={newPwd} onChange={e => newPwd = e.target.value} />
+          <div style={{ fontSize: 11, color: 'var(--text2)', marginTop: 4 }}>
+            Freshly generated and unique to this reset. Copy it before you close this box — it cannot be read back afterwards.
+          </div>
+        </div>
+        <div style={{ background: 'var(--bg2)', borderRadius: 8, padding: '8px 12px', fontSize: 12, color: 'var(--text2)' }}>
+          <i className="fa-solid fa-shield-halved" style={{ marginRight: 6 }} />
+          {u.name} will be required to choose their own password the next time they sign in.
         </div>
         <button className="btn btn-primary" style={{ marginTop: 12 }} onClick={async () => {
           const { data, error } = await supabase.functions.invoke('reset-password', {
-            body: { user_id: targetUserId, new_password: newPwd },
+            body: { user_id: targetUserId, new_password: newPwd, must_change_password: true },
           });
           if (error || data?.error) { toast(data?.error || error?.message || 'Reset failed', 'error'); }
           else { toast('Password reset successfully', 'success'); closeModal(); }
@@ -223,7 +261,7 @@ export default function UserManagementPage() {
   };
 
   const handleCreate = () => {
-    let name = '', email = '', password = 'BoswaStaff2026!', role = 'lecturer', dept = '';
+    let name = '', email = '', password = generatePassword(), role = 'lecturer', dept = '';
     showModal('Create New User', (
       <div>
         <div className="form-row cols2">
@@ -231,7 +269,13 @@ export default function UserManagementPage() {
           <div className="form-group"><label>Email *</label><input className="form-input" type="email" onChange={e => email = e.target.value} /></div>
         </div>
         <div className="form-row cols2">
-          <div className="form-group"><label>Password</label><input className="form-input" type="text" defaultValue={password} onChange={e => password = e.target.value} /></div>
+          <div className="form-group">
+            <label>Temporary Password</label>
+            <input className="form-input" type="text" defaultValue={password} onChange={e => password = e.target.value} />
+            <div style={{ fontSize: 11, color: 'var(--text2)', marginTop: 4 }}>
+              Unique to this account. Copy it now — it cannot be read back later.
+            </div>
+          </div>
           <div className="form-group"><label>Role</label>
             <select className="form-select" defaultValue={role} onChange={e => role = e.target.value}>
               <option value="admin">Admin</option>
@@ -265,35 +309,195 @@ export default function UserManagementPage() {
           } else if (data?.error) {
             errMsg = data.error;
           }
-          if (errMsg) { toast(errMsg, 'error'); }
-          else { toast('User created!', 'success'); closeModal(); loadUsers(); reloadDb(); }
+          if (errMsg) { toast(errMsg, 'error'); return; }
+          loadUsers(); reloadDb();
+          // Show the credential rather than just a toast: this is the only
+          // moment the temporary password is readable.
+          if (data?.password_applied === false) {
+            toast('That email already had an account — profile and role updated, password left unchanged.', 'info');
+            closeModal();
+            return;
+          }
+          showModal('Account created — hand these over', (
+            <div>
+              <div style={{ background: 'var(--bg2)', borderRadius: 8, padding: '12px 14px', marginBottom: 12 }}>
+                <div className="info-row"><span className="info-label">Name</span><span className="info-val">{name}</span></div>
+                <div className="info-row"><span className="info-label">Sign in with</span><span className="info-val">{email}</span></div>
+                <div className="info-row">
+                  <span className="info-label">Temporary password</span>
+                  <span className="info-val" style={{ fontFamily: "'JetBrains Mono',monospace", fontSize: 15, letterSpacing: 0.5 }}>
+                    {data?.temp_password || password}
+                  </span>
+                </div>
+              </div>
+              <div style={{ fontSize: 12, color: 'var(--text2)', lineHeight: 1.6 }}>
+                Copy this now — the password is hashed on save and cannot be read back.
+                {name} will be asked to choose their own password the first time they sign in.
+              </div>
+              <button className="btn btn-primary" style={{ marginTop: 14, width: '100%' }} onClick={closeModal}>Done</button>
+            </div>
+          ));
         }}>Create User</button>
       </div>
     ));
   };
 
   const handleSeedFaculty = async () => {
-    if (!confirm('This will create 7 faculty accounts with default password BoswaStaff2026!. Continue?')) return;
+    if (!confirm('Create the 7 built-in faculty accounts?\n\nEach gets its own unique temporary password, which you\'ll be shown afterwards. Existing accounts are left alone.')) return;
     const { data, error } = await supabase.functions.invoke('seed-faculty');
-    if (error) { toast('Seed failed: ' + error.message, 'error'); }
-    else {
-      const results = data?.results || [];
-      const created = results.filter((r: any) => r.status === 'created').length;
-      const existing = results.filter((r: any) => r.status === 'already_exists').length;
-      toast(`${created} created, ${existing} already existed`, 'success');
-      loadUsers(); reloadDb();
-    }
+    if (error || data?.error) { toast('Seed failed: ' + (data?.error || error?.message), 'error'); return; }
+    loadUsers(); reloadDb();
+
+    const results: Array<{ email: string; name?: string; status: string; temp_password?: string; message?: string }> = data?.results || [];
+    const created = results.filter(r => r.status === 'created');
+    const existing = results.filter(r => r.status === 'already_exists').length;
+
+    if (created.length === 0) { toast(`No new accounts — ${existing} already existed.`, 'info'); return; }
+
+    showModal(`${created.length} faculty account(s) created — save the passwords now`, (
+      <div>
+        <div style={{ background: 'var(--bg2)', borderLeft: '3px solid var(--accent)', borderRadius: 6, padding: '10px 14px', marginBottom: 12, fontSize: 12, color: 'var(--text2)', lineHeight: 1.6 }}>
+          These temporary passwords cannot be retrieved again. Each person will be required to set their own at first sign-in.
+        </div>
+        <button
+          className="btn btn-primary"
+          style={{ width: '100%', marginBottom: 12 }}
+          onClick={() => downloadCsv(
+            `boswa-faculty-logins-${new Date().toISOString().split('T')[0]}.csv`,
+            [['Name', 'Sign in with', 'Temporary password'],
+             ...created.map(r => [r.name || '', r.email, r.temp_password || ''])],
+          )}
+        >
+          <i className="fa-solid fa-download" style={{ marginRight: 6 }} /> Download as CSV
+        </button>
+        <div className="table-wrap">
+          <table>
+            <thead><tr><th>Name</th><th>Sign in with</th><th>Temporary password</th></tr></thead>
+            <tbody>
+              {created.map(r => (
+                <tr key={r.email}>
+                  <td className="td-name">{r.name}</td>
+                  <td style={{ fontFamily: "'JetBrains Mono',monospace", fontSize: 11 }}>{r.email}</td>
+                  <td style={{ fontFamily: "'JetBrains Mono',monospace", fontSize: 12 }}>{r.temp_password}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+        <div style={{ marginTop: 12, fontSize: 12, color: 'var(--text2)' }}>{existing} already existed and were skipped.</div>
+      </div>
+    ), 'large');
   };
 
   const handleProvisionStudents = async () => {
-    if (!confirm('This will create login accounts for all students who have an email address. Default password: BoswaStudent2026!. Continue?')) return;
-    const { data, error } = await supabase.functions.invoke('provision-student-accounts', {
-      body: { default_password: 'BoswaStudent2026!' },
-    });
+    if (!confirm('Create login accounts for students who don\'t have one yet?\n\nEach account gets its own unique temporary password, and you\'ll be shown the full list to download afterwards. Existing accounts are left alone.')) return;
+    const { data, error } = await supabase.functions.invoke('provision-student-accounts', { body: {} });
     if (error) { toast('Provisioning failed: ' + error.message, 'error'); return; }
-    const s = data?.summary || {};
-    toast(`${s.created || 0} accounts created, ${s.existing || 0} already existed, ${s.skipped || 0} skipped (no email), ${s.errors || 0} errors`, s.errors > 0 ? 'error' : 'success');
     loadUsers(); reloadDb();
+
+    const results: Array<{ student_id: string; name: string; email: string; status: string; temp_password?: string; error?: string }> =
+      data?.results || [];
+    const created = results.filter(r => r.status === 'created');
+    const errored = results.filter(r => r.status === 'error');
+    const s = data?.summary || {};
+
+    if (created.length === 0) {
+      toast(`No new accounts. ${s.existing || 0} already existed, ${s.errors || 0} errors.`, errored.length ? 'error' : 'info');
+      return;
+    }
+
+    // The passwords in this list exist nowhere else — they're hashed on save.
+    // Offer the download before anything can navigate away from the modal.
+    showModal(`${created.length} account(s) created — save the passwords now`, (
+      <div>
+        <div style={{ background: 'var(--bg2)', borderLeft: '3px solid var(--accent)', borderRadius: 6, padding: '10px 14px', marginBottom: 12, fontSize: 12, color: 'var(--text2)', lineHeight: 1.6 }}>
+          These temporary passwords cannot be retrieved again. Download the list, distribute it, then delete the file.
+          Every student will be required to set their own password the first time they sign in.
+        </div>
+        <button
+          className="btn btn-primary"
+          style={{ width: '100%', marginBottom: 12 }}
+          onClick={() => downloadCsv(
+            `boswa-student-logins-${new Date().toISOString().split('T')[0]}.csv`,
+            [['Student ID', 'Name', 'Sign in with', 'Temporary password'],
+             ...created.map(r => [r.student_id, r.name, r.email, r.temp_password || ''])],
+          )}
+        >
+          <i className="fa-solid fa-download" style={{ marginRight: 6 }} /> Download {created.length} login(s) as CSV
+        </button>
+        <div className="table-wrap" style={{ maxHeight: 300, overflowY: 'auto' }}>
+          <table>
+            <thead><tr><th>Student</th><th>Sign in with</th><th>Temporary password</th></tr></thead>
+            <tbody>
+              {created.map(r => (
+                <tr key={r.student_id}>
+                  <td className="td-name">{r.name}</td>
+                  <td style={{ fontFamily: "'JetBrains Mono',monospace", fontSize: 11 }}>{r.email}</td>
+                  <td style={{ fontFamily: "'JetBrains Mono',monospace", fontSize: 12 }}>{r.temp_password}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+        {errored.length > 0 && (
+          <div style={{ marginTop: 12, fontSize: 12, color: 'var(--danger)' }}>
+            {errored.length} account(s) failed:
+            <ul style={{ margin: '6px 0 0', paddingLeft: 18 }}>
+              {errored.map(r => <li key={r.student_id}>{r.name} — {r.error}</li>)}
+            </ul>
+          </div>
+        )}
+        <div style={{ marginTop: 12, fontSize: 12, color: 'var(--text2)' }}>
+          {s.existing || 0} already had an account and were skipped.
+        </div>
+      </div>
+    ), 'large');
+  };
+
+  // Requires a group of users to choose a new password at their next sign-in.
+  // Admins and super_admins are always excluded by the edge function, so this
+  // cannot lock every administrator out at once.
+  const handleForcePasswordChange = () => {
+    let scope = 'all_except_admins';
+    const SCOPE_LABELS: Record<string, string> = {
+      all_except_admins: 'Everyone except admins and super admins',
+      students: 'Students only',
+      staff: 'Staff only (lecturers, HODs, HOA, HR)',
+    };
+    showModal('Require a password change', (
+      <div>
+        <div style={{ background: 'var(--bg2)', borderLeft: '3px solid var(--accent)', borderRadius: 6, padding: '10px 14px', marginBottom: 14, fontSize: 12, color: 'var(--text2)', lineHeight: 1.6 }}>
+          Everyone in the chosen group will be shown a blocking screen at their next sign-in and must set a new password before they can continue.
+          Their current password keeps working until they do. Admin and super admin accounts are never included.
+          <br /><br />
+          <strong>Tell people before you run this</strong> — it will look like a lockout to anyone not expecting it.
+        </div>
+        <div className="form-group">
+          <label>Who</label>
+          <select className="form-select" defaultValue={scope} onChange={e => scope = e.target.value}>
+            {Object.entries(SCOPE_LABELS).map(([v, l]) => <option key={v} value={v}>{l}</option>)}
+          </select>
+        </div>
+        <div style={{ display: 'flex', gap: 8 }}>
+          <button className="btn btn-outline" style={{ flex: 1 }} onClick={async () => {
+            const { data, error } = await supabase.functions.invoke('force-password-change', {
+              body: { scope, dry_run: true },
+            });
+            if (error || data?.error) { toast(data?.error || error?.message || 'Check failed', 'error'); return; }
+            toast(`${data.would_update} account(s) would be asked to change their password.`, 'info');
+          }}>Preview count</button>
+          <button className="btn btn-primary" style={{ flex: 1 }} onClick={async () => {
+            if (!confirm(`Require a password change for: ${SCOPE_LABELS[scope]}?\n\nThey will be prompted at their next sign-in.`)) return;
+            const { data, error } = await supabase.functions.invoke('force-password-change', {
+              body: { scope },
+            });
+            if (error || data?.error) { toast(data?.error || error?.message || 'Failed', 'error'); return; }
+            toast(`${data.updated} account(s) will be asked to set a new password at next sign-in.`, 'success');
+            closeModal();
+          }}>Apply</button>
+        </div>
+      </div>
+    ));
   };
 
   const roleLabel = (role: string) => ({ hoy: 'HOA' } as Record<string, string>)[role] || role.toUpperCase();
@@ -315,6 +519,7 @@ export default function UserManagementPage() {
             <option value="staff">Staff Only ({users.filter(u => u.source === 'auth' && u.role !== 'student').length})</option>
             <option value="student">Students Only ({users.filter(u => u.role === 'student').length})</option>
           </select>
+          <button className="btn btn-outline btn-sm" onClick={handleForcePasswordChange}><i className="fa-solid fa-key" /> Require Password Change</button>
           <button className="btn btn-outline btn-sm" onClick={handleSeedFaculty}><i className="fa-solid fa-database" /> Seed Faculty</button>
           <button className="btn btn-outline btn-sm" onClick={handleProvisionStudents}><i className="fa-solid fa-user-graduate" /> Provision Student Accounts</button>
           <button className="btn btn-primary btn-sm" onClick={handleCreate}><i className="fa-solid fa-user-plus" /> Add User</button>

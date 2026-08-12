@@ -45,7 +45,7 @@ Deno.serve(async (req) => {
       });
     }
 
-    const { user_id, new_password } = await req.json();
+    const { user_id, new_password, must_change_password = true } = await req.json();
     if (!user_id || !new_password) {
       return new Response(JSON.stringify({ error: "Missing user_id or new_password" }), {
         status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" },
@@ -62,7 +62,24 @@ Deno.serve(async (req) => {
       });
     }
 
-    return new Response(JSON.stringify({ success: true }), {
+    // An admin-issued password is a temporary one that the admin has seen, so
+    // the user must replace it at next login. Defaults to true; pass
+    // must_change_password: false to reset without forcing a change.
+    if (must_change_password) {
+      const { error: flagErr } = await adminClient
+        .from("profiles")
+        .update({ must_change_password: true })
+        .eq("user_id", user_id);
+      if (flagErr) {
+        return new Response(JSON.stringify({
+          error: "Password was reset, but the forced-change flag could not be set: " + flagErr.message,
+        }), {
+          status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" },
+        });
+      }
+    }
+
+    return new Response(JSON.stringify({ success: true, must_change_password }), {
       status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" },
     });
   } catch (error: unknown) {
