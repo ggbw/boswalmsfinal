@@ -177,8 +177,11 @@ export function useDbData() {
         supabase.from("attendance").select("*"),
         supabase.from("student_modules").select("student_id,module_id,added_by,added_at"),
         supabase.from("exams").select("*"),
-        supabase.from("assignments").select("id,title,module_id,class_id,due_date,marks,status,description,instructions,attachment_name,uploaded_by,uploaded_date,submission_type,created_by"),
-        supabase.from("submissions").select("id,assignment_id,student_id,submitted_date,submitted_time,file_name,file_size,notes,status,grade,feedback"),
+        // attachment_data / file_data are deliberately NOT selected: they hold
+        // base64 file contents and would bloat this bulk load. The paths are
+        // cheap, and the detail view fetches legacy base64 one row at a time.
+        supabase.from("assignments").select("id,title,module_id,class_id,due_date,marks,status,description,instructions,attachment_name,attachment_path,uploaded_by,uploaded_date,submission_type,created_by"),
+        supabase.from("submissions").select("id,assignment_id,student_id,submitted_date,submitted_time,file_name,file_path,file_size,notes,status,grade,feedback"),
         supabase.from("timetable").select("*"),
         supabase.from("admission_enquiries").select("*"),
       ]);
@@ -212,7 +215,9 @@ export function useDbData() {
             classId: a.class_id || "", dueDate: a.due_date || "",
             marks: a.marks || 0, status: a.status || "",
             description: a.description || "", instructions: a.instructions || "",
-            attachmentName: a.attachment_name || null, attachmentData: null,
+            attachmentName: a.attachment_name || null,
+            attachmentPath: a.attachment_path || null,
+            attachmentData: null, // fetched on demand — see AssignmentsPage
             uploadedBy: a.uploaded_by || "", uploadedDate: a.uploaded_date || "",
             submissionType: a.submission_type || "softcopy", createdBy: a.created_by || "",
           })),
@@ -220,7 +225,9 @@ export function useDbData() {
             id: s.id, assignmentId: s.assignment_id || "",
             studentId: s.student_id || "", submittedDate: s.submitted_date || "",
             submittedTime: s.submitted_time || "", fileName: s.file_name || "",
-            fileData: "", fileSize: s.file_size || "",
+            filePath: s.file_path || null,
+            fileData: "", // fetched on demand — see AssignmentsPage
+            fileSize: s.file_size || "",
             notes: s.notes || "", status: s.status || "",
             grade: s.grade, feedback: s.feedback || "",
           })),

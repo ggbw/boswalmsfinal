@@ -3,6 +3,60 @@ import { useApp } from '@/context/AppContext';
 import { supabase } from '@/integrations/supabase/client';
 import { getLecturerClassIds, getLecturerModulesList } from '@/lib/lecturerHelpers';
 
+const BUCKET = 'assignment-files';
+const MAX_BYTES = 10 * 1024 * 1024;
+
+/**
+ * Download a file that may live in either of two places.
+ *
+ * New uploads go to Storage and the row keeps a path. Rows created before that
+ * still hold the file as base64 in `attachment_data` / `file_data` — columns the
+ * bulk loader deliberately does not fetch, because doing so is what made the
+ * list query slow enough that they were dropped, which in turn broke every
+ * download link. So for those we fetch the one column for the one row, on click.
+ *
+ * Returns an error string, or null on success.
+ */
+async function downloadFile(opts: {
+  path?: string | null;
+  fileName: string;
+  legacy?: { table: 'assignments' | 'submissions'; column: string; id: string };
+}): Promise<string | null> {
+  const { path, fileName, legacy } = opts;
+
+  const save = (href: string, revoke?: boolean) => {
+    const a = document.createElement('a');
+    a.href = href;
+    a.download = fileName || 'download';
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    if (revoke) URL.revokeObjectURL(href);
+  };
+
+  if (path) {
+    const { data, error } = await supabase.storage.from(BUCKET).download(path);
+    if (error) return error.message;
+    save(URL.createObjectURL(data), true);
+    return null;
+  }
+
+  if (legacy) {
+    const { data, error } = await supabase
+      .from(legacy.table)
+      .select(legacy.column)
+      .eq('id', legacy.id)
+      .single();
+    if (error) return error.message;
+    const b64 = (data as Record<string, string> | null)?.[legacy.column];
+    if (!b64) return 'This file is no longer stored — it may have been uploaded before file storage was set up.';
+    save(b64); // already a data: URL
+    return null;
+  }
+
+  return 'No file is attached.';
+}
+
 // Stateful assignment create form. Re-renders the Class dropdown whenever the
 // selected Module changes (the previous version froze the class list to the
 // first module, leaving admins unable to pick a class for other modules).
@@ -45,31 +99,40 @@ function AssignmentFormModal({
 
   const handleSave = async () => {
     if (!title || !moduleId) { toast('Title and module are required', 'error'); return; }
-    if (attachmentFile && attachmentFile.size > 10 * 1024 * 1024) { toast('Attachment must be under 10MB', 'error'); return; }
+    if (attachmentFile && attachmentFile.size > MAX_BYTES) { toast('Attachment must be under 10MB', 'error'); return; }
     setSaving(true);
 
-    let attachmentData: string | null = null;
+    const id = 'asgn_' + Date.now();
+
+    // Upload to Storage BEFORE inserting the row. If the upload fails we stop
+    // here, rather than leaving an assignment that claims an attachment it
+    // hasn't got. The old code base64-encoded the file into the row itself,
+    // which is what eventually broke every download link.
     let attachmentName: string | null = null;
+    let attachmentPath: string | null = null;
     if (attachmentFile) {
       attachmentName = attachmentFile.name;
-      attachmentData = await new Promise<string>((resolve, reject) => {
-        const reader = new FileReader();
-        reader.onload = () => resolve(reader.result as string);
-        reader.onerror = () => reject(new Error('Failed to read file'));
-        reader.readAsDataURL(attachmentFile);
-      });
+      attachmentPath = `assignments/${id}/${attachmentFile.name}`;
+      const { error: upErr } = await supabase.storage
+        .from(BUCKET)
+        .upload(attachmentPath, attachmentFile, { upsert: true });
+      if (upErr) { setSaving(false); toast('Attachment upload failed: ' + upErr.message, 'error'); return; }
     }
 
-    const id = 'asgn_' + Date.now();
     const { error } = await supabase.from('assignments').insert({
       id, title, description, module_id: moduleId, class_id: classId || null,
       due_date: dueDate || null, marks, status: 'active',
       submission_type: submissionType, created_by: currentUser?.id || null,
       uploaded_by: currentUser?.name || null, uploaded_date: new Date().toISOString().split('T')[0],
-      attachment_name: attachmentName, attachment_data: attachmentData,
+      attachment_name: attachmentName, attachment_path: attachmentPath,
     });
     setSaving(false);
-    if (error) { toast(error.message, 'error'); return; }
+    if (error) {
+      // Don't leave the uploaded file orphaned in the bucket.
+      if (attachmentPath) await supabase.storage.from(BUCKET).remove([attachmentPath]);
+      toast(error.message, 'error');
+      return;
+    }
     toast('Assignment created!', 'success');
     onDone();
   };
@@ -153,6 +216,15 @@ export default function AssignmentsPage() {
 
   const handleDeleteAssignment = async (assignmentId: string) => {
     if (!confirm('Are you sure you want to delete this assignment? This will also remove all submissions.')) return;
+
+    // Remove the stored files too, or the bucket accumulates orphans nobody can
+    // reach. Collected before the rows are deleted, since the paths live on them.
+    const paths = [
+      db.assignments.find(a => a.id === assignmentId)?.attachmentPath,
+      ...db.submissions.filter(s => s.assignmentId === assignmentId).map(s => s.filePath),
+    ].filter(Boolean) as string[];
+    if (paths.length) await supabase.storage.from(BUCKET).remove(paths);
+
     // Delete submissions first
     await supabase.from('submissions').delete().eq('assignment_id', assignmentId);
     const { error } = await supabase.from('assignments').delete().eq('id', assignmentId);
@@ -299,30 +371,37 @@ export default function AssignmentsPage() {
         </div>
         <button className="btn btn-primary" style={{ marginTop: 12 }} onClick={async () => {
           if (!selectedFile) { toast('Please select a file to upload', 'error'); return; }
-          if (selectedFile.size > 10 * 1024 * 1024) { toast('File size must be under 10MB', 'error'); return; }
+          if (selectedFile.size > MAX_BYTES) { toast('File size must be under 10MB', 'error'); return; }
 
-          const reader = new FileReader();
-          reader.onload = async () => {
-            const base64 = reader.result as string;
-            const now = new Date();
-            const id = 'sub_' + Date.now();
-            const { error } = await supabase.from('submissions').insert({
-              id,
-              assignment_id: assignment.id,
-              student_id: currentStudent.id,
-              submitted_date: now.toISOString().split('T')[0],
-              submitted_time: now.toTimeString().split(' ')[0],
-              file_name: selectedFile!.name,
-              file_data: base64,
-              file_size: `${(selectedFile!.size / 1024).toFixed(1)} KB`,
-              notes,
-              status: 'submitted',
-            });
-            if (error) { toast(error.message, 'error'); } else {
-              toast('Assignment submitted successfully!', 'success'); closeModal(); reloadDb();
-            }
-          };
-          reader.readAsDataURL(selectedFile);
+          const now = new Date();
+          const id = 'sub_' + Date.now();
+          // Folder is the student's record id, which the storage policy checks
+          // against their profile — a student can only write into their own.
+          const filePath = `submissions/${assignment.id}/${currentStudent.id}/${selectedFile.name}`;
+
+          const { error: upErr } = await supabase.storage
+            .from(BUCKET)
+            .upload(filePath, selectedFile, { upsert: true });
+          if (upErr) { toast('Upload failed: ' + upErr.message, 'error'); return; }
+
+          const { error } = await supabase.from('submissions').insert({
+            id,
+            assignment_id: assignment.id,
+            student_id: currentStudent.id,
+            submitted_date: now.toISOString().split('T')[0],
+            submitted_time: now.toTimeString().split(' ')[0],
+            file_name: selectedFile.name,
+            file_path: filePath,
+            file_size: `${(selectedFile.size / 1024).toFixed(1)} KB`,
+            notes,
+            status: 'submitted',
+          });
+          if (error) {
+            await supabase.storage.from(BUCKET).remove([filePath]);
+            toast(error.message, 'error');
+          } else {
+            toast('Assignment submitted successfully!', 'success'); closeModal(); reloadDb();
+          }
         }}>Submit Assignment</button>
       </div>
     ));
@@ -465,12 +544,26 @@ export default function AssignmentsPage() {
               <div style={{fontSize:13,color:'var(--text1)',lineHeight:1.6,whiteSpace:'pre-wrap'}}>{a.instructions}</div>
             </div>
           )}
-          {a.attachmentName && a.attachmentData && (
+          {/* Gated on the NAME only. This used to also require attachmentData,
+              which the loader never fetches — so the link never rendered and no
+              attachment was ever downloadable. */}
+          {a.attachmentName && (
             <div style={{marginTop:12}}>
               <div style={{fontSize:12,fontWeight:600,color:'var(--text2)',marginBottom:4}}>Attachment</div>
-              <a href={a.attachmentData} download={a.attachmentName} className="btn btn-outline btn-sm" style={{display:'inline-flex',alignItems:'center',gap:6}}>
+              <button
+                className="btn btn-outline btn-sm"
+                style={{display:'inline-flex',alignItems:'center',gap:6}}
+                onClick={async () => {
+                  const err = await downloadFile({
+                    path: a.attachmentPath,
+                    fileName: a.attachmentName!,
+                    legacy: { table: 'assignments', column: 'attachment_data', id: a.id },
+                  });
+                  if (err) toast(err, 'error');
+                }}
+              >
                 <i className="fa-solid fa-paperclip" /> {a.attachmentName}
-              </a>
+              </button>
             </div>
           )}
 
@@ -479,7 +572,25 @@ export default function AssignmentsPage() {
             <div style={{marginTop:16,padding:12,background:'var(--bg2)',borderRadius:8}}>
               <div style={{fontSize:12,fontWeight:600,color:'var(--accent)',marginBottom:8}}>Your Submission</div>
               <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:8}}>
-                <div className="info-row"><span className="info-label">File</span><span className="info-val">{mySubmission.fileName}</span></div>
+                <div className="info-row">
+                  <span className="info-label">File</span>
+                  <span className="info-val">
+                    <button
+                      className="btn btn-outline btn-sm"
+                      style={{ fontSize: 11 }}
+                      onClick={async () => {
+                        const err = await downloadFile({
+                          path: mySubmission.filePath,
+                          fileName: mySubmission.fileName,
+                          legacy: { table: 'submissions', column: 'file_data', id: mySubmission.id },
+                        });
+                        if (err) toast(err, 'error');
+                      }}
+                    >
+                      <i className="fa-solid fa-download" style={{ marginRight: 5 }} />{mySubmission.fileName}
+                    </button>
+                  </span>
+                </div>
                 <div className="info-row"><span className="info-label">Size</span><span className="info-val">{mySubmission.fileSize}</span></div>
                 <div className="info-row"><span className="info-label">Submitted</span><span className="info-val">{mySubmission.submittedDate} {mySubmission.submittedTime}</span></div>
                 <div className="info-row"><span className="info-label">Status</span><span className="info-val"><span className="badge badge-credit">{mySubmission.status}</span></span></div>
@@ -517,12 +628,27 @@ export default function AssignmentsPage() {
                           <td className="td-name">{student?.name || 'Unknown'}</td>
                           <td style={{fontSize:11,fontFamily:"'JetBrains Mono',monospace"}}>{student?.studentId || '—'}</td>
                           <td>
-                            {sub.fileData ? (
-                              <a href={sub.fileData} download={sub.fileName} className="btn btn-outline btn-sm" style={{fontSize:11}} onClick={e => e.stopPropagation()}>
+                            {/* Was gated on sub.fileData, which the loader never
+                                fetches — so lecturers saw a filename as plain
+                                text and could not open any submitted work. */}
+                            {sub.fileName ? (
+                              <button
+                                className="btn btn-outline btn-sm"
+                                style={{fontSize:11}}
+                                onClick={async e => {
+                                  e.stopPropagation();
+                                  const err = await downloadFile({
+                                    path: sub.filePath,
+                                    fileName: sub.fileName,
+                                    legacy: { table: 'submissions', column: 'file_data', id: sub.id },
+                                  });
+                                  if (err) toast(err, 'error');
+                                }}
+                              >
                                 <i className="fa-solid fa-download" /> {sub.fileName}
-                              </a>
+                              </button>
                             ) : (
-                              <span style={{fontSize:11,color:'var(--text2)'}}>{sub.fileName || '—'}</span>
+                              <span style={{fontSize:11,color:'var(--text2)'}}>—</span>
                             )}
                           </td>
                           <td style={{fontSize:11}}>{sub.submittedDate} {sub.submittedTime}</td>

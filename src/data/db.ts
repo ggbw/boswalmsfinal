@@ -92,6 +92,14 @@ export interface Assignment {
   description?: string;
   instructions?: string;
   attachmentName?: string | null;
+  /**
+   * Storage path in the `assignment-files` bucket, e.g.
+   * `assignments/<id>/<filename>`. NULL on rows created before the move to
+   * Storage — those still hold the file as base64 in `attachment_data`, which
+   * the detail view fetches on demand. Never bulk-loaded: base64 in the list
+   * query is what made downloads break in the first place.
+   */
+  attachmentPath?: string | null;
   attachmentData?: string | null;
   uploadedBy?: string;
   uploadedDate?: string;
@@ -105,6 +113,13 @@ export interface Submission {
   submittedDate: string;
   submittedTime: string;
   fileName: string;
+  /**
+   * Storage path in the `assignment-files` bucket, e.g.
+   * `submissions/<assignmentId>/<studentId>/<filename>`. NULL on rows created
+   * before the move to Storage — those still hold the file as base64 in
+   * `file_data`, fetched on demand.
+   */
+  filePath?: string | null;
   fileData?: string;
   fileSize?: string;
   notes: string;
