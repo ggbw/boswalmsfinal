@@ -1,6 +1,9 @@
 import { useState, useEffect, useCallback } from 'react';
 import { useApp } from '@/context/AppContext';
 import { supabase } from '@/integrations/supabase/client';
+// Temporary passwords exist only in the response that creates them — they are
+// hashed on save and can never be read back, so saving them has to be easy.
+import { downloadCsv } from '@/lib/csv';
 
 
 interface UserRow {
@@ -31,18 +34,6 @@ function generatePassword(groups = 3, size = 4): string {
   ).join('-');
 }
 
-// Temporary passwords only exist in this response — they are hashed on the way
-// into the database and can never be read back. If the admin loses them the
-// only remedy is another reset, so make saving them easy.
-function downloadCsv(filename: string, rows: string[][]) {
-  const esc = (v: string) => `"${String(v ?? '').replace(/"/g, '""')}"`;
-  const csv = rows.map(r => r.map(esc).join(',')).join('\r\n');
-  const url = URL.createObjectURL(new Blob([csv], { type: 'text/csv;charset=utf-8' }));
-  const a = document.createElement('a');
-  a.href = url; a.download = filename;
-  document.body.appendChild(a); a.click(); document.body.removeChild(a);
-  URL.revokeObjectURL(url);
-}
 
 export default function UserManagementPage() {
   const { toast, showModal, closeModal, reloadDb, db } = useApp();
@@ -342,53 +333,6 @@ export default function UserManagementPage() {
     ));
   };
 
-  const handleSeedFaculty = async () => {
-    if (!confirm('Create the 7 built-in faculty accounts?\n\nEach gets its own unique temporary password, which you\'ll be shown afterwards. Existing accounts are left alone.')) return;
-    const { data, error } = await supabase.functions.invoke('seed-faculty');
-    if (error || data?.error) { toast('Seed failed: ' + (data?.error || error?.message), 'error'); return; }
-    loadUsers(); reloadDb();
-
-    const results: Array<{ email: string; name?: string; status: string; temp_password?: string; message?: string }> = data?.results || [];
-    const created = results.filter(r => r.status === 'created');
-    const existing = results.filter(r => r.status === 'already_exists').length;
-
-    if (created.length === 0) { toast(`No new accounts — ${existing} already existed.`, 'info'); return; }
-
-    showModal(`${created.length} faculty account(s) created — save the passwords now`, (
-      <div>
-        <div style={{ background: 'var(--bg2)', borderLeft: '3px solid var(--accent)', borderRadius: 6, padding: '10px 14px', marginBottom: 12, fontSize: 12, color: 'var(--text2)', lineHeight: 1.6 }}>
-          These temporary passwords cannot be retrieved again. Each person will be required to set their own at first sign-in.
-        </div>
-        <button
-          className="btn btn-primary"
-          style={{ width: '100%', marginBottom: 12 }}
-          onClick={() => downloadCsv(
-            `boswa-faculty-logins-${new Date().toISOString().split('T')[0]}.csv`,
-            [['Name', 'Sign in with', 'Temporary password'],
-             ...created.map(r => [r.name || '', r.email, r.temp_password || ''])],
-          )}
-        >
-          <i className="fa-solid fa-download" style={{ marginRight: 6 }} /> Download as CSV
-        </button>
-        <div className="table-wrap">
-          <table>
-            <thead><tr><th>Name</th><th>Sign in with</th><th>Temporary password</th></tr></thead>
-            <tbody>
-              {created.map(r => (
-                <tr key={r.email}>
-                  <td className="td-name">{r.name}</td>
-                  <td style={{ fontFamily: "'JetBrains Mono',monospace", fontSize: 11 }}>{r.email}</td>
-                  <td style={{ fontFamily: "'JetBrains Mono',monospace", fontSize: 12 }}>{r.temp_password}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-        <div style={{ marginTop: 12, fontSize: 12, color: 'var(--text2)' }}>{existing} already existed and were skipped.</div>
-      </div>
-    ), 'large');
-  };
-
   const handleProvisionStudents = async () => {
     if (!confirm('Create login accounts for students who don\'t have one yet?\n\nEach account gets its own unique temporary password, and you\'ll be shown the full list to download afterwards. Existing accounts are left alone.')) return;
     const { data, error } = await supabase.functions.invoke('provision-student-accounts', { body: {} });
@@ -520,7 +464,6 @@ export default function UserManagementPage() {
             <option value="student">Students Only ({users.filter(u => u.role === 'student').length})</option>
           </select>
           <button className="btn btn-outline btn-sm" onClick={handleForcePasswordChange}><i className="fa-solid fa-key" /> Require Password Change</button>
-          <button className="btn btn-outline btn-sm" onClick={handleSeedFaculty}><i className="fa-solid fa-database" /> Seed Faculty</button>
           <button className="btn btn-outline btn-sm" onClick={handleProvisionStudents}><i className="fa-solid fa-user-graduate" /> Provision Student Accounts</button>
           <button className="btn btn-primary btn-sm" onClick={handleCreate}><i className="fa-solid fa-user-plus" /> Add User</button>
         </div>

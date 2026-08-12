@@ -18,7 +18,8 @@ export default function DashboardPage() {
     const cls = db.classes.find(c => c.id === stu.classId);
     const prog = db.config.programmes.find(p => p.id === stu.programme);
     const stuMarks = db.marks.filter(m => m.studentId === stu.studentId);
-    const stuAtt = db.attendance.filter(a => a.studentId === stu.studentId);
+    // attendance.student_id holds students.id (the record key), not the number.
+    const stuAtt = db.attendance.filter(a => a.studentId === stu.id);
     const attPct2 = stuAtt.length ? Math.round(stuAtt.filter(a => a.status === 'present').length / stuAtt.length * 100) : 0;
     const stuAssign = db.assignments.filter(a => a.classId === stu.classId);
     return (

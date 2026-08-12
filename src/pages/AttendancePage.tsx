@@ -2,6 +2,7 @@ import { useState, useEffect, useMemo } from 'react';
 import { useApp } from '@/context/AppContext';
 import { supabase } from '@/integrations/supabase/client';
 import { getLecturerClasses } from '@/lib/lecturerHelpers';
+import { downloadCsv, slug } from '@/lib/csv';
 
 type Session = 'start' | 'end';
 type Tab = 'mark' | 'summary';
@@ -32,7 +33,9 @@ export default function AttendancePage() {
     const next: Record<string, string> = {};
     students.forEach(s => {
       const rec = db.attendance.find(a =>
-        a.studentId === s.studentId &&
+        // attendance.student_id holds students.id (the record key), not the
+        // human student number — that's what attendance_student_id_fkey requires.
+        a.studentId === s.id &&
         a.classId === attClass &&
         (a.moduleId || '') === (attModule || '') &&
         a.date === attDate &&
@@ -56,7 +59,10 @@ export default function AttendancePage() {
     if (!attDate)  { toast('Please select a date', 'error'); return; }
 
     const records = students.map(s => ({
-      student_id: s.studentId,
+      // students.id, NOT s.studentId. attendance_student_id_fkey references
+      // students(id); writing the human number failed the constraint on every
+      // save, which is why this table was completely empty.
+      student_id: s.id,
       class_id: attClass,
       module_id: attModule || '',
       date: attDate,
@@ -73,7 +79,7 @@ export default function AttendancePage() {
     // Mirror into local state so UI stays in sync — replace only rows for this
     // same class/date/module/session register, leaving the other register intact.
     const localRecords = students.map(s => ({
-      studentId: s.studentId, classId: attClass,
+      studentId: s.id, classId: attClass,
       moduleId: attModule || '', date: attDate,
       status: attState[s.id] || 'present', session: attSession as Session,
     }));
@@ -263,7 +269,7 @@ function AttendanceSummary({ availableClasses }: { availableClasses: ClassRow[] 
   );
 
   const rows = students.map(s => {
-    const sr = recs.filter(a => a.studentId === s.studentId);
+    const sr = recs.filter(a => a.studentId === s.id);
     const present = sr.filter(a => a.status === 'present').length;
     const absent = sr.filter(a => a.status === 'absent').length;
     const late = sr.filter(a => a.status === 'late').length;
@@ -280,6 +286,35 @@ function AttendanceSummary({ availableClasses }: { availableClasses: ClassRow[] 
   const overallRate = tot.total ? Math.round(((tot.present + tot.late) / tot.total) * 100) : null;
 
   const rateColor = (r: number | null) => r == null ? 'var(--text2)' : r >= 75 ? '#1a7f37' : r >= 50 ? '#9a6700' : '#cf222e';
+
+  // Export exactly what is on screen — same class, module, period and search
+  // filter — so the file always matches what the person was looking at.
+  const className = availableClasses.find(c => c.id === cls)?.name || 'Class';
+  const moduleName = moduleId ? (db.modules.find(m => m.id === moduleId)?.name || 'Module') : 'All modules';
+
+  const handleExport = () => {
+    if (rows.length === 0) return;
+    downloadCsv(
+      `attendance-${slug(className)}-${slug(moduleName)}-${range.from}-to-${range.to}.csv`,
+      [
+        ['Boswa CIB — Attendance Summary'],
+        ['Class', className],
+        ['Module', moduleName],
+        ['Period', `${range.label} (${range.from} to ${range.to})`],
+        ['Generated', new Date().toLocaleString('en-GB')],
+        [],
+        ['#', 'Student', 'Student ID', 'Present', 'Absent', 'Late', 'Registers', 'Attendance %'],
+        ...rows.map((r, i) => [
+          i + 1, r.s.name, r.s.studentId,
+          r.present, r.absent, r.late, r.total,
+          r.rate == null ? '' : r.rate,
+        ]),
+        [],
+        ['TOTAL', `${rows.length} student(s)`, '', tot.present, tot.absent, tot.late, tot.total,
+         overallRate == null ? '' : overallRate],
+      ],
+    );
+  };
 
   const periodBtn = (p: 'day' | 'week' | 'month', label: string) => (
     <button
@@ -334,6 +369,14 @@ function AttendanceSummary({ availableClasses }: { availableClasses: ClassRow[] 
           onChange={e => setSearch(e.target.value)}
           style={{ marginLeft: 'auto', maxWidth: 240 }}
         />
+        <button
+          className="btn btn-outline btn-sm"
+          onClick={handleExport}
+          disabled={rows.length === 0}
+          title={rows.length === 0 ? 'Nothing to export' : `Download ${rows.length} row(s) as CSV`}
+        >
+          <i className="fa-solid fa-download" style={{ marginRight: 6 }} /> Export CSV
+        </button>
       </div>
 
       {/* Overall tiles */}

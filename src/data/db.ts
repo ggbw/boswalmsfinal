@@ -121,6 +121,11 @@ export interface Notification {
   author: string;
 }
 export interface AttendanceRecord {
+  /**
+   * `students.id` — the record key, NOT the human student number
+   * (`students.studentId`). This is what `attendance_student_id_fkey` requires.
+   * Compare against `student.id`, never `student.studentId`.
+   */
   studentId: string;
   classId: string;
   date: string;
@@ -1625,7 +1630,7 @@ export function createInitialDB(): DB {
     db.students.slice(0, 10).forEach((s) => {
       const r = Math.random();
       db.attendance.push({
-        studentId: s.studentId,
+        studentId: s.id,   // record key — see AttendanceRecord
         classId: s.classId,
         date,
         status: r < 0.85 ? "present" : r < 0.93 ? "absent" : "late",
