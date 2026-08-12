@@ -2,6 +2,7 @@ import { useState, useEffect, useCallback } from "react";
 import { useApp } from "@/context/AppContext";
 import { supabase } from "@/integrations/supabase/client";
 import { getLecturerClasses, getLecturerModulesList } from "@/lib/lecturerHelpers";
+import { getScopedFacultyIds } from "@/lib/scope";
 
 interface FacultyRow {
   user_id: string;
@@ -27,8 +28,12 @@ export default function LecturersPage() {
     (roles || []).forEach((r: any) => {
       roleMap[r.user_id] = r.role;
     });
+    // HOA and admins see all teaching staff; a HOD sees whoever teaches a module
+    // in their department.
+    const visibleIds = getScopedFacultyIds(db, currentUser);
     const mapped = (profiles || [])
       .filter((p: any) => ["lecturer", "hod", "hoy"].includes(roleMap[p.user_id]))
+      .filter((p: any) => visibleIds === null || visibleIds.includes(p.user_id))
       .map((p: any) => ({
         user_id: p.user_id,
         name: p.name,
@@ -39,7 +44,7 @@ export default function LecturersPage() {
       }));
     setFaculty(mapped);
     setLoading(false);
-  }, []);
+  }, [db, currentUser]);
 
   useEffect(() => {
     load();

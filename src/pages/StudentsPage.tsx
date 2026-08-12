@@ -2,7 +2,7 @@ import { useState } from "react";
 import { useApp } from "@/context/AppContext";
 import { calcModuleMark, grade, gradeColor } from "@/data/db";
 import { supabase } from "@/integrations/supabase/client";
-import { getLecturerClassIds } from "@/lib/lecturerHelpers";
+import { getScopedStudents } from "@/lib/scope";
 
 const SECTIONS = {
   personal: "Personal Details",
@@ -25,20 +25,12 @@ export default function StudentsPage() {
 
   if (role === "student") return <StudentProfileFallback />;
 
-  let students = db.students;
-  if (role === "lecturer") {
-    const myClasses = getLecturerClassIds(db.lecturerModules, currentUser?.id || '');
-    students = students.filter((s) => myClasses.includes(s.classId));
-  }
-  if (role === "hod") {
-    const hodDept = db.departments.find((d) => d.hod === currentUser?.name);
-    if (hodDept) {
-      const deptClassIds = [...new Set(
-        db.modules.filter((m) => m.dept === hodDept.id).flatMap((m) => m.classes)
-      )];
-      students = students.filter((s) => deptClassIds.includes(s.classId));
-    }
-  }
+  // admin / super_admin / HOA see every student; a HOD sees their department's;
+  // a lecturer sees the classes they teach. Previously `hoy` was unfiltered by
+  // omission rather than intent, and the HOD branch matched the department's
+  // `hod` field against the user's display name — if that didn't match exactly,
+  // the filter was skipped entirely and the HOD saw the whole school.
+  const students = getScopedStudents(db, currentUser);
 
   const missingEnrolment = students.filter((s) => !s.enrolmentDate);
 

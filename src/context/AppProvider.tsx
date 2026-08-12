@@ -26,7 +26,7 @@ function pageReducer(state: PageState, action: PageAction): PageState {
 }
 
 export function AppProvider({ children, authUser, onSignOut, initialPage }: AppProviderProps) {
-  const { db, loading, reload, setDb } = useDbData();
+  const { db, loading, failures, reload, setDb } = useDbData();
   const [pageState, dispatchPage] = useReducer(pageReducer, { activePage: initialPage ?? 'dashboard', pageParams: {} });
   const [toasts, setToasts] = useState<ToastItem[]>([]);
   const [modalContent, setModalContent] = useState<{ title: string; body: ReactNode; size?: string } | null>(null);
@@ -68,6 +68,7 @@ export function AppProvider({ children, authUser, onSignOut, initialPage }: AppP
       value={{
         db,
         setDb,
+        failures,
         currentUser: authUser,
         setCurrentUser,
         activePage: pageState.activePage,

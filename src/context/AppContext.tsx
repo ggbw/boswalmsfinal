@@ -1,10 +1,17 @@
 import { createContext, useContext, type ReactNode } from 'react';
 import type { DB, User } from '@/data/db';
+import type { LoadFailure } from '@/hooks/useDbData';
 
 interface ToastItem { id: number; msg: string; type: string; }
 
 interface AppContextType {
   db: DB;
+  /**
+   * Queries that failed during the last load. Empty when everything arrived.
+   * Surfaced so a failed query stops looking identical to an empty table —
+   * previously both rendered as "No students in this class".
+   */
+  failures: LoadFailure[];
   setDb: React.Dispatch<React.SetStateAction<DB | null>>;
   currentUser: User | null;
   setCurrentUser: (u: User | null) => void;

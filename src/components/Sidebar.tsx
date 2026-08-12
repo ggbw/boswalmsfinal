@@ -210,6 +210,7 @@ function getNavConfig(role: string, db: any, hrPending: HrPendingCounts): NavSec
         section: "Academic",
         items: [
           { id: "students", label: "Students", icon: "fa-solid fa-user-graduate" },
+          { id: "lecturers", label: "Lecturers", icon: "fa-solid fa-chalkboard-user" },
           { id: "mapping", label: "Module Mapping", icon: "fa-solid fa-diagram-project" },
         ],
       },
@@ -238,6 +239,7 @@ function getNavConfig(role: string, db: any, hrPending: HrPendingCounts): NavSec
         section: "Students",
         items: [
           { id: "students", label: "All Students", icon: "fa-solid fa-user-graduate" },
+          { id: "lecturers", label: "All Lecturers", icon: "fa-solid fa-chalkboard-user" },
           { id: "grades", label: "Grades Overview", icon: "fa-solid fa-star-half-stroke" },
           { id: "progression", label: "Promotion", icon: "fa-solid fa-arrow-up-right-dots" },
         ],

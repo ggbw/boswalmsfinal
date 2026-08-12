@@ -1,7 +1,7 @@
 import { useState, useEffect, useMemo } from 'react';
 import { useApp } from '@/context/AppContext';
 import { supabase } from '@/integrations/supabase/client';
-import { getLecturerClasses } from '@/lib/lecturerHelpers';
+import { getScopedClasses } from '@/lib/scope';
 import { downloadCsv, slug } from '@/lib/csv';
 
 type Session = 'start' | 'end';
@@ -11,10 +11,11 @@ export default function AttendancePage() {
   const { db, setDb, toast, currentUser } = useApp();
   const role = currentUser?.role;
 
-  // Admin sees all classes; HOD/HOA/Lecturer see only classes they teach
-  const availableClasses = role === 'admin'
-    ? db.classes
-    : getLecturerClasses(db.lecturerModules, db.classes, currentUser?.id || '');
+  // admin / super_admin / HOA: all classes. HOD: their department's.
+  // Lecturer: the classes they teach. Previously only the literal 'admin' role
+  // got the full list, so a super_admin or HOA with no teaching assignments saw
+  // no classes and could not take a register at all.
+  const availableClasses = getScopedClasses(db, currentUser);
 
   const [tab, setTab] = useState<Tab>('mark');
   const [attClass, setAttClass] = useState(availableClasses[0]?.id || '');

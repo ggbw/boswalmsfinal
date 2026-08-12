@@ -1,3 +1,4 @@
+import { useState } from 'react';
 import { useApp } from '@/context/AppContext';
 import Sidebar from '@/components/Sidebar';
 import Dashboard from '@/pages/DashboardPage';
@@ -159,7 +160,9 @@ const ROLE_PAGES: Record<string, string[]> = {
   profile:        ['admin','super_admin','hr','manager','employee','hod','hoy','lecturer','student'],
   notifications:  ['admin','super_admin','hr','manager','employee','hod','hoy','lecturer','student'],
   students:       ['admin','super_admin','hod','hoy','lecturer'],
-  lecturers:      ['admin','super_admin'],
+  // HOA sees all teaching staff; a HOD sees their own department's. The page
+  // scopes the list itself — see getScopedFacultyIds.
+  lecturers:      ['admin','super_admin','hod','hoy'],
   classes:        ['admin','super_admin'],
   modules:        ['admin','super_admin','hod','lecturer'],
   timetable:      ['admin','super_admin','hod','hoy','lecturer'],
@@ -224,6 +227,49 @@ const ROLE_PAGES: Record<string, string[]> = {
   'my-advance-salary': ['super_admin','hr','manager','employee','lecturer','hod','hoy'],
 };
 
+/**
+ * Shown when part of the last data load failed.
+ *
+ * Without this, a failed query renders as an empty list — so "the database
+ * refused this request" and "there is genuinely nothing here" look identical.
+ * That is the single biggest reason faults in this system were hard to
+ * reproduce: nobody, including the person reporting them, could tell which
+ * one they were looking at.
+ */
+function LoadFailureBanner() {
+  const { failures, reloadDb } = useApp();
+  const [dismissed, setDismissed] = useState(false);
+  if (!failures.length || dismissed) return null;
+
+  return (
+    <div
+      role="alert"
+      style={{
+        background: '#fff8c5', borderBottom: '1px solid #ffe07c', color: '#7a4f00',
+        padding: '10px 18px', fontSize: 12.5, lineHeight: 1.55,
+        display: 'flex', alignItems: 'flex-start', gap: 12,
+      }}
+    >
+      <i className="fa-solid fa-triangle-exclamation" style={{ marginTop: 2 }} />
+      <div style={{ flex: 1, minWidth: 0 }}>
+        <strong>Some data could not be loaded.</strong> What you see below is incomplete —
+        please don't rely on it for reporting or marking until this is resolved.
+        <div style={{ marginTop: 4, fontFamily: "'JetBrains Mono',monospace", fontSize: 11, opacity: 0.85 }}>
+          {failures.map(f => `${f.table}: ${f.message}`).join(' · ')}
+        </div>
+      </div>
+      <button className="btn btn-outline btn-sm" onClick={() => reloadDb()}>Retry</button>
+      <button
+        className="btn btn-outline btn-sm"
+        onClick={() => setDismissed(true)}
+        aria-label="Dismiss"
+      >
+        ✕
+      </button>
+    </div>
+  );
+}
+
 export default function AppLayout() {
   const { db, activePage, currentUser, toasts, modalContent, closeModal } = useApp();
   const { user, profile } = useAuth();
@@ -246,6 +292,7 @@ export default function AppLayout() {
       <Sidebar />
       <div className="main-area" style={{ display: 'flex', flexDirection: 'column', minWidth: 0 }}>
         <ImpersonationBanner />
+        <LoadFailureBanner />
         <div className="topbar">
           <div className="breadcrumb">
             <span>Boswa CIB</span>

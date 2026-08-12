@@ -1,5 +1,5 @@
 import { useApp } from '@/context/AppContext';
-import { getLecturerClasses, getLecturerModulesList } from '@/lib/lecturerHelpers';
+import { getScopedClasses, getScopedStudents } from '@/lib/scope';
 
 export default function MyStudentsPage() {
   const { db, currentUser } = useApp();
@@ -18,13 +18,11 @@ export default function MyStudentsPage() {
     </>);
   }
 
-  // Lecturer / HOD / HOA: show students in classes they teach
-  const lecClasses = getLecturerClasses(db.lecturerModules, db.classes, currentUser?.id || '');
-  const lecClassIds = lecClasses.map(c => c.id);
-  const lecModuleIds = getLecturerModulesList(db.lecturerModules, db.modules, currentUser?.id || '').map(m => m.id);
-
-  // Students in lecturer's classes
-  const students = db.students.filter(s => lecClassIds.includes(s.classId));
+  // Lecturer / HOD / HOA. Previously every one of these roles was scoped through
+  // lecturer_modules, so a HOD or HOA with no teaching assignments of their own
+  // saw nothing at all here.
+  const lecClasses = getScopedClasses(db, currentUser);
+  const students = getScopedStudents(db, currentUser);
 
   return (<>
     <div className="page-header"><div className="page-title">My Students</div><div className="page-sub">{students.length} student(s) across {lecClasses.length} class(es)</div></div>

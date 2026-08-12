@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { useApp } from '@/context/AppContext';
 import { supabase } from '@/integrations/supabase/client';
-import { getLecturerClassIds, getLecturerModulesList } from '@/lib/lecturerHelpers';
+import { getScopedClassIds, getScopedModuleIds, isUnrestricted } from '@/lib/scope';
 
 const BUCKET = 'assignment-files';
 const MAX_BYTES = 10 * 1024 * 1024;
@@ -71,11 +71,28 @@ function AssignmentFormModal({
   onDone: () => void;
 }) {
   const classesForModule = (mid: string) => {
-    const lecClassIds = getLecturerClassIds(db.lecturerModules, currentUser?.id || '');
-    const availableClasses = isAdmin ? db.classes : db.classes.filter((c: any) => lecClassIds.includes(c.id));
     const mod = db.modules.find((m: any) => m.id === mid);
-    const linked = mod ? availableClasses.filter((c: any) => mod.classes.includes(c.id)) : [];
-    return linked.length > 0 ? linked : availableClasses;
+    const linkedIds: string[] = mod?.classes || [];
+
+    // A lecturer is assigned a module *per class*, so offer exactly the classes
+    // where they teach THIS module — not every class they teach anything in.
+    if (currentUser?.role === 'lecturer') {
+      const taughtHere = db.lecturerModules
+        .filter((lm: any) => lm.lecturerId === currentUser?.id && lm.moduleId === mid)
+        .map((lm: any) => lm.classId);
+      const classes = db.classes.filter((c: any) => taughtHere.includes(c.id));
+      if (classes.length > 0) return classes;
+    }
+
+    // Everyone else: their scoped classes, narrowed to those taking this module.
+    // Previously a HOD fell through to the lecturer branch and was offered only
+    // classes they personally teach, rather than their department's.
+    const scoped = getScopedClassIds(db, currentUser);
+    const available = scoped === null
+      ? db.classes
+      : db.classes.filter((c: any) => scoped.includes(c.id));
+    const linked = available.filter((c: any) => linkedIds.includes(c.id));
+    return linked.length > 0 ? linked : available;
   };
 
   const firstModuleId = availableModules[0]?.id || '';
@@ -180,13 +197,29 @@ export default function AssignmentsPage() {
   const [selectedAssignment, setSelectedAssignment] = useState<string | null>(null);
   const [search, setSearch] = useState('');
 
-  const isAdmin = role === 'admin';
+  // `admin` alone excluded super_admin, who then saw no Create/Delete/Marks
+  // buttons at all on this page.
+  const isAdmin = isUnrestricted(role);
   const isTeacher = role === 'lecturer' || role === 'hod' || role === 'hoy';
 
   let assignments = db.assignments;
 
   if (isTeacher) {
-    assignments = assignments.filter(a => a.createdBy === currentUser?.id);
+    // Scoped by what they TEACH, not by who created the record.
+    //
+    // This used to be `a.createdBy === currentUser?.id`, which meant an
+    // assignment set by an admin for a lecturer's own module was invisible to
+    // that lecturer; assignments predating the created_by column were invisible
+    // to everyone forever; and a recreated account lost sight of all its
+    // previous work. HODs and HOAs were caught by the same filter and so could
+    // not see their department's or the school's assignments at all.
+    const scopedModuleIds = getScopedModuleIds(db, currentUser);
+    if (scopedModuleIds !== null) {
+      const allowed = new Set(scopedModuleIds);
+      assignments = assignments.filter(
+        a => allowed.has(a.moduleId) || a.createdBy === currentUser?.id,
+      );
+    }
   }
 
   const currentStudent = role === 'student'
@@ -200,14 +233,40 @@ export default function AssignmentsPage() {
     assignments = assignments.filter(a => allModuleIds.includes(a.moduleId));
   }
 
-  const getLecturerModules = () =>
-    getLecturerModulesList(db.lecturerModules, db.modules, currentUser?.id || '');
-
   const handleCreateAssignment = () => {
-    const lecModules = isAdmin ? db.modules : getLecturerModules();
+    // Scope the pickers to what this person may work with. `isAdmin` alone was
+    // too narrow: a super_admin or HOA fell through to the lecturer branch and
+    // got an empty module list, so they could not create an assignment at all.
+    const scopedModuleIds = getScopedModuleIds(db, currentUser);
+    const lecModules = scopedModuleIds === null
+      ? db.modules
+      : db.modules.filter(m => scopedModuleIds.includes(m.id));
+    const unrestricted = isUnrestricted(currentUser?.role);
+
+    // A teacher with no modules assigned gets an empty picker and a form that
+    // can never be submitted ("Title and module are required" with no module to
+    // choose). Say what's actually wrong instead. 6 of 12 teaching staff have no
+    // rows in lecturer_modules today, which is the real reason "lecturers can't
+    // create assignments" — not a permissions problem.
+    if (lecModules.length === 0) {
+      showModal('Create Assignment', (
+        <div>
+          <div style={{ background: 'var(--bg2)', borderLeft: '3px solid var(--accent)', borderRadius: 6, padding: '12px 14px', fontSize: 13, color: 'var(--text2)', lineHeight: 1.6 }}>
+            You don't have any modules assigned yet, so there is nothing to create an assignment against.
+            <br /><br />
+            {currentUser?.role === 'hod'
+              ? 'No modules are linked to your department. An administrator can set this up under Configuration → programme mapping.'
+              : 'An administrator can assign your modules under Classes → Assign lecturers.'}
+          </div>
+          <button className="btn btn-primary" style={{ marginTop: 14, width: '100%' }} onClick={closeModal}>Close</button>
+        </div>
+      ));
+      return;
+    }
+
     showModal('Create Assignment', (
       <AssignmentFormModal
-        db={db} currentUser={currentUser} isAdmin={isAdmin}
+        db={db} currentUser={currentUser} isAdmin={unrestricted}
         availableModules={lecModules} toast={toast}
         onDone={() => { closeModal(); reloadDb(); }}
       />
