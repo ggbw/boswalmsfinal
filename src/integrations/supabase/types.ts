@@ -259,6 +259,7 @@ export type Database = {
         Row: {
           attachment_data: string | null
           attachment_name: string | null
+          attachment_path: string | null
           class_id: string | null
           created_by: string | null
           description: string | null
@@ -276,6 +277,7 @@ export type Database = {
         Insert: {
           attachment_data?: string | null
           attachment_name?: string | null
+          attachment_path?: string | null
           class_id?: string | null
           created_by?: string | null
           description?: string | null
@@ -293,6 +295,7 @@ export type Database = {
         Update: {
           attachment_data?: string | null
           attachment_name?: string | null
+          attachment_path?: string | null
           class_id?: string | null
           created_by?: string | null
           description?: string | null
@@ -329,7 +332,8 @@ export type Database = {
           class_id: string
           date: string
           id: string
-          module_id: string | null
+          module_id: string
+          session: string
           status: string
           student_id: string
         }
@@ -337,7 +341,8 @@ export type Database = {
           class_id: string
           date: string
           id?: string
-          module_id?: string | null
+          module_id?: string
+          session?: string
           status?: string
           student_id: string
         }
@@ -345,7 +350,8 @@ export type Database = {
           class_id?: string
           date?: string
           id?: string
-          module_id?: string | null
+          module_id?: string
+          session?: string
           status?: string
           student_id?: string
         }
@@ -355,13 +361,6 @@ export type Database = {
             columns: ["class_id"]
             isOneToOne: false
             referencedRelation: "classes"
-            referencedColumns: ["id"]
-          },
-          {
-            foreignKeyName: "attendance_module_id_fkey"
-            columns: ["module_id"]
-            isOneToOne: false
-            referencedRelation: "modules"
             referencedColumns: ["id"]
           },
           {
@@ -2233,6 +2232,7 @@ export type Database = {
           feedback: string | null
           file_data: string | null
           file_name: string | null
+          file_path: string | null
           file_size: string | null
           grade: number | null
           id: string
@@ -2247,6 +2247,7 @@ export type Database = {
           feedback?: string | null
           file_data?: string | null
           file_name?: string | null
+          file_path?: string | null
           file_size?: string | null
           grade?: number | null
           id: string
@@ -2261,6 +2262,7 @@ export type Database = {
           feedback?: string | null
           file_data?: string | null
           file_name?: string | null
+          file_path?: string | null
           file_size?: string | null
           grade?: number | null
           id?: string
@@ -2394,6 +2396,51 @@ export type Database = {
             referencedColumns: ["id"]
           },
         ]
+      }
+      timetable_documents: {
+        Row: {
+          academic_year: number | null
+          file_name: string
+          file_path: string
+          file_size: number | null
+          id: string
+          mime_type: string | null
+          notes: string | null
+          semester: number | null
+          title: string
+          uploaded_at: string
+          uploaded_by: string | null
+          uploaded_by_name: string | null
+        }
+        Insert: {
+          academic_year?: number | null
+          file_name: string
+          file_path: string
+          file_size?: number | null
+          id: string
+          mime_type?: string | null
+          notes?: string | null
+          semester?: number | null
+          title: string
+          uploaded_at?: string
+          uploaded_by?: string | null
+          uploaded_by_name?: string | null
+        }
+        Update: {
+          academic_year?: number | null
+          file_name?: string
+          file_path?: string
+          file_size?: number | null
+          id?: string
+          mime_type?: string | null
+          notes?: string | null
+          semester?: number | null
+          title?: string
+          uploaded_at?: string
+          uploaded_by?: string | null
+          uploaded_by_name?: string | null
+        }
+        Relationships: []
       }
       user_notifications: {
         Row: {
@@ -2694,11 +2741,27 @@ export type Database = {
       [_ in never]: never
     }
     Functions: {
+      can_view_school: { Args: { _uid: string }; Returns: boolean }
       check_username_available: {
         Args: { p_exclude_id?: string; p_username: string }
         Returns: boolean
       }
       current_employee_id: { Args: never; Returns: string }
+      dashboard_department_stats: {
+        Args: never
+        Returns: {
+          attendance_rate: number
+          dept_id: string
+          dept_name: string
+          lecturers: number
+          marks_recorded: number
+          modules: number
+          pass_rate: number
+          students: number
+        }[]
+      }
+      dashboard_lecturer_stats: { Args: never; Returns: Json }
+      dashboard_school_stats: { Args: never; Returns: Json }
       get_login_email: { Args: { p_identifier: string }; Returns: string }
       get_user_role: {
         Args: { _user_id: string }
@@ -2712,6 +2775,10 @@ export type Database = {
         Returns: boolean
       }
       is_managed_by_current_user: { Args: { emp_id: string }; Returns: boolean }
+      is_oversight_only: { Args: { _uid: string }; Returns: boolean }
+      is_school_staff: { Args: { _uid: string }; Returns: boolean }
+      my_student_number: { Args: { _uid: string }; Returns: string }
+      my_student_ref: { Args: { _uid: string }; Returns: string }
     }
     Enums: {
       app_role:
@@ -2724,6 +2791,8 @@ export type Database = {
         | "super_admin"
         | "manager"
         | "employee"
+        | "principal"
+        | "deputy_principal"
     }
     CompositeTypes: {
       [_ in never]: never
@@ -2861,6 +2930,8 @@ export const Constants = {
         "super_admin",
         "manager",
         "employee",
+        "principal",
+        "deputy_principal",
       ],
     },
   },
