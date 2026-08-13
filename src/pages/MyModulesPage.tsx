@@ -113,7 +113,7 @@ function MyModulesInner({ stu, db }: { stu: Student; db: DB }) {
     }
 
     // Semester/year info from the mark record
-    const semInfo = mark ? `Year ${mark.year} · Sem ${mark.semester}` : null;
+    const semInfo = mark ? `Year ${stu.year} · Sem ${stu.semester}` : null;
 
     return (
       <div

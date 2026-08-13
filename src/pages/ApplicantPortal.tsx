@@ -322,7 +322,7 @@ function DownloadLetterBtn({ applicationId, type, progName }: { applicationId:st
       // The applicant chose their intake (Jan/July) at apply time; the offer
       // letter should reflect that rather than the programme's default.
       if (appl?.intake_month) prog.intake_month = appl.intake_month;
-      const cfg = configRes.data;
+      const cfg = configRes.data as unknown as Record<string, string | null> | null;
 
       const fmt = (iso: string) => new Date(iso).toLocaleDateString('en-GB',{day:'numeric',month:'long',year:'numeric'});
       const today = new Date().toLocaleDateString('en-GB',{day:'numeric',month:'long',year:'numeric'});
