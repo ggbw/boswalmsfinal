@@ -6,14 +6,31 @@ import { supabase } from '@/integrations/supabase/client';
 import { downloadCsv } from '@/lib/csv';
 
 
+/**
+ * One row per PERSON, not per record.
+ *
+ * This list used to concatenate two queries — every profile, then every student
+ * record — so a student with a login appeared TWICE: once showing their email
+ * and once showing their student ID. It looked like duplicate accounts, and it
+ * hid the thing that actually mattered: the two rows' Delete buttons removed
+ * completely different things. The one on the ID row deleted the student RECORD,
+ * taking their marks, attendance and submissions with it.
+ *
+ * A person may have a login, a student record, or both. Each is tracked
+ * separately so an action can say exactly what it affects.
+ */
 interface UserRow {
-  user_id: string;
+  key: string;
   name: string;
+  /** Sign-in address. Empty when they have no login. */
   email: string;
   role: string;
   dept: string;
-  source: 'auth' | 'student';
-  student_id?: string;
+  studentId?: string;
+  /** auth.users.id — present only if they can sign in. */
+  authUserId?: string;
+  /** students.id — present only if they have a student record. */
+  studentRecordId?: string;
 }
 
 // Unique single-use temporary password, matching the generator in the
@@ -35,6 +52,16 @@ function generatePassword(groups = 3, size = 4): string {
 }
 
 
+/**
+ * Student IDs are hand-typed in this form, and two in the live data ended up
+ * with stray spaces ("BCI2024D 43", "BCI2025C- 15"). That is not cosmetic:
+ * assessment_marks is keyed on this string, so a mismatched space silently
+ * detaches a student from their own marks. Normalise on save.
+ */
+function cleanStudentId(v: string): string {
+  return (v || "").trim().replace(/\s+/g, "");
+}
+
 export default function UserManagementPage() {
   const { toast, showModal, closeModal, reloadDb, db } = useApp();
   const [users, setUsers] = useState<UserRow[]>([]);
@@ -44,63 +71,127 @@ export default function UserManagementPage() {
 
   const loadUsers = useCallback(async () => {
     setLoading(true);
-    const { data: profiles } = await supabase.from('profiles').select('*');
-    const { data: roles } = await supabase.from('user_roles').select('*');
+    const [{ data: profiles }, { data: roles }, { data: students }] = await Promise.all([
+      supabase.from('profiles').select('*'),
+      supabase.from('user_roles').select('*'),
+      supabase.from('students').select('*'),
+    ]);
+
     const roleMap: Record<string, string> = {};
     (roles || []).forEach((r: any) => { roleMap[r.user_id] = r.role; });
-    const authUsers: UserRow[] = (profiles || []).map((p: any) => ({
-      user_id: p.user_id,
-      name: p.name,
-      email: p.email || '',
-      role: roleMap[p.user_id] || 'unknown',
-      dept: p.dept || '',
-      source: 'auth' as const,
-    }));
 
-    const { data: students } = await supabase.from('students').select('*');
-    const studentUsers: UserRow[] = (students || []).map((s: any) => ({
-      user_id: s.id,
-      name: s.name,
-      email: s.email || '',
-      role: 'student',
-      dept: '',
-      source: 'student' as const,
-      student_id: s.student_id,
-    }));
+    // Match each student record to its login. profiles carries both links —
+    // student_ref (students.id) and student_id (the number) — and older rows may
+    // have only one, so try both.
+    const rows: UserRow[] = [];
+    const claimedProfiles = new Set<string>();
 
-    setUsers([...authUsers, ...studentUsers]);
+    (students || []).forEach((st: any) => {
+      const profile = (profiles || []).find(
+        (p: any) => (p.student_ref && p.student_ref === st.id)
+                 || (p.student_id && p.student_id === st.student_id),
+      );
+      if (profile) claimedProfiles.add(profile.user_id);
+      rows.push({
+        key: 'stu:' + st.id,
+        name: st.name,
+        email: profile?.email || st.email || '',
+        role: profile ? (roleMap[profile.user_id] || 'student') : 'student',
+        dept: '',
+        studentId: st.student_id,
+        authUserId: profile?.user_id,
+        studentRecordId: st.id,
+      });
+    });
+
+    // Everyone else is a login with no student record — staff, and any account
+    // whose student link is broken.
+    (profiles || []).forEach((p: any) => {
+      if (claimedProfiles.has(p.user_id)) return;
+      rows.push({
+        key: 'auth:' + p.user_id,
+        name: p.name,
+        email: p.email || '',
+        role: roleMap[p.user_id] || 'unknown',
+        dept: p.dept || '',
+        studentId: p.student_id || undefined,
+        authUserId: p.user_id,
+      });
+    });
+
+    rows.sort((a, b) => (a.name || '').localeCompare(b.name || ''));
+    setUsers(rows);
     setLoading(false);
   }, []);
 
   useEffect(() => { loadUsers(); }, [loadUsers]);
 
   const filtered = users.filter(u => {
-    const matchFilter = filter === 'all' || (filter === 'staff' && u.source === 'auth' && u.role !== 'student') || (filter === 'student' && u.role === 'student');
-    const matchSearch = !search || u.name.toLowerCase().includes(search.toLowerCase()) || u.email.toLowerCase().includes(search.toLowerCase()) || (u.student_id || '').toLowerCase().includes(search.toLowerCase());
+    const matchFilter = filter === 'all' || (filter === 'staff' && !u.studentRecordId) || (filter === 'student' && !!u.studentRecordId);
+    const q = search.toLowerCase();
+    const matchSearch = !search || u.name.toLowerCase().includes(q) || u.email.toLowerCase().includes(q) || (u.studentId || '').toLowerCase().includes(q);
     return matchFilter && matchSearch;
   });
 
-  const handleDelete = async (u: UserRow) => {
-    if (!confirm(`Delete user "${u.name}" (${u.email})? This cannot be undone.`)) return;
-    if (u.source === 'student') {
-      const { error } = await supabase.from('students').delete().eq('id', u.user_id);
-      if (error) { toast(error.message, 'error'); } else { toast('Student deleted', 'success'); loadUsers(); reloadDb(); }
-      return;
+  /**
+   * Removing the LOGIN. The student record, and every mark, register and
+   * submission attached to it, is untouched — the person simply can no longer
+   * sign in.
+   */
+  const handleRemoveLogin = async (u: UserRow) => {
+    if (!u.authUserId) return;
+    if (!confirm(
+      `Remove the login for "${u.name}" (${u.email})?\n\n` +
+      `They will no longer be able to sign in.\n` +
+      (u.studentRecordId
+        ? `Their student record, marks, attendance and submissions are KEPT.`
+        : `This cannot be undone.`)
+    )) return;
+
+    const { data, error } = await supabase.functions.invoke('delete-user', {
+      body: { user_id: u.authUserId },
+    });
+    if (error || data?.error) { toast(data?.error || error?.message || 'Delete failed', 'error'); return; }
+    toast('Login removed', 'success');
+    loadUsers(); reloadDb();
+  };
+
+  /**
+   * Removing the STUDENT RECORD. Far more destructive than removing a login:
+   * marks, attendance and submissions all reference it. Kept as a separate,
+   * separately-labelled action because these two used to share one "Delete"
+   * button and one dialog, distinguishable only by which duplicate row you
+   * happened to click.
+   */
+  const handleDeleteStudentRecord = async (u: UserRow) => {
+    if (!u.studentRecordId) return;
+    if (!confirm(
+      `DELETE the student record for "${u.name}" (${u.studentId})?\n\n` +
+      `This also removes their marks, attendance and submissions.\n` +
+      (u.authUserId ? `Their login is removed too.\n` : '') +
+      `\nThis cannot be undone. To stop someone signing in without losing their ` +
+      `academic history, use "Remove login" instead.`
+    )) return;
+
+    if (u.authUserId) {
+      const { data, error } = await supabase.functions.invoke('delete-user', {
+        body: { user_id: u.authUserId },
+      });
+      if (error || data?.error) { toast(data?.error || error?.message || 'Could not remove the login', 'error'); return; }
     }
-    const { error: roleErr } = await supabase.from('user_roles').delete().eq('user_id', u.user_id);
-    const { error: profErr } = await supabase.from('profiles').delete().eq('user_id', u.user_id);
-    if (roleErr || profErr) { toast(roleErr?.message || profErr?.message || 'Delete failed', 'error'); }
-    else { toast('User deleted', 'success'); loadUsers(); }
+    const { error } = await supabase.from('students').delete().eq('id', u.studentRecordId);
+    if (error) { toast(error.message, 'error'); return; }
+    toast('Student record deleted', 'success');
+    loadUsers(); reloadDb();
   };
 
   const handleResetPassword = async (u: UserRow) => {
     // For students from the students table, find their auth account via profile linkage
-    let targetUserId = u.user_id;
-    if (u.source === 'student') {
-      const { data: profile } = await supabase.from('profiles').select('user_id').eq('student_ref', u.user_id).single();
-      if (!profile) { toast('This student does not have a login account yet. Provision their account first.', 'error'); return; }
-      targetUserId = profile.user_id;
+    if (!u.authUserId) {
+      toast('This person has no login yet. Use Provision Student Accounts, or Add User for staff.', 'error');
+      return;
     }
+    const targetUserId = u.authUserId;
     let newPwd = generatePassword();
     showModal('Reset Password: ' + u.name, (
       <div>
@@ -128,9 +219,9 @@ export default function UserManagementPage() {
 
   const handleEditUser = async (u: UserRow) => {
     let name = u.name, email = u.email, dept = u.dept, role = u.role;
-    if (u.source === 'student') {
+    if (u.studentRecordId) {
       // Load full student record for all fields
-      const { data: stu } = await supabase.from('students').select('*').eq('id', u.user_id).single();
+      const { data: stu } = await supabase.from('students').select('*').eq('id', u.studentRecordId).single();
       if (!stu) { toast('Student not found', 'error'); return; }
       let studentId = stu.student_id || '', gender = stu.gender || '', dob = stu.dob || '';
       let mobile = stu.mobile || '', email = stu.email || '', guardian = stu.guardian || '', programme = stu.programme || '';
@@ -193,11 +284,11 @@ export default function UserManagementPage() {
           </div>
           <button className="btn btn-primary" style={{ marginTop: 12 }} onClick={async () => {
             const { error } = await supabase.from('students').update({
-              name, email, student_id: studentId, national_id: nationalId, nationality,
+              name, email, student_id: cleanStudentId(studentId), national_id: nationalId, nationality,
               gender, dob: dob || null, mobile, guardian,
               guardian_mobile: guardianMobile, guardian_email: guardianEmail,
               programme: programme || null, class_id: classId || null, status,
-            }).eq('id', u.user_id);
+            }).eq('id', u.studentRecordId);
             if (error) { toast(error.message, 'error'); } else {
               toast('Student updated!', 'success'); closeModal(); loadUsers(); reloadDb();
             }
@@ -206,7 +297,7 @@ export default function UserManagementPage() {
       ));
     } else {
       // Load profile code
-      const { data: profile } = await supabase.from('profiles').select('code').eq('user_id', u.user_id).single();
+      const { data: profile } = await supabase.from('profiles').select('code').eq('user_id', u.authUserId).single();
       let code = profile?.code || '';
       showModal('Edit User: ' + u.name, (
         <div>
@@ -218,6 +309,8 @@ export default function UserManagementPage() {
             <div className="form-group"><label>Role</label>
               <select className="form-select" defaultValue={role} onChange={e => role = e.target.value}>
                 <option value="admin">Admin</option>
+                <option value="principal">Principal</option>
+                <option value="deputy_principal">Deputy Principal</option>
                 <option value="hod">HOD</option>
                 <option value="hoa">HOA - Head of Academics</option>
                 <option value="lecturer">Lecturer</option>
@@ -236,13 +329,13 @@ export default function UserManagementPage() {
           </div>
           <button className="btn btn-primary" style={{ marginTop: 12 }} onClick={async () => {
             // Update profile
-            const { error: profErr } = await supabase.from('profiles').update({ name, email, dept, code }).eq('user_id', u.user_id);
+            const { error: profErr } = await supabase.from('profiles').update({ name, email, dept, code }).eq('user_id', u.authUserId);
             if (profErr) { toast(profErr.message, 'error'); return; }
             // Update role if a row exists, otherwise insert (user_roles has no single-column unique on user_id)
-            const { data: existingRole } = await supabase.from('user_roles').select('id').eq('user_id', u.user_id).single();
+            const { data: existingRole } = await supabase.from('user_roles').select('id').eq('user_id', u.authUserId).single();
             const { error: roleErr } = existingRole
-              ? await supabase.from('user_roles').update({ role: role as any }).eq('user_id', u.user_id)
-              : await supabase.from('user_roles').insert({ user_id: u.user_id, role: role as any });
+              ? await supabase.from('user_roles').update({ role: role as any }).eq('user_id', u.authUserId)
+              : await supabase.from('user_roles').insert({ user_id: u.authUserId, role: role as any });
             if (roleErr) { toast(roleErr.message, 'error'); return; }
             toast('User updated!', 'success'); closeModal(); loadUsers(); reloadDb();
           }}>Save Changes</button>
@@ -270,6 +363,8 @@ export default function UserManagementPage() {
           <div className="form-group"><label>Role</label>
             <select className="form-select" defaultValue={role} onChange={e => role = e.target.value}>
               <option value="admin">Admin</option>
+              <option value="principal">Principal</option>
+              <option value="deputy_principal">Deputy Principal</option>
               <option value="hod">HOD</option>
               <option value="hoa">HOA - Head of Academics</option>
               <option value="lecturer">Lecturer</option>
@@ -444,9 +539,12 @@ export default function UserManagementPage() {
     ));
   };
 
-  const roleLabel = (role: string) => ({ hoa: 'HOA' } as Record<string, string>)[role] || role.toUpperCase();
+  const roleLabel = (role: string) =>
+    ({ hoa: 'HOA', principal: 'PRINCIPAL', deputy_principal: 'DEPUTY PRINCIPAL' } as Record<string, string>)[role]
+    || role.toUpperCase();
   const roleBadgeClass = (role: string) => {
     if (role === 'admin') return 'badge-fail';
+    if (role === 'principal' || role === 'deputy_principal') return 'badge-fail';
     if (role === 'hod' || role === 'hoa') return 'badge-pass';
     if (role === 'student') return 'badge-active';
     return 'badge-pass';
@@ -460,8 +558,8 @@ export default function UserManagementPage() {
           <input className="search-input" placeholder="Search by name, email or ID…" value={search} onChange={e => setSearch(e.target.value)} style={{ width: 220 }} />
           <select className="form-select" value={filter} onChange={e => setFilter(e.target.value as any)} style={{ width: 'auto', fontSize: 11 }}>
             <option value="all">All Users ({users.length})</option>
-            <option value="staff">Staff Only ({users.filter(u => u.source === 'auth' && u.role !== 'student').length})</option>
-            <option value="student">Students Only ({users.filter(u => u.role === 'student').length})</option>
+            <option value="staff">Staff Only ({users.filter(u => !u.studentRecordId).length})</option>
+            <option value="student">Students Only ({users.filter(u => !!u.studentRecordId).length})</option>
           </select>
           <button className="btn btn-outline btn-sm" onClick={handleForcePasswordChange}><i className="fa-solid fa-key" /> Require Password Change</button>
           <button className="btn btn-outline btn-sm" onClick={handleProvisionStudents}><i className="fa-solid fa-user-graduate" /> Provision Student Accounts</button>
@@ -472,21 +570,57 @@ export default function UserManagementPage() {
         {loading ? <div style={{ padding: 20, textAlign: 'center', color: 'var(--text2)' }}>Loading users...</div> : (
           <div className="table-wrap">
             <table>
-              <thead><tr><th>Name</th><th>Email / ID</th><th>Role</th><th>Department</th><th>Actions</th></tr></thead>
+              <thead><tr><th>Name</th><th>Student ID</th><th>Signs in with</th><th>Role</th><th>Department</th><th>Actions</th></tr></thead>
               <tbody>
                 {filtered.map(u => (
-                  <tr key={u.user_id + u.source}>
+                  <tr key={u.key}>
                     <td className="td-name">{u.name}</td>
                     <td style={{ fontFamily: "'JetBrains Mono',monospace", fontSize: 11 }}>
-                      {u.source === 'student' ? u.student_id || u.email || '—' : u.email}
+                      {u.studentId || <span style={{ color: 'var(--text3)' }}>—</span>}
+                    </td>
+                    <td style={{ fontFamily: "'JetBrains Mono',monospace", fontSize: 11 }}>
+                      {u.authUserId
+                        ? u.email || <span style={{ color: 'var(--text3)' }}>(no email on file)</span>
+                        /* Previously indistinguishable from any other row. Now the
+                           six students who cannot sign in are visible at a glance. */
+                        : <span style={{ color: '#9a6700' }}>
+                            <i className="fa-solid fa-triangle-exclamation" style={{ marginRight: 5 }} />
+                            No login
+                          </span>}
                     </td>
                     <td><span className={`badge ${roleBadgeClass(u.role)}`}>{roleLabel(u.role)}</span></td>
                     <td>{u.dept || '—'}</td>
                     <td>
-                      <div style={{ display: 'flex', gap: 4 }}>
+                      <div style={{ display: 'flex', gap: 4, flexWrap: 'wrap' }}>
                         <button className="btn btn-outline btn-sm" onClick={() => handleEditUser(u)}>Edit</button>
-                        <button className="btn btn-outline btn-sm" onClick={() => handleResetPassword(u)}>Reset Pwd</button>
-                        <button className="btn btn-outline btn-sm" onClick={() => handleDelete(u)} style={{ color: '#f85149' }}>Delete</button>
+                        <button
+                          className="btn btn-outline btn-sm"
+                          onClick={() => handleResetPassword(u)}
+                          disabled={!u.authUserId}
+                          title={u.authUserId ? 'Set a new temporary password' : 'This person has no login yet'}
+                        >
+                          Reset Pwd
+                        </button>
+                        {u.authUserId && (
+                          <button
+                            className="btn btn-outline btn-sm"
+                            onClick={() => handleRemoveLogin(u)}
+                            style={{ color: '#bf8700' }}
+                            title="Stops them signing in. Keeps their student record, marks and attendance."
+                          >
+                            Remove login
+                          </button>
+                        )}
+                        {u.studentRecordId && (
+                          <button
+                            className="btn btn-outline btn-sm"
+                            onClick={() => handleDeleteStudentRecord(u)}
+                            style={{ color: '#f85149' }}
+                            title="Deletes the student and their marks, attendance and submissions."
+                          >
+                            Delete student
+                          </button>
+                        )}
                       </div>
                     </td>
                   </tr>

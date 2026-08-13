@@ -272,7 +272,26 @@ export default function AdmissionsPage() {
 
   // ── Enroll ──
   const handleEnroll = (a: Application) => {
-    let sid = "BCI" + new Date().getFullYear() + "-" + Math.floor(1000 + Math.random() * 9000);
+    // students.student_id is UNIQUE, and this used to pick a random 4-digit
+    // number with no check — so an enrolment could simply fail with a duplicate
+    // key error, at the worst possible moment. Check against the IDs already in
+    // use and keep trying.
+    //
+    // Uniqueness matters beyond the constraint: assessment_marks is keyed on the
+    // student NUMBER rather than the record id, so two students sharing an ID
+    // would silently share marks.
+    const generateStudentId = () => {
+      const year = new Date().getFullYear();
+      const used = new Set((db.students || []).map((st: any) => st.studentId));
+      for (let i = 0; i < 200; i++) {
+        const candidate = `BCI${year}-${Math.floor(1000 + Math.random() * 9000)}`;
+        if (!used.has(candidate)) return candidate;
+      }
+      // Every 4-digit option for this year is taken — fall back to something
+      // that cannot collide rather than returning a known-duplicate.
+      return `BCI${year}-${Date.now().toString().slice(-6)}`;
+    };
+    let sid = generateStudentId();
 
     showModal(
       "Enroll Student — " + a.applicant_name,
@@ -322,7 +341,7 @@ export default function AdmissionsPage() {
             className="btn btn-primary"
             style={{ flex: 1 }}
             onClick={async () => {
-              await doEnroll(a, sid, toast, closeModal, load, reloadDb);
+              await doEnroll(a, sid.trim().replace(/\s+/g, ''), toast, closeModal, load, reloadDb);
             }}
           >
             <i className="fa-solid fa-user-graduate" style={{ marginRight: 6 }} /> Enroll Student

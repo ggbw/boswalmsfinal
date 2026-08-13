@@ -1,10 +1,19 @@
 import { useState } from 'react';
 import { useApp } from '@/context/AppContext';
 import { supabase } from '@/integrations/supabase/client';
-import { calcModuleMark } from '@/data/db';
+import { useAssessmentMarks } from '@/hooks/useAssessmentMarks';
+import { studentModuleResults } from '@/lib/studentMarks';
 
 export default function ProgressionPage() {
   const { db, toast, reloadDb } = useApp();
+  // Marks for every class on the page. Progression is gated on them, and this
+  // used to read db.marks — which is keyed by students.id while the filter used
+  // the student number, so it ALWAYS found zero marks and every approval was
+  // refused with "has no marks recorded. Cannot approve progression."
+  // Nobody could be promoted.
+  const { scoreOf, loading: marksLoading } = useAssessmentMarks({
+    classIds: db.classes.map(c => c.id),
+  });
   const [expanded, setExpanded] = useState<Record<string, boolean>>({});
   const [selected, setSelected] = useState<Record<string, Set<string>>>({});
   const [processing, setProcessing] = useState(false);
@@ -34,18 +43,23 @@ export default function ProgressionPage() {
     if (!student) return;
 
     if (action === 'approved') {
-      // Validate: student must have marks recorded and no failing modules
-      const studentMarks = db.marks.filter(m => m.studentId === student.studentId && m.classId === classId);
-      if (studentMarks.length === 0) {
+      // Don't judge anyone while marks are still arriving — an empty result set
+      // mid-load is indistinguishable from genuinely having no marks.
+      if (marksLoading) {
+        toast('Marks are still loading — try again in a moment.', 'error');
+        return false;
+      }
+
+      // Validate: student must have marks recorded and no failing modules.
+      const results = studentModuleResults(db, student, scoreOf);
+      const marked = results.filter(r => !r.unmarked);
+      if (marked.length === 0) {
         toast(`${student.name} has no marks recorded. Cannot approve progression.`, 'error');
         return false;
       }
-      const failingModules = studentMarks.filter(m => {
-        const mod = db.modules.find(mo => mo.id === m.moduleId);
-        return calcModuleMark(m, mod?.hasPractical !== false) < 50;
-      });
-      if (failingModules.length > 0) {
-        const modNames = failingModules.map(m => db.modules.find(mo => mo.id === m.moduleId)?.name || m.moduleId).join(', ');
+      const failing = marked.filter(r => r.mark.moduleMark < 50);
+      if (failing.length > 0) {
+        const modNames = failing.map(r => r.module.name).join(', ');
         toast(`${student.name} has failing modules: ${modNames}. Cannot approve.`, 'error');
         return false;
       }

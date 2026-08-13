@@ -1,8 +1,20 @@
 import { useState } from "react";
 import { useApp } from "@/context/AppContext";
-import { calcModuleMark, grade, gradeColor } from "@/data/db";
+import { grade, gradeColor } from "@/data/db";
 import { supabase } from "@/integrations/supabase/client";
 import { getScopedStudents } from "@/lib/scope";
+import { useAssessmentMarks } from "@/hooks/useAssessmentMarks";
+import { studentModuleResults } from "@/lib/studentMarks";
+
+/**
+ * Student IDs are hand-typed in this form, and two in the live data ended up
+ * with stray spaces ("BCI2024D 43", "BCI2025C- 15"). That is not cosmetic:
+ * assessment_marks is keyed on this string, so a mismatched space silently
+ * detaches a student from their own marks. Normalise on save.
+ */
+function cleanStudentId(v: string): string {
+  return (v || "").trim().replace(/\s+/g, "");
+}
 
 const SECTIONS = {
   personal: "Personal Details",
@@ -49,74 +61,11 @@ export default function StudentsPage() {
   // Create a fresh attempt at a failed module. The retake is a new marks row in a
   // different academic period (year/semester); the original attempt is left intact
   // and becomes "superseded" once the retake is graded (latest attempt counts).
-  const handleRetake = (student: any, mark: any, module: any) => {
-    let year = db.config.currentYear;
-    let semester = db.config.currentSemester;
-    showModal(
-      `Retake — ${module?.name || "Module"}`,
-      <div>
-        <div
-          style={{
-            background: "var(--bg2)",
-            borderRadius: 8,
-            padding: "8px 14px",
-            marginBottom: 14,
-            fontSize: 12,
-            color: "var(--text2)",
-          }}
-        >
-          New attempt for <strong>{student.name}</strong>. Previous result:{" "}
-          <strong>{calcModuleMark(mark, module?.hasPractical !== false)}% (Fail)</strong> in Year {mark.year} · Semester {mark.semester}.
-        </div>
-        <div className="form-row cols2">
-          <div className="form-group">
-            <label>Retake Year</label>
-            <input
-              className="form-input"
-              type="number"
-              defaultValue={year}
-              onChange={(e) => (year = Number(e.target.value))}
-            />
-          </div>
-          <div className="form-group">
-            <label>Retake Semester</label>
-            <select className="form-select" defaultValue={semester} onChange={(e) => (semester = Number(e.target.value))}>
-              <option value={1}>Semester 1</option>
-              <option value={2}>Semester 2</option>
-            </select>
-          </div>
-        </div>
-        <button
-          className="btn btn-primary"
-          style={{ marginTop: 12, width: "100%" }}
-          onClick={async () => {
-            if (year === mark.year && semester === mark.semester) {
-              toast("Pick a different year/semester from the original attempt", "error");
-              return;
-            }
-            const { error } = await supabase.from("marks").insert({
-              student_id: student.studentId,
-              module_id: module.id,
-              class_id: mark.classId,
-              test1: 0, test2: 0, pract_test: 0, ind_ass: 0, grp_ass: 0, final_exam: 0, practical: 0,
-              year,
-              semester,
-            });
-            if (error) {
-              const dup = /duplicate|unique/i.test(error.message);
-              toast(dup ? "An attempt already exists for that year/semester" : error.message, "error");
-              return;
-            }
-            toast("Retake attempt created — enter marks via the exam/marks flow", "success");
-            closeModal();
-            reloadDb();
-          }}
-        >
-          Create Retake Attempt
-        </button>
-      </div>,
-    );
-  };
+  // handleRetake was removed with the per-attempt Marks table it belonged to.
+  // It inserted into `marks` using the student number while the foreign key
+  // requires students.id, so it could never have succeeded. Retakes need
+  // rebuilding against assessment_marks, where a resit is a new assessment
+  // rather than another row for the same one.
 
   // ── Edit modal ──────────────────────────────────────────────────────────────
   const showEdit = (s: (typeof db.students)[0]) => {
@@ -286,7 +235,7 @@ export default function StudentsPage() {
               .from("students")
               .update({
                 name,
-                student_id: sid,
+                student_id: cleanStudentId(sid),
                 dob: dob || null,
                 gender,
                 nationality,
@@ -675,7 +624,6 @@ export default function StudentsPage() {
           role={role || ""}
           onClose={() => setSelected(null)}
           onEdit={() => showEdit(selectedStudent)}
-          onRetake={handleRetake}
         />
       )}
     </div>
@@ -683,21 +631,19 @@ export default function StudentsPage() {
 }
 
 // ── Student Profile Panel ────────────────────────────────────────────────────
-function StudentProfilePanel({ student: s, db, role, onClose, onEdit, onRetake }: any) {
+function StudentProfilePanel({ student: s, db, role, onClose, onEdit }: any) {
   const cls = db.classes.find((c: any) => c.id === s.classId);
   const prog = db.config.programmes.find((p: any) => p.id === s.programme);
-  const marks = db.marks.filter((m: any) => m.studentId === s.studentId);
 
-  // For modules taken more than once, only the latest attempt (highest year, then
-  // semester) counts; earlier attempts are "superseded". A failed latest attempt
-  // is eligible for a retake.
-  const attemptRank = (m: any) => m.year * 100 + m.semester;
-  const latestRank: Record<string, number> = {};
-  marks.forEach((m: any) => {
-    const r = attemptRank(m);
-    if (latestRank[m.moduleId] === undefined || r > latestRank[m.moduleId]) latestRank[m.moduleId] = r;
-  });
-  const isLatestAttempt = (m: any) => attemptRank(m) === latestRank[m.moduleId];
+  // Marks come from assessment_marks. This panel used to read db.marks, filtering
+  // by the student number against rows keyed by students.id, so it always found
+  // nothing: every module showed "In progress" regardless of what was marked.
+  const { scoreOf, loading: marksLoading } = useAssessmentMarks({ studentNumbers: [s.studentId] });
+  const results = marksLoading ? [] : studentModuleResults(db, s, scoreOf);
+  const markFor = (moduleId: string) => {
+    const r = results.find((x) => x.module.id === moduleId);
+    return r && !r.unmarked ? r.mark.moduleMark : null;
+  };
 
   // Modules the student is currently enrolled in: their class's modules plus any
   // per-student overrides (same rule MyModulesPage / AssignmentsPage use).
@@ -815,8 +761,8 @@ function StudentProfilePanel({ student: s, db, role, onClose, onEdit, onRetake }
             </thead>
             <tbody>
               {enrolledMods.map((m: any) => {
-                const mk = marks.find((x: any) => x.moduleId === m.id);
-                const mm = mk ? calcModuleMark(mk, m.hasPractical !== false) : null;
+                // Already weighted by computeStudentModuleMark.
+                const mm = markFor(m.id);
                 const g = mm !== null ? grade(mm) : null;
                 return (
                   <tr key={m.id}>
@@ -828,7 +774,9 @@ function StudentProfilePanel({ student: s, db, role, onClose, onEdit, onRetake }
                           {g} · {mm}%
                         </span>
                       ) : (
-                        <span className="badge badge-inactive">In progress</span>
+                        <span className="badge badge-inactive">
+                          {marksLoading ? "Loading…" : "In progress"}
+                        </span>
                       )}
                     </td>
                   </tr>
@@ -839,73 +787,16 @@ function StudentProfilePanel({ student: s, db, role, onClose, onEdit, onRetake }
         )}
       </div>
 
-      {marks.length > 0 && (
-        <div style={{ marginTop: 4 }}>
-          <div
-            style={{
-              fontWeight: 700,
-              fontSize: 11,
-              color: "var(--text2)",
-              textTransform: "uppercase",
-              letterSpacing: 0.5,
-              borderBottom: "1px solid var(--border)",
-              paddingBottom: 4,
-              marginBottom: 10,
-            }}
-          >
-            Marks
-          </div>
-          <table style={{ width: "100%" }}>
-            <thead>
-              <tr>
-                <th>Module</th>
-                <th>Attempt</th>
-                <th>Total %</th>
-                <th>Grade</th>
-                <th></th>
-              </tr>
-            </thead>
-            <tbody>
-              {[...marks]
-                .sort((a: any, b: any) => attemptRank(a) - attemptRank(b))
-                .map((m: any) => {
-                  const mod = db.modules.find((mo: any) => mo.id === m.moduleId);
-                  const mm = calcModuleMark(m, mod?.hasPractical !== false);
-                  const g = grade(mm);
-                  const latest = isLatestAttempt(m);
-                  const superseded = !latest;
-                  const canRetake = role === "admin" && latest && mm < 50;
-                  return (
-                    <tr key={`${m.moduleId}-${m.year}-${m.semester}`} style={{ opacity: superseded ? 0.55 : 1 }}>
-                      <td style={{ fontSize: 12, textDecoration: superseded ? "line-through" : "none" }}>
-                        {mod?.name || "—"}
-                      </td>
-                      <td style={{ fontSize: 11, color: "var(--text2)" }}>
-                        Y{m.year}·S{m.semester}
-                        {superseded && <span style={{ marginLeft: 4, fontStyle: "italic" }}>(superseded)</span>}
-                      </td>
-                      <td style={{ fontFamily: "'JetBrains Mono',monospace", fontSize: 11 }}>{mm}%</td>
-                      <td>
-                        <span className={`badge ${gradeColor(g)}`}>{g}</span>
-                      </td>
-                      <td>
-                        {canRetake && (
-                          <button
-                            className="btn btn-outline btn-sm"
-                            onClick={() => onRetake?.(s, m, mod)}
-                            title="Create a new attempt in a later semester/year"
-                          >
-                            <i className="fa-solid fa-rotate-right" /> Retake
-                          </button>
-                        )}
-                      </td>
-                    </tr>
-                  );
-                })}
-            </tbody>
-          </table>
-        </div>
-      )}
+      {/* The per-attempt Marks table that sat here was built on the legacy `marks`
+          shape (a year/semester column per attempt) and was gated on
+          `marks.length > 0`, which was always 0 — so it never rendered. Its
+          Retake button inserted into `marks` using the student number, which the
+          foreign key rejects, so retakes have never worked either.
+
+          assessment_marks has no equivalent notion of an attempt: a resit is a
+          new assessment, not a second row for the same one. Rebuilding retakes
+          therefore needs a deliberate design decision rather than a port, so the
+          dead UI is removed rather than left looking functional. */}
     </div>
   );
 }

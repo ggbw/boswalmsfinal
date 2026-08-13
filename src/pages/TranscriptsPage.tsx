@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef } from "react";
 import { useApp } from "@/context/AppContext";
-import { calcModuleMark } from "@/data/db";
+
 import { supabase } from "@/integrations/supabase/client";
 import { categorizeModuleAssessments, computeStudentModuleMark } from "@/lib/moduleMark";
 import { letterGrade, gradePoint, GRADE_SCALE } from "@/lib/grading";
@@ -217,42 +217,12 @@ async function buildPassedModules(db: any, student: any): Promise<PassedModule[]
     });
   });
 
-  // Preserve legacy `marks` rows not already covered by assessment data. Their
-  // display period comes from the curriculum (then class, then the mark row),
-  // while the attempt period stays class/mark-based so retakes group as before.
-  db.marks
-    .filter((m: any) => m.studentId === student.studentId)
-    .forEach((m: any) => {
-      // Same guard as above — only modules the student actually takes.
-      if (!studentTakesModule(m.moduleId, m.classId)) return;
-      // Skip legacy rows with no marks at all (all components blank/zero) — these
-      // are the outdated old-mapping modules that render as a blank "F".
-      const hasAnyLegacyMark = [m.test1, m.test2, m.practTest, m.indAss, m.grpAss, m.finalExam, m.practical].some(
-        (v: any) => v !== null && v !== undefined && Number(v) > 0,
-      );
-      if (!hasAnyLegacyMark) return;
-      const cls = db.classes.find((c: any) => c.id === m.classId);
-      const curr = currOf(m.moduleId);
-      const year = curr?.year ?? cls?.year ?? m.year;
-      const semester = curr?.semester ?? cls?.semester ?? m.semester;
-      const attemptYear = cls?.year ?? m.year;
-      const attemptSem = cls?.semester ?? m.semester;
-      if (periodKeys.has(`${m.moduleId}|${attemptYear}|${attemptSem}`)) return;
-      const mod = db.modules.find((mo: any) => mo.id === m.moduleId);
-      const mark = calcModuleMark(m, mod?.hasPractical !== false);
-      result.push({
-        moduleId: m.moduleId,
-        name: mod?.name || "(module no longer listed)",
-        code: mod?.code || m.moduleId,
-        mark,
-        grade: letterGrade(mark),
-        credits: 10,
-        year,
-        semester,
-        attemptYear,
-        attemptSem,
-      });
-    });
+  // A fallback that read legacy `marks` rows sat here. It was dead: it filtered
+  // by the student NUMBER while those rows are keyed by students.id, so it never
+  // matched anything. Verified 2026-08-12 that all 20 legacy rows are duplicated
+  // in assessment_marks, so it had nothing to contribute even if the key were
+  // corrected — and correcting it would have risked double-counting modules the
+  // assessment data already covers.
 
   // Order by academic year, then semester, then module code so the transcript
   // sections — and the modules within each — read in a stable, natural order.

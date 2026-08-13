@@ -96,6 +96,8 @@ export default function LecturersPage() {
                 <option value="lecturer">Lecturer</option>
                 <option value="hod">HOD</option>
                 <option value="hoa">HOA - Head of Academics</option>
+                <option value="principal">Principal</option>
+                <option value="deputy_principal">Deputy Principal</option>
               </select>
             </div>
             <div className="form-group">
@@ -180,19 +182,28 @@ export default function LecturersPage() {
       "Delete Lecturer",
       <div>
         <p style={{ marginBottom: 16 }}>
-          Are you sure you want to delete <strong>{f.name}</strong>? This cannot be undone.
+          Are you sure you want to delete <strong>{f.name}</strong>? This removes their profile,
+          their role <strong>and their login</strong>, so they can no longer sign in. It cannot be undone.
         </p>
         <div style={{ display: "flex", gap: 8 }}>
           <button
             className="btn btn-danger"
             style={{ flex: 1 }}
             onClick={async () => {
-              await supabase.from("user_roles").delete().eq("user_id", f.user_id);
-              await supabase.from("profiles").delete().eq("user_id", f.user_id);
-              toast(`${f.name} deleted`, "success");
+              // Same reason as User Management: deleting the profile and role
+              // alone leaves a working login with no profile behind it.
+              const { data, error } = await supabase.functions.invoke("delete-user", {
+                body: { user_id: f.user_id },
+              });
+              if (error || data?.error) {
+                toast(data?.error || error?.message || "Delete failed", "error");
+                return;
+              }
+              toast(`${f.name} and their login deleted`, "success");
               closeModal();
               setFaculty((prev) => prev.filter((x) => x.user_id !== f.user_id));
               if (selected?.user_id === f.user_id) setSelected(null);
+              reloadDb();
             }}
           >
             Delete
@@ -227,6 +238,8 @@ export default function LecturersPage() {
               <option value="lecturer">Lecturer</option>
               <option value="hod">HOD</option>
               <option value="hoa">HOA - Head of Academics</option>
+              <option value="principal">Principal</option>
+              <option value="deputy_principal">Deputy Principal</option>
             </select>
           </div>
           <div className="form-group">
@@ -280,7 +293,7 @@ export default function LecturersPage() {
 
   const roleBadge = (r: string) => {
     const colors: Record<string, string> = { hod: "badge-fail", hoa: "badge-pass", lecturer: "badge-active" };
-    const labels: Record<string, string> = { hod: "HOD", hoa: "HOA", lecturer: "LECTURER" };
+    const labels: Record<string, string> = { hod: "HOD", hoa: "HOA", lecturer: "LECTURER", principal: "PRINCIPAL", deputy_principal: "DEPUTY PRINCIPAL" };
     return <span className={`badge ${colors[r] || "badge-pass"}`}>{labels[r] || r.toUpperCase()}</span>;
   };
 
