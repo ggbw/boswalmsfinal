@@ -1739,6 +1739,76 @@ export type Database = {
         }
         Relationships: []
       }
+      module_outcomes: {
+        Row: {
+          attempt: number
+          class_id: string | null
+          decided_at: string
+          decided_by: string | null
+          exam_mark: number | null
+          id: string
+          module_id: string
+          module_mark: number | null
+          outcome: string
+          semester: number
+          student_id: string
+          supp_mark: number | null
+          year: number
+        }
+        Insert: {
+          attempt?: number
+          class_id?: string | null
+          decided_at?: string
+          decided_by?: string | null
+          exam_mark?: number | null
+          id: string
+          module_id: string
+          module_mark?: number | null
+          outcome: string
+          semester: number
+          student_id: string
+          supp_mark?: number | null
+          year: number
+        }
+        Update: {
+          attempt?: number
+          class_id?: string | null
+          decided_at?: string
+          decided_by?: string | null
+          exam_mark?: number | null
+          id?: string
+          module_id?: string
+          module_mark?: number | null
+          outcome?: string
+          semester?: number
+          student_id?: string
+          supp_mark?: number | null
+          year?: number
+        }
+        Relationships: [
+          {
+            foreignKeyName: "module_outcomes_class_id_fkey"
+            columns: ["class_id"]
+            isOneToOne: false
+            referencedRelation: "classes"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "module_outcomes_module_id_fkey"
+            columns: ["module_id"]
+            isOneToOne: false
+            referencedRelation: "modules"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "module_outcomes_student_id_fkey"
+            columns: ["student_id"]
+            isOneToOne: false
+            referencedRelation: "students"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       modules: {
         Row: {
           code: string
@@ -2135,6 +2205,99 @@ export type Database = {
           },
           {
             foreignKeyName: "student_modules_student_id_fkey"
+            columns: ["student_id"]
+            isOneToOne: false
+            referencedRelation: "students"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      student_registration_modules: {
+        Row: {
+          class_id: string | null
+          id: string
+          kind: string
+          module_id: string
+          registration_id: string
+        }
+        Insert: {
+          class_id?: string | null
+          id: string
+          kind?: string
+          module_id: string
+          registration_id: string
+        }
+        Update: {
+          class_id?: string | null
+          id?: string
+          kind?: string
+          module_id?: string
+          registration_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "student_registration_modules_class_id_fkey"
+            columns: ["class_id"]
+            isOneToOne: false
+            referencedRelation: "classes"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "student_registration_modules_module_id_fkey"
+            columns: ["module_id"]
+            isOneToOne: false
+            referencedRelation: "modules"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "student_registration_modules_registration_id_fkey"
+            columns: ["registration_id"]
+            isOneToOne: false
+            referencedRelation: "student_registrations"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      student_registrations: {
+        Row: {
+          decided_at: string | null
+          decided_by: string | null
+          decision_note: string | null
+          id: string
+          note: string | null
+          semester: number
+          status: string
+          student_id: string
+          submitted_at: string
+          year: number
+        }
+        Insert: {
+          decided_at?: string | null
+          decided_by?: string | null
+          decision_note?: string | null
+          id: string
+          note?: string | null
+          semester: number
+          status?: string
+          student_id: string
+          submitted_at?: string
+          year: number
+        }
+        Update: {
+          decided_at?: string | null
+          decided_by?: string | null
+          decision_note?: string | null
+          id?: string
+          note?: string | null
+          semester?: number
+          status?: string
+          student_id?: string
+          submitted_at?: string
+          year?: number
+        }
+        Relationships: [
+          {
+            foreignKeyName: "student_registrations_student_id_fkey"
             columns: ["student_id"]
             isOneToOne: false
             referencedRelation: "students"
