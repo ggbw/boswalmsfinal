@@ -1,6 +1,7 @@
 import { useState, useEffect, useRef } from "react";
 import { useApp } from "@/context/AppContext";
 import { supabase } from "@/integrations/supabase/client";
+import { signedUrls } from "@/lib/storage";
 import { compressImage, createThumbnail } from "@/lib/imageCompression";
 
 export default function ProfilePage() {
@@ -32,11 +33,19 @@ export default function ProfilePage() {
       return;
     }
     const photoFiles = files.filter((f) => f.name.endsWith(".webp") && !f.name.startsWith("thumb_"));
-    const urls = photoFiles.map((f) => {
-      const { data } = supabase.storage.from("student-photos").getPublicUrl(`${studentId}/${f.name}`);
-      return { name: f.name, url: data.publicUrl + "?t=" + Date.now() };
-    });
-    setPhotos(urls);
+    // The bucket is private, so a public URL would 404. Sign them all in one
+    // call. Signed URLs expire, which is fine here — they're re-signed every
+    // time the profile loads, and the cache-buster is no longer needed because
+    // each signed URL is unique anyway.
+    const signed = await signedUrls(
+      "student-photos",
+      photoFiles.map((f) => `${studentId}/${f.name}`),
+    );
+    setPhotos(
+      photoFiles
+        .map((f) => ({ name: f.name, url: signed[`${studentId}/${f.name}`] || "" }))
+        .filter((p) => p.url),
+    );
   };
 
   if (!u) return null;
