@@ -24,7 +24,7 @@ const AVAILABLE_ROLES: Array<{ value: string; label: string }> = [
   { value: 'admin', label: 'Admin' },
   { value: 'manager', label: 'Manager' },
   { value: 'hod', label: 'Head of Department' },
-  { value: 'hoy', label: 'Head of Year' },
+  { value: 'hoa', label: 'Head of Academics' },
 ];
 
 interface UserRow {

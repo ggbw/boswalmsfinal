@@ -24,7 +24,7 @@ async function syncModulesForClass(classId: string, programmeId: string, year: n
 // Panel to assign a lecturer to each module within a class
 function ModuleAssignmentPanel({ classId, onClose }: { classId: string; onClose: () => void }) {
   const { db, toast, reloadDb } = useApp();
-  const lecturers = db.users.filter((u) => ["lecturer", "hod", "hoy"].includes(u.role));
+  const lecturers = db.users.filter((u) => ["lecturer", "hod", "hoa"].includes(u.role));
   const [saving, setSaving] = useState<string | null>(null);
 
   // Modules already linked to this class via module_classes

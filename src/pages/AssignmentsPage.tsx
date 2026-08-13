@@ -210,7 +210,7 @@ export default function AssignmentsPage() {
   // `admin` alone excluded super_admin, who then saw no Create/Delete/Marks
   // buttons at all on this page.
   const isAdmin = isUnrestricted(role);
-  const isTeacher = role === 'lecturer' || role === 'hod' || role === 'hoy';
+  const isTeacher = role === 'lecturer' || role === 'hod' || role === 'hoa';
 
   let assignments = db.assignments;
 

@@ -22,7 +22,7 @@ export default function PhotoGalleryPage() {
   const role = currentUser?.role;
   const isStudent = role === "student";
   const canManage = role === "admin" || role === "super_admin" || role === "lecturer"; // upload + delete
-  const canView = canManage || role === "hod" || role === "hoy"; // view folders
+  const canView = canManage || role === "hod" || role === "hoa"; // view folders
   const canUploadToOthers = canManage; // keep alias for existing JSX
 
   // For students: their own student record ID (from studentRef on profile)
@@ -167,7 +167,7 @@ export default function PhotoGalleryPage() {
     }
   }, [isStudent, myStudentId, loading]);
 
-  // Scope: lecturers see only their own classes; admin/hod/hoy see all
+  // Scope: lecturers see only their own classes; admin/hod/hoa see all
   const allowedClassIds = useMemo(() => {
     if (role !== "lecturer") return null;
     return getLecturerClassIds(db.lecturerModules, currentUser?.id || '');

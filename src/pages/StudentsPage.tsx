@@ -26,7 +26,7 @@ export default function StudentsPage() {
   if (role === "student") return <StudentProfileFallback />;
 
   // admin / super_admin / HOA see every student; a HOD sees their department's;
-  // a lecturer sees the classes they teach. Previously `hoy` was unfiltered by
+  // a lecturer sees the classes they teach. Previously `hoa` was unfiltered by
   // omission rather than intent, and the HOD branch matched the department's
   // `hod` field against the user's display name — if that didn't match exactly,
   // the filter was skipped entirely and the HOD saw the whole school.

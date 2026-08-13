@@ -20,7 +20,7 @@ export default function ResultsPage() {
     </>);
   }
 
-  if (!['admin','hod','hoy','lecturer'].includes(role || '')) {
+  if (!['admin','hod','hoa','lecturer'].includes(role || '')) {
     return <div className="card" style={{textAlign:'center',padding:40,color:'var(--text2)'}}>Access restricted. Please contact your administrator if you believe this is an error.</div>;
   }
 

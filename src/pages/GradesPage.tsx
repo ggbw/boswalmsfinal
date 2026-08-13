@@ -3,7 +3,7 @@ import { calcModuleMark, grade, gradeColor } from '@/data/db';
 export default function GradesPage() {
   const { db, currentUser } = useApp();
   const role = currentUser?.role;
-  if (!['admin','hod','hoy'].includes(role || '')) {
+  if (!['admin','hod','hoa'].includes(role || '')) {
     return <div className="card" style={{ textAlign: 'center', padding: 40, color: 'var(--text2)' }}>You do not have permission to view this page.</div>;
   }
   return (<>

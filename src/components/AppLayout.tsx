@@ -156,33 +156,33 @@ const pageComponents: Record<string, React.ComponentType> = {
 };
 
 const ROLE_PAGES: Record<string, string[]> = {
-  dashboard:      ['admin','super_admin','hr','manager','employee','hod','hoy','lecturer','student'],
-  profile:        ['admin','super_admin','hr','manager','employee','hod','hoy','lecturer','student'],
-  notifications:  ['admin','super_admin','hr','manager','employee','hod','hoy','lecturer','student'],
-  students:       ['admin','super_admin','hod','hoy','lecturer'],
+  dashboard:      ['admin','super_admin','hr','manager','employee','hod','hoa','lecturer','student'],
+  profile:        ['admin','super_admin','hr','manager','employee','hod','hoa','lecturer','student'],
+  notifications:  ['admin','super_admin','hr','manager','employee','hod','hoa','lecturer','student'],
+  students:       ['admin','super_admin','hod','hoa','lecturer'],
   // HOA sees all teaching staff; a HOD sees their own department's. The page
   // scopes the list itself — see getScopedFacultyIds.
-  lecturers:      ['admin','super_admin','hod','hoy'],
+  lecturers:      ['admin','super_admin','hod','hoa'],
   classes:        ['admin','super_admin'],
   modules:        ['admin','super_admin','hod','lecturer'],
-  timetable:      ['admin','super_admin','hod','hoy','lecturer'],
-  attendance:     ['admin','super_admin','hod','hoy','lecturer'],
-  exams:          ['admin','super_admin','hod','hoy','lecturer'],
-  assignments:    ['admin','super_admin','hod','hoy','lecturer','student'],
-  results:        ['admin','super_admin','hod','hoy','lecturer','student'],
-  reports:        ['admin','super_admin','hod','hoy'],
-  transcripts:    ['admin','super_admin','hod','hoy','student'],
+  timetable:      ['admin','super_admin','hod','hoa','lecturer'],
+  attendance:     ['admin','super_admin','hod','hoa','lecturer'],
+  exams:          ['admin','super_admin','hod','hoa','lecturer'],
+  assignments:    ['admin','super_admin','hod','hoa','lecturer','student'],
+  results:        ['admin','super_admin','hod','hoa','lecturer','student'],
+  reports:        ['admin','super_admin','hod','hoa'],
+  transcripts:    ['admin','super_admin','hod','hoa','student'],
   admissions:     ['admin','super_admin'],
-  progression:    ['admin','super_admin','hod','hoy'],
+  progression:    ['admin','super_admin','hod','hoa'],
   config:         ['admin','super_admin'],
-  grades:         ['admin','super_admin','hod','hoy'],
-  mystudents:     ['hod','hoy','lecturer'],
+  grades:         ['admin','super_admin','hod','hoa'],
+  mystudents:     ['hod','hoa','lecturer'],
   mytimetable:    ['student'],
   mymodules:      ['student'],
   mapping:        ['admin','super_admin','hod'],
   usermanagement: ['admin','super_admin'],
-  photogallery:   ['admin','super_admin','hod','hoy','lecturer','student'],
-  notes:          ['admin','super_admin','hod','hoy','lecturer','student'],
+  photogallery:   ['admin','super_admin','hod','hoa','lecturer','student'],
+  notes:          ['admin','super_admin','hod','hoa','lecturer','student'],
 
   // HR Management — super_admin/hr full access; manager read-only.
   // 'admin' is intentionally excluded: admin is LMS-only.
@@ -220,11 +220,11 @@ const ROLE_PAGES: Record<string, string[]> = {
 
   // Employee self-service — visible to anyone with an HR self-service role.
   // 'admin' is intentionally excluded: admin is LMS-only.
-  'my-payslips':       ['super_admin','hr','manager','employee','lecturer','hod','hoy'],
-  'my-leaves':         ['super_admin','hr','manager','employee','lecturer','hod','hoy'],
-  'my-loans':          ['super_admin','hr','manager','employee','lecturer','hod','hoy'],
-  'my-employee-file':  ['super_admin','hr','manager','employee','lecturer','hod','hoy'],
-  'my-advance-salary': ['super_admin','hr','manager','employee','lecturer','hod','hoy'],
+  'my-payslips':       ['super_admin','hr','manager','employee','lecturer','hod','hoa'],
+  'my-leaves':         ['super_admin','hr','manager','employee','lecturer','hod','hoa'],
+  'my-loans':          ['super_admin','hr','manager','employee','lecturer','hod','hoa'],
+  'my-employee-file':  ['super_admin','hr','manager','employee','lecturer','hod','hoa'],
+  'my-advance-salary': ['super_admin','hr','manager','employee','lecturer','hod','hoa'],
 };
 
 /**

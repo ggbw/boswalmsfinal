@@ -32,7 +32,7 @@ export default function LecturersPage() {
     // in their department.
     const visibleIds = getScopedFacultyIds(db, currentUser);
     const mapped = (profiles || [])
-      .filter((p: any) => ["lecturer", "hod", "hoy"].includes(roleMap[p.user_id]))
+      .filter((p: any) => ["lecturer", "hod", "hoa"].includes(roleMap[p.user_id]))
       .filter((p: any) => visibleIds === null || visibleIds.includes(p.user_id))
       .map((p: any) => ({
         user_id: p.user_id,
@@ -95,7 +95,7 @@ export default function LecturersPage() {
               <select className="form-select" defaultValue={role} onChange={(e) => (role = e.target.value)}>
                 <option value="lecturer">Lecturer</option>
                 <option value="hod">HOD</option>
-                <option value="hoy">HOA - Head of Academics</option>
+                <option value="hoa">HOA - Head of Academics</option>
               </select>
             </div>
             <div className="form-group">
@@ -226,7 +226,7 @@ export default function LecturersPage() {
             <select className="form-select" defaultValue="lecturer" onChange={(e) => (role = e.target.value)}>
               <option value="lecturer">Lecturer</option>
               <option value="hod">HOD</option>
-              <option value="hoy">HOA - Head of Academics</option>
+              <option value="hoa">HOA - Head of Academics</option>
             </select>
           </div>
           <div className="form-group">
@@ -279,8 +279,8 @@ export default function LecturersPage() {
   };
 
   const roleBadge = (r: string) => {
-    const colors: Record<string, string> = { hod: "badge-fail", hoy: "badge-pass", lecturer: "badge-active" };
-    const labels: Record<string, string> = { hod: "HOD", hoy: "HOA", lecturer: "LECTURER" };
+    const colors: Record<string, string> = { hod: "badge-fail", hoa: "badge-pass", lecturer: "badge-active" };
+    const labels: Record<string, string> = { hod: "HOD", hoa: "HOA", lecturer: "LECTURER" };
     return <span className={`badge ${colors[r] || "badge-pass"}`}>{labels[r] || r.toUpperCase()}</span>;
   };
 

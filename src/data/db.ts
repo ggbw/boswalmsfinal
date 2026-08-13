@@ -326,7 +326,7 @@ export function createInitialDB(): DB {
         id: "u002",
         username: "malcom",
         password: "password",
-        role: "hoy",
+        role: "hoa",
         name: "Malcom",
         changed: false,
         email: "malcom@boswa.ac.bw",
@@ -1690,7 +1690,7 @@ export function gradeColor(g: string): string {
 export const roleCredentials: Record<string, { username: string; password: string }> = {
   admin: { username: "admin", password: "password" },
   hod: { username: "bonang", password: "password" },
-  hoy: { username: "malcom", password: "password" },
+  hoa: { username: "malcom", password: "password" },
   lecturer: { username: "poneso", password: "password" },
   student: { username: "abigail", password: "password" },
 };

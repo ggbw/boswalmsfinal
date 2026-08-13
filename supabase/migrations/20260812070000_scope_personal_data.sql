@@ -56,18 +56,49 @@ RETURNS boolean LANGUAGE sql STABLE SECURITY DEFINER SET search_path = public AS
   );
 $$;
 
--- students.id — the record key. marks, attendance, submissions and
--- student_modules all key on this.
+-- profiles carries TWO links to a student record:
+--   student_ref → students.id         (the record key)
+--   student_id  → students.student_id (the human number, e.g. BCI2025D-52)
+--
+-- Each helper prefers its own column and falls back to resolving through the
+-- other. Relying on one alone would mean any profile missing that column reads
+-- as owning nothing — so the student would see NO marks, NO attendance and NO
+-- submissions of their own, while everything else about the account looked
+-- correct. Silent, and hard to attribute to a permissions change.
+
+-- students.id — marks, attendance, submissions and student_modules key on this.
 CREATE OR REPLACE FUNCTION public.my_student_ref(_uid uuid)
 RETURNS text LANGUAGE sql STABLE SECURITY DEFINER SET search_path = public AS $$
-  SELECT student_ref FROM public.profiles WHERE user_id = _uid LIMIT 1;
+  SELECT COALESCE(
+    (SELECT nullif(trim(p.student_ref), '')
+       FROM public.profiles p
+      WHERE p.user_id = _uid
+        AND nullif(trim(p.student_ref), '') IS NOT NULL
+      LIMIT 1),
+    (SELECT s.id
+       FROM public.profiles p
+       JOIN public.students s ON s.student_id = nullif(trim(p.student_id), '')
+      WHERE p.user_id = _uid
+      LIMIT 1)
+  );
 $$;
 
--- students.student_id — the human number. assessment_marks keys on THIS one
--- instead; the two tables genuinely disagree, so both helpers are needed.
+-- students.student_id — assessment_marks keys on THIS one instead; the two
+-- tables genuinely disagree, so both helpers are needed.
 CREATE OR REPLACE FUNCTION public.my_student_number(_uid uuid)
 RETURNS text LANGUAGE sql STABLE SECURITY DEFINER SET search_path = public AS $$
-  SELECT student_id FROM public.profiles WHERE user_id = _uid LIMIT 1;
+  SELECT COALESCE(
+    (SELECT nullif(trim(p.student_id), '')
+       FROM public.profiles p
+      WHERE p.user_id = _uid
+        AND nullif(trim(p.student_id), '') IS NOT NULL
+      LIMIT 1),
+    (SELECT s.student_id
+       FROM public.profiles p
+       JOIN public.students s ON s.id = nullif(trim(p.student_ref), '')
+      WHERE p.user_id = _uid
+      LIMIT 1)
+  );
 $$;
 
 
@@ -158,3 +189,11 @@ SELECT tablename,
                      'applicants','applications','admission_enquiries')
  GROUP BY tablename
  ORDER BY tablename;
+
+-- Student accounts whose ownership cannot be resolved from EITHER profile link.
+-- Those students would see none of their own marks/attendance/submissions, so
+-- this number needs to be 0 — or every row it counts needs its profile linking.
+SELECT count(*)                                                        AS student_accounts,
+       count(*) FILTER (WHERE public.my_student_ref(p.user_id) IS NULL) AS unresolvable_must_be_zero
+  FROM public.profiles p
+  JOIN public.user_roles r ON r.user_id = p.user_id AND r.role = 'student'::app_role;

@@ -219,7 +219,7 @@ export default function UserManagementPage() {
               <select className="form-select" defaultValue={role} onChange={e => role = e.target.value}>
                 <option value="admin">Admin</option>
                 <option value="hod">HOD</option>
-                <option value="hoy">HOA - Head of Academics</option>
+                <option value="hoa">HOA - Head of Academics</option>
                 <option value="lecturer">Lecturer</option>
                 <option value="student">Student</option>
               </select>
@@ -271,7 +271,7 @@ export default function UserManagementPage() {
             <select className="form-select" defaultValue={role} onChange={e => role = e.target.value}>
               <option value="admin">Admin</option>
               <option value="hod">HOD</option>
-              <option value="hoy">HOA - Head of Academics</option>
+              <option value="hoa">HOA - Head of Academics</option>
               <option value="lecturer">Lecturer</option>
               <option value="student">Student</option>
             </select>
@@ -444,10 +444,10 @@ export default function UserManagementPage() {
     ));
   };
 
-  const roleLabel = (role: string) => ({ hoy: 'HOA' } as Record<string, string>)[role] || role.toUpperCase();
+  const roleLabel = (role: string) => ({ hoa: 'HOA' } as Record<string, string>)[role] || role.toUpperCase();
   const roleBadgeClass = (role: string) => {
     if (role === 'admin') return 'badge-fail';
-    if (role === 'hod' || role === 'hoy') return 'badge-pass';
+    if (role === 'hod' || role === 'hoa') return 'badge-pass';
     if (role === 'student') return 'badge-active';
     return 'badge-pass';
   };

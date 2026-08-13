@@ -43,7 +43,7 @@ export default function DashboardPage() {
     );
   }
 
-  const isStaff = role === 'admin' || role === 'hod' || role === 'hoy';
+  const isStaff = role === 'admin' || role === 'hod' || role === 'hoa';
   return (
     <>
       {db.notifications.map(n => (

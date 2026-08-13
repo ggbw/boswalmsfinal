@@ -128,7 +128,7 @@ export default function ExamsPage() {
   const [search, setSearch] = useState('');
 
   const isAdmin = role === 'admin';
-  const isTeacher = role === 'lecturer' || role === 'hod' || role === 'hoy';
+  const isTeacher = role === 'lecturer' || role === 'hod' || role === 'hoa';
 
   // Non-admin teaching staff: only see exams they created
   let exams = db.exams;

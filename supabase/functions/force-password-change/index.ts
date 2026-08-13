@@ -21,9 +21,9 @@ const NEVER_TARGET = ["admin", "super_admin"];
 
 const SCOPES: Record<string, string[]> = {
   // Everyone who is not an administrator.
-  all_except_admins: ["student", "lecturer", "hod", "hoy", "hr", "manager", "employee"],
+  all_except_admins: ["student", "lecturer", "hod", "hoa", "hr", "manager", "employee"],
   students: ["student"],
-  staff: ["lecturer", "hod", "hoy", "hr", "manager", "employee"],
+  staff: ["lecturer", "hod", "hoa", "hr", "manager", "employee"],
 };
 
 Deno.serve(async (req) => {

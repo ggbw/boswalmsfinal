@@ -2,7 +2,7 @@
  * Who can see whose data.
  *
  * These rules used to be re-implemented inline on every page, and they had
- * drifted apart — StudentsPage filtered `lecturer` but left `hoy` unfiltered by
+ * drifted apart — StudentsPage filtered `lecturer` but left `hoa` unfiltered by
  * accident, AssignmentsPage filtered on who *created* a record rather than who
  * teaches it, and MyStudentsPage used a third variation. One person would see
  * everything and their colleague nothing, which is what the day-to-day
@@ -10,7 +10,7 @@
  *
  * Agreed scope:
  *   admin / super_admin  everything
- *   hoy (HOA)            everything — all students, all lecturers
+ *   hoa (HOA)            everything — all students, all lecturers
  *   hod                  their own department: its modules, classes, students
  *   lecturer             only what they teach, via lecturer_modules
  *   anyone else          nothing
@@ -27,7 +27,7 @@ const norm = (s?: string | null) => (s || '').trim().toLowerCase();
 
 /** Roles that see the whole school. */
 export function isUnrestricted(role?: string | null): boolean {
-  return role === 'admin' || role === 'super_admin' || role === 'hoy';
+  return role === 'admin' || role === 'super_admin' || role === 'hoa';
 }
 
 /**
