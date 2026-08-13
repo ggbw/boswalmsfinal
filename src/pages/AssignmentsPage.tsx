@@ -48,7 +48,7 @@ async function downloadFile(opts: {
       .eq('id', legacy.id)
       .single();
     if (error) return error.message;
-    const b64 = (data as Record<string, string> | null)?.[legacy.column];
+    const b64 = (data as unknown as Record<string, string> | null)?.[legacy.column];
     if (!b64) return 'This file is no longer stored — it may have been uploaded before file storage was set up.';
     save(b64); // already a data: URL
     return null;

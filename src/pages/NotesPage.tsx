@@ -188,6 +188,7 @@ function UploadNote({
   uploadedBy: string;
   onUploaded: () => void;
 }) {
+  const { toast } = useApp();
   const [title, setTitle] = useState("");
   const [file, setFile] = useState<File | null>(null);
   const [uploading, setUploading] = useState(false);
