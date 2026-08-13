@@ -1,6 +1,7 @@
 import { useState, useEffect, useRef } from "react";
 import { useApp } from "@/context/AppContext";
 import { supabase } from "@/integrations/supabase/client";
+import { ACCEPT_DOCUMENTS, MAX_NOTE_BYTES, checkUpload } from "@/lib/uploads";
 import { getLecturerClassIds } from "@/lib/lecturerHelpers";
 
 /*
@@ -286,8 +287,16 @@ function UploadNote({
             <input
               ref={fileRef}
               type="file"
+              accept={ACCEPT_DOCUMENTS}
               style={{ display: "none" }}
-              onChange={(e) => setFile(e.target.files?.[0] || null)}
+              onChange={(e) => {
+                // Nothing checked type or size here before — the bucket had no
+                // limit either, so a lecturer could upload anything of any size.
+                const f = e.target.files?.[0] || null;
+                const err = f && checkUpload(f, MAX_NOTE_BYTES);
+                if (err) { toast(err, "error"); e.target.value = ""; setFile(null); return; }
+                setFile(f);
+              }}
             />
             {file && <span style={{ fontSize: 11, color: "#16a34a" }}>✓</span>}
           </div>

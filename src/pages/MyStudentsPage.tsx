@@ -1,21 +1,17 @@
 import { useApp } from '@/context/AppContext';
 import { getScopedClasses, getScopedStudents } from '@/lib/scope';
+import TimetablePage from '@/pages/TimetablePage';
 
 export default function MyStudentsPage() {
   const { db, currentUser } = useApp();
   const role = currentUser?.role;
 
   if (role === 'student') {
-    const stu = db.students.find(s => s.studentId === currentUser?.studentId);
-    if (!stu) return <div className="card" style={{textAlign:'center',padding:40,color:'var(--text2)'}}>No timetable found</div>;
-    const slots = db.timetable.filter(t => t.classId === stu.classId);
-    const days = ['Monday','Tuesday','Wednesday','Thursday','Friday'];
-    return (<>
-      <div className="page-header"><div className="page-title">My Timetable</div></div>
-      <div className="card"><div className="table-wrap"><table><thead><tr><th>Day</th><th>Time</th><th>Module</th><th>Room</th></tr></thead>
-        <tbody>{days.map(day=>{const s=slots.filter(t=>t.day===day);return s.map((t,i)=>{const mod=db.modules.find(m=>m.id===t.moduleId);return<tr key={t.id}><td>{i===0?day:''}</td><td style={{fontFamily:"'JetBrains Mono',monospace"}}>{t.time}</td><td>{mod?.name}</td><td>{t.room}</td></tr>;});})}</tbody>
-      </table></div></div>
-    </>);
+    // The timetable is now a single uploaded document for the whole school
+    // rather than per-class slots, so a student's view is the same page
+    // everyone else sees — read-only, with a download. TimetablePage already
+    // hides the upload and delete controls from non-admins.
+    return <TimetablePage />;
   }
 
   // Lecturer / HOD / HOA. Previously every one of these roles was scoped through

@@ -2,9 +2,9 @@ import { useState } from 'react';
 import { useApp } from '@/context/AppContext';
 import { supabase } from '@/integrations/supabase/client';
 import { getScopedClassIds, getScopedModuleIds, isUnrestricted } from '@/lib/scope';
+import { ACCEPT_DOCUMENTS, MAX_ASSIGNMENT_BYTES, checkUpload } from '@/lib/uploads';
 
 const BUCKET = 'assignment-files';
-const MAX_BYTES = 10 * 1024 * 1024;
 
 /**
  * Download a file that may live in either of two places.
@@ -116,7 +116,7 @@ function AssignmentFormModal({
 
   const handleSave = async () => {
     if (!title || !moduleId) { toast('Title and module are required', 'error'); return; }
-    if (attachmentFile && attachmentFile.size > MAX_BYTES) { toast('Attachment must be under 10MB', 'error'); return; }
+    if (attachmentFile && attachmentFile.size > MAX_ASSIGNMENT_BYTES) { toast('Attachment must be under 10MB', 'error'); return; }
     setSaving(true);
 
     const id = 'asgn_' + Date.now();
@@ -183,7 +183,17 @@ function AssignmentFormModal({
       </div>
       <div className="form-group">
         <label>Attach File (optional)</label>
-        <input className="form-input" type="file" onChange={e => setAttachmentFile(e.target.files?.[0] || null)} />
+        <input
+          className="form-input"
+          type="file"
+          accept={ACCEPT_DOCUMENTS}
+          onChange={e => {
+            const f = e.target.files?.[0] || null;
+            const err = f && checkUpload(f, MAX_ASSIGNMENT_BYTES);
+            if (err) { toast(err, 'error'); e.target.value = ''; setAttachmentFile(null); return; }
+            setAttachmentFile(f);
+          }}
+        />
         <div style={{fontSize:11,color:'var(--text2)',marginTop:4}}>Attach a reference document, rubric, or instructions file (max 10MB)</div>
       </div>
       <button className="btn btn-primary" style={{ marginTop: 12 }} disabled={saving} onClick={handleSave}>Create Assignment</button>
@@ -421,7 +431,17 @@ export default function AssignmentsPage() {
       <div>
         <div className="form-group">
           <label>Upload File *</label>
-          <input className="form-input" type="file" onChange={e => { selectedFile = e.target.files?.[0] || null; }} />
+          <input
+            className="form-input"
+            type="file"
+            accept={ACCEPT_DOCUMENTS}
+            onChange={e => {
+              const f = e.target.files?.[0] || null;
+              const err = f && checkUpload(f, MAX_ASSIGNMENT_BYTES);
+              if (err) { toast(err, 'error'); e.target.value = ''; selectedFile = null; return; }
+              selectedFile = f;
+            }}
+          />
           <div style={{fontSize:11,color:'var(--text2)',marginTop:4}}>Max file size: 10MB</div>
         </div>
         <div className="form-group">
@@ -430,7 +450,7 @@ export default function AssignmentsPage() {
         </div>
         <button className="btn btn-primary" style={{ marginTop: 12 }} onClick={async () => {
           if (!selectedFile) { toast('Please select a file to upload', 'error'); return; }
-          if (selectedFile.size > MAX_BYTES) { toast('File size must be under 10MB', 'error'); return; }
+          if (selectedFile.size > MAX_ASSIGNMENT_BYTES) { toast('File size must be under 10MB', 'error'); return; }
 
           const now = new Date();
           const id = 'sub_' + Date.now();
