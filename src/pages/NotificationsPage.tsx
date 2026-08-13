@@ -2,7 +2,8 @@ import { useApp } from '@/context/AppContext';
 import { supabase } from '@/integrations/supabase/client';
 export default function NotificationsPage() {
   const { db, currentUser, setDb, toast, showModal, closeModal } = useApp();
-  const isAdmin = currentUser?.role === 'admin';
+  // super_admin was excluded, so the highest role could not post a notice.
+  const isAdmin = currentUser?.role === 'admin' || currentUser?.role === 'super_admin';
   const deleteNotif = async (id: string) => {
     const { error } = await supabase.from('notifications').delete().eq('id', id);
     if (error) { toast(error.message, 'error'); return; }

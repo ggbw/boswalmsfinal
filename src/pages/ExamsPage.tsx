@@ -1,5 +1,7 @@
 import { useState } from 'react';
 import { useApp } from '@/context/AppContext';
+import { canManageAcademics } from '@/lib/scope';
+import { SUPP_EXAM_TYPE } from '@/lib/progression';
 import { supabase } from '@/integrations/supabase/client';
 import { getLecturerClassIds, getLecturerModulesList } from '@/lib/lecturerHelpers';
 
@@ -29,9 +31,15 @@ function ExamFormModal({
   // Theory-only modules (hasPractical === false) must not offer practical types.
   const THEORY_TYPES = ['Written Exam', 'Final Theory Exam', 'Oral Exam'];
   const PRACTICAL_TYPES = ['Practical Exam', 'Final Practical Exam', 'Final Practical Theory Exam', 'Recipe'];
+  // A supplementary is an ordinary exam row typed 'Supplementary Exam'. It
+  // deliberately matches none of the categories in categorizeModuleAssessments,
+  // so it does NOT distort the normal module mark — the supp result is applied
+  // separately, capped at 50, by outcomeAfterSupp(). Without this option there
+  // was no way to create one at all.
   const typeOptionsFor = (mid: string) => {
     const mod = db.modules.find((m: any) => m.id === mid);
-    return mod?.hasPractical === false ? THEORY_TYPES : [...THEORY_TYPES, ...PRACTICAL_TYPES];
+    const base = mod?.hasPractical === false ? THEORY_TYPES : [...THEORY_TYPES, ...PRACTICAL_TYPES];
+    return [...base, SUPP_EXAM_TYPE];
   };
 
   const firstModuleId = exam?.moduleId || availableModules[0]?.id || '';
@@ -127,7 +135,10 @@ export default function ExamsPage() {
   const role = currentUser?.role;
   const [search, setSearch] = useState('');
 
-  const isAdmin = role === 'admin';
+  // Was `role === 'admin'`, which shut super_admin out of exam management
+  // entirely. canManageAcademics also correctly excludes principal/deputy, who
+  // read the whole school but write nothing.
+  const isAdmin = canManageAcademics(role);
   const isTeacher = role === 'lecturer' || role === 'hod' || role === 'hoa';
 
   // Non-admin teaching staff: only see exams they created

@@ -63,9 +63,17 @@ export function useStudentProgress(db: DB, student: Student | null): StudentProg
     const results = studentModuleResults(db, student, scoreOf);
 
     const standings: ModuleStanding[] = results.map(result => {
-      // The 45% rule is judged on the FINAL exam component — the 40%. Written
-      // and Oral exams count toward coursework and are deliberately excluded.
-      const examMark = result.mark.finalTheory ?? result.mark.finalPrac ?? null;
+      // The 45% rule is judged on the FINAL exams — Written and Oral count
+      // toward coursework and are deliberately excluded.
+      //
+      // NOT averaged. Where a module carries both a Final Theory and a Final
+      // Practical, EITHER falling below 45 earns a supplementary — you resit the
+      // exam you failed, and a strong mark in one does not cancel a weak mark in
+      // the other. The lowest is reported, because that is the one that
+      // triggered it.
+      const finals = [result.mark.finalTheory, result.mark.finalPrac]
+        .filter((v): v is number => v !== null && v !== undefined);
+      const examMark = finals.length ? Math.min(...finals) : null;
 
       // A supplementary is an ordinary exam row typed 'Supplementary Exam', so
       // it needs no special storage — only recognising here.

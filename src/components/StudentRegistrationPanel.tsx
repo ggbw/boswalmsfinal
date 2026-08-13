@@ -13,6 +13,7 @@ import { useApp } from '@/context/AppContext';
 import { supabase } from '@/integrations/supabase/client';
 import { useStudentProgress } from '@/hooks/useStudentProgress';
 import { MAX_CARRIED_FAILURES } from '@/lib/progression';
+import { recordOutcomes } from '@/lib/recordOutcomes';
 import type { Student } from '@/data/db';
 
 interface Registration {
@@ -25,7 +26,7 @@ interface Registration {
 }
 
 export default function StudentRegistrationPanel({ student }: { student: Student }) {
-  const { db, toast } = useApp();
+  const { db, toast, currentUser } = useApp();
   const progress = useStudentProgress(db, student);
   const [registrations, setRegistrations] = useState<Registration[]>([]);
   const [busy, setBusy] = useState(false);
@@ -41,11 +42,49 @@ export default function StudentRegistrationPanel({ student }: { student: Student
 
   useEffect(() => { loadRegistrations(); }, [loadRegistrations]);
 
+  // Settle the record once results are in, and notify any NEW supplementary.
+  // Runs from the student's own dashboard because that is the first moment
+  // anyone looks — waiting for an admin to open a screen would mean a student
+  // learns of a supplementary later than the system knew about it.
+  //
+  // recordOutcomes only writes where the outcome CHANGED, so this is cheap on
+  // every visit and cannot re-notify about the same supplementary twice.
+  const settledKey = progress.settled
+    ? progress.standings.map(s => `${s.result.module.id}:${s.outcome}`).join('|')
+    : '';
+  useEffect(() => {
+    if (!settledKey || !progress.settled) return;
+    let cancelled = false;
+    (async () => {
+      const res = await recordOutcomes({
+        student,
+        standings: progress.standings,
+        authUserId: currentUser?.id ?? null,
+        decidedBy: null,
+      });
+      if (!cancelled && res.suppsNotified > 0) {
+        toast(`You have ${res.suppsNotified} supplementary exam(s) — see your notifications.`, 'info');
+      }
+    })();
+    return () => { cancelled = true; };
+    // settledKey captures both "is settled" and "what the outcomes are", so this
+    // re-runs only when a result actually changes.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [settledKey, student.id]);
+
   // Where they'd be going next. Semester 1 → 2 within a year, then Year N+1 S1.
   const programme = db.config.programmes.find(p => p.id === student.programme);
   const maxSemester = programme?.semesters || 2;
   const nextSemester = student.semester < maxSemester ? student.semester + 1 : 1;
   const nextYear = student.semester < maxSemester ? student.year : student.year + 1;
+
+  // The end of the programme. Without this a final-year student who passed was
+  // invited to register for a year their programme does not have — Year 4 of a
+  // three-year course. They have finished; they should be told so.
+  const totalYears = programme?.years ?? 0;
+  const hasCompleted = totalYears > 0
+    && student.year >= totalYears
+    && student.semester >= maxSemester;
 
   const alreadyRegistered = registrations.find(
     r => r.year === nextYear && r.semester === nextSemester && r.status !== 'rejected',
@@ -132,8 +171,19 @@ export default function StudentRegistrationPanel({ student }: { student: Student
         </div>
       )}
 
-      {/* Passed — the message they are waiting for. */}
-      {v?.mayProgress && (
+      {/* Finished the programme — no next semester to register for. */}
+      {v?.mayProgress && hasCompleted && (
+        <div style={{ background: '#e6eef8', border: '1px solid #b3cbe8', borderRadius: 8, padding: '12px 14px', fontSize: 13, color: '#1c4e8a', lineHeight: 1.6 }}>
+          <strong>You have completed your programme.</strong>
+          <div style={{ marginTop: 4 }}>
+            {v.reason} There is no further semester to register for — the academic
+            office will be in touch about your results and graduation.
+          </div>
+        </div>
+      )}
+
+      {/* Passed, with more of the programme to come. */}
+      {v?.mayProgress && !hasCompleted && (
         <>
           <div style={{ background: '#e4f3e9', border: '1px solid #a9d9ba', borderRadius: 8, padding: '12px 14px', fontSize: 13, color: '#16693a', lineHeight: 1.6, marginBottom: 12 }}>
             <strong>You have passed. Register for the next semester.</strong>

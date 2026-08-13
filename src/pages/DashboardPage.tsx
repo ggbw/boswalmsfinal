@@ -76,7 +76,9 @@ export default function DashboardPage() {
     return <StudentDashboard stu={stu} db={db} />;
   }
 
-  const isStaff = role === 'admin' || role === 'hod' || role === 'hoa';
+  // super_admin falls through to this generic dashboard and was missing from
+  // the check, so the highest role saw the page with no statistics on it.
+  const isStaff = role === 'admin' || role === 'super_admin' || role === 'hod' || role === 'hoa';
   return (
     <>
       {db.notifications.map(n => (

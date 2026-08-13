@@ -1,5 +1,6 @@
 import { useState, useEffect, useRef } from "react";
 import { useApp } from "@/context/AppContext";
+import { isAdminRole } from '@/lib/scope';
 import { supabase } from "@/integrations/supabase/client";
 import { ACCEPT_DOCUMENTS, MAX_NOTE_BYTES, checkUpload } from "@/lib/uploads";
 import { getLecturerClassIds } from "@/lib/lecturerHelpers";
@@ -37,7 +38,7 @@ export default function NotesPage() {
   const { db, currentUser } = useApp();
   const role = currentUser?.role;
   const isStudent = role === "student";
-  const canUpload = role === "admin" || role === "lecturer" || role === "hod" || role === "hoa";
+  const canUpload = isAdminRole(role) || role === "lecturer" || role === "hod" || role === "hoa";
 
   // Determine which modules to show
   const visibleModules = (() => {

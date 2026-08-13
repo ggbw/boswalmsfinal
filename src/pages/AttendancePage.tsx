@@ -1,7 +1,7 @@
 import { useState, useEffect, useMemo } from 'react';
 import { useApp } from '@/context/AppContext';
 import { supabase } from '@/integrations/supabase/client';
-import { getScopedClasses } from '@/lib/scope';
+import { getScopedClasses, isReadOnlyOversight } from '@/lib/scope';
 import { downloadCsv, slug } from '@/lib/csv';
 
 type Session = 'start' | 'end';
@@ -17,7 +17,11 @@ export default function AttendancePage() {
   // no classes and could not take a register at all.
   const availableClasses = getScopedClasses(db, currentUser);
 
-  const [tab, setTab] = useState<Tab>('mark');
+  // Principal and Deputy Principal have whole-school READ and no write. Saving a
+  // register would be refused by the database, so the Mark tab is not offered —
+  // they land on the Summary Report, which is what oversight actually needs.
+  const readOnly = isReadOnlyOversight(currentUser?.role);
+  const [tab, setTab] = useState<Tab>(readOnly ? 'summary' : 'mark');
   const [attClass, setAttClass] = useState(availableClasses[0]?.id || '');
   const [attDate, setAttDate] = useState(new Date().toISOString().split('T')[0]);
   const [attModule, setAttModule] = useState('');
@@ -119,12 +123,12 @@ export default function AttendancePage() {
     <div className="page-header" style={{ display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap' }}>
       <div className="page-title">Attendance</div>
       <div style={{ display: 'inline-flex', border: '1px solid var(--border)', borderRadius: 8, overflow: 'hidden' }}>
-        {tabBtn('mark', 'Mark', 'fa-user-check')}
+        {!readOnly && tabBtn('mark', 'Mark', 'fa-user-check')}
         {tabBtn('summary', 'Summary Report', 'fa-chart-column')}
       </div>
     </div>
 
-    {tab === 'summary' ? <AttendanceSummary availableClasses={availableClasses} /> : (
+    {tab === 'summary' || readOnly ? <AttendanceSummary availableClasses={availableClasses} /> : (
     <div className="card" style={{ marginBottom: 14 }}>
       <div className="form-row cols3" style={{ marginBottom: 14 }}>
         <div className="form-group">

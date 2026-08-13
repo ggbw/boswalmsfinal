@@ -25,9 +25,51 @@ import { getLecturerClassIds, getLecturerModulesList } from './lecturerHelpers';
 
 const norm = (s?: string | null) => (s || '').trim().toLowerCase();
 
-/** Roles that see the whole school. */
+/**
+ * Full administrative rights — admin and super_admin.
+ *
+ * Much of this app was written before super_admin existed, so gates were
+ * spelled `role === 'admin'` and quietly excluded the higher role. That left a
+ * super_admin unable to assign lecturers to modules, edit a student, manage
+ * modules or upload notes — with no error, just missing buttons.
+ */
+export function isAdminRole(role?: string | null): boolean {
+  return role === 'admin' || role === 'super_admin';
+}
+
+/**
+ * Roles that SEE the whole school.
+ *
+ * Includes principal and deputy_principal — they are read-only, but read-only
+ * across everything. Leaving them out made every scoped page return an empty
+ * list, so they had access to Students, Lecturers and Attendance and saw
+ * nothing on any of them.
+ */
 export function isUnrestricted(role?: string | null): boolean {
-  return role === 'admin' || role === 'super_admin' || role === 'hoa';
+  return role === 'admin' || role === 'super_admin' || role === 'hoa'
+      || role === 'principal' || role === 'deputy_principal';
+}
+
+/**
+ * Oversight roles: whole-school read, and no write anywhere.
+ *
+ * Matches is_oversight_only() in the database, which grants them SELECT and
+ * nothing else. Use this to hide controls that would be refused — offering a
+ * button that always fails is worse than not offering it.
+ */
+export function isReadOnlyOversight(role?: string | null): boolean {
+  return role === 'principal' || role === 'deputy_principal';
+}
+
+/**
+ * May create or change academic records — assignments, marks, registers.
+ *
+ * Distinct from isUnrestricted, which is about what you can SEE. Conflating the
+ * two is what would have given a principal Create and Delete buttons that the
+ * database then refuses.
+ */
+export function canManageAcademics(role?: string | null): boolean {
+  return isUnrestricted(role) && !isReadOnlyOversight(role);
 }
 
 /**

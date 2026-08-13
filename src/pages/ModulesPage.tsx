@@ -1,10 +1,11 @@
 import { useApp } from "@/context/AppContext";
+import { isAdminRole } from '@/lib/scope';
 import { supabase } from "@/integrations/supabase/client";
 
 export default function ModulesPage() {
   const { db, currentUser, toast, showModal, closeModal, reloadDb } = useApp();
   const role = currentUser?.role;
-  const isAdmin = role === "admin";
+  const isAdmin = isAdminRole(role);
   const isHod = role === "hod";
   const hodDept = isHod ? db.departments.find((d) => d.hod === currentUser?.name) : null;
   const visibleModules = isHod && hodDept

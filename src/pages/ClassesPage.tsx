@@ -1,5 +1,6 @@
 import { useState, Fragment } from "react";
 import { useApp } from "@/context/AppContext";
+import { isAdminRole } from '@/lib/scope';
 import { supabase } from "@/integrations/supabase/client";
 
 // Sync module_classes for a class based on its programme + year + semester
@@ -121,7 +122,9 @@ function ModuleAssignmentPanel({ classId, onClose }: { classId: string; onClose:
 
 export default function ClassesPage() {
   const { db, currentUser, toast, showModal, closeModal, reloadDb } = useApp();
-  const isAdmin = currentUser?.role === "admin";
+  // super_admin was excluded, so the highest role could not assign lecturers
+  // to modules — the very thing this page exists for.
+  const isAdmin = isAdminRole(currentUser?.role);
   const [syncing, setSyncing] = useState(false);
   const [openPanelId, setOpenPanelId] = useState<string | null>(null);
 

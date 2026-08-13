@@ -2,7 +2,7 @@ import { useState } from "react";
 import { useApp } from "@/context/AppContext";
 import { grade, gradeColor } from "@/data/db";
 import { supabase } from "@/integrations/supabase/client";
-import { getScopedStudents } from "@/lib/scope";
+import { getScopedStudents, isAdminRole } from '@/lib/scope';
 import { useAssessmentMarks } from "@/hooks/useAssessmentMarks";
 import { studentModuleResults } from "@/lib/studentMarks";
 
@@ -416,7 +416,7 @@ export default function StudentsPage() {
             <div className="page-title">Students</div>
             <div className="page-sub">{filtered.length} students</div>
           </div>
-          {role === "admin" && (
+          {isAdminRole(role) && (
             <button className="btn btn-primary btn-sm" onClick={showAddStudent}>
               <i className="fa-solid fa-user-plus" /> Add Student
             </button>
@@ -440,7 +440,7 @@ export default function StudentsPage() {
         </div>
 
         {/* Missing enrolment date banner */}
-        {role === "admin" && missingEnrolment.length > 0 && (
+        {isAdminRole(role) && missingEnrolment.length > 0 && (
           <div
             style={{
               background: "rgba(245,158,11,0.12)",
@@ -486,7 +486,7 @@ export default function StudentsPage() {
                     <th>Class</th>
                     <th>Programme</th>
                     <th>Status</th>
-                    {role === "admin" && <th>Enrolment Date</th>}
+                    {isAdminRole(role) && <th>Enrolment Date</th>}
                     <th>Action</th>
                   </tr>
                 </thead>
@@ -523,7 +523,7 @@ export default function StudentsPage() {
                             {s.status || "active"}
                           </span>
                         </td>
-                        {role === "admin" && (
+                        {isAdminRole(role) && (
                           <td>
                             {s.enrolmentDate ? (
                               <span style={{ fontSize: 12, color: "var(--text2)" }}>
@@ -599,7 +599,7 @@ export default function StudentsPage() {
                             >
                               View
                             </button>
-                            {role === "admin" && (
+                            {isAdminRole(role) && (
                               <button className="btn btn-outline btn-sm" onClick={() => showEdit(s)}>
                                 Edit
                               </button>
@@ -688,7 +688,7 @@ function StudentProfilePanel({ student: s, db, role, onClose, onEdit }: any) {
           </div>
         </div>
         <div style={{ display: "flex", gap: 8 }}>
-          {role === "admin" && (
+          {isAdminRole(role) && (
             <button className="btn btn-outline btn-sm" onClick={onEdit}>
               <i className="fa-solid fa-pen" /> Edit
             </button>

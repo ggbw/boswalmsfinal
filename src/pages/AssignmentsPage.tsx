@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { useApp } from '@/context/AppContext';
 import { supabase } from '@/integrations/supabase/client';
-import { getScopedClassIds, getScopedModuleIds, isUnrestricted } from '@/lib/scope';
+import { getScopedClassIds, getScopedModuleIds, isUnrestricted, canManageAcademics } from '@/lib/scope';
 import { ACCEPT_DOCUMENTS, MAX_ASSIGNMENT_BYTES, checkUpload } from '@/lib/uploads';
 
 const BUCKET = 'assignment-files';
@@ -207,9 +207,10 @@ export default function AssignmentsPage() {
   const [selectedAssignment, setSelectedAssignment] = useState<string | null>(null);
   const [search, setSearch] = useState('');
 
-  // `admin` alone excluded super_admin, who then saw no Create/Delete/Marks
-  // buttons at all on this page.
-  const isAdmin = isUnrestricted(role);
+  // Who may CREATE and DELETE — not merely who may see everything. A principal
+  // sees the whole school but writes nothing, so they must not be offered
+  // buttons the database will refuse.
+  const isAdmin = canManageAcademics(role);
   const isTeacher = role === 'lecturer' || role === 'hod' || role === 'hoa';
 
   let assignments = db.assignments;
@@ -235,6 +236,14 @@ export default function AssignmentsPage() {
   const currentStudent = role === 'student'
     ? db.students.find(s => s.studentId === currentUser?.studentId)
     : null;
+
+  // A student whose record cannot be found must see NOTHING, not everything.
+  // Previously the filter block below was simply skipped when currentStudent was
+  // null, so a broken profile link showed that student every assignment in the
+  // school — the opposite of the intended failure.
+  if (role === 'student' && !currentStudent) {
+    assignments = [];
+  }
 
   if (role === 'student' && currentStudent) {
     const myModuleIds = db.modules.filter(m => m.classes.includes(currentStudent.classId)).map(m => m.id);

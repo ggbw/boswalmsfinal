@@ -2,7 +2,7 @@ import { useState, useEffect, useCallback } from "react";
 import { useApp } from "@/context/AppContext";
 import { supabase } from "@/integrations/supabase/client";
 import { getLecturerClasses, getLecturerModulesList } from "@/lib/lecturerHelpers";
-import { getScopedFacultyIds } from "@/lib/scope";
+import { getScopedFacultyIds, isAdminRole } from '@/lib/scope';
 
 interface FacultyRow {
   user_id: string;
@@ -18,7 +18,7 @@ export default function LecturersPage() {
   const [faculty, setFaculty] = useState<FacultyRow[]>([]);
   const [loading, setLoading] = useState(true);
   const [selected, setSelected] = useState<FacultyRow | null>(null);
-  const isAdmin = currentUser?.role === "admin";
+  const isAdmin = isAdminRole(currentUser?.role);
 
   const load = useCallback(async () => {
     setLoading(true);
