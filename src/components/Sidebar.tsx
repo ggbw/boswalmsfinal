@@ -385,7 +385,26 @@ function hasActiveDescendant(item: NavItem, activeId: string): boolean {
   return item.children.some((c) => c.id === activeId || hasActiveDescendant(c, activeId));
 }
 
+/**
+ * Remembered across sessions — someone who works collapsed does not want to
+ * re-collapse it every morning. Reading localStorage in the initialiser rather
+ * than an effect avoids a visible flash of the expanded rail on load.
+ */
+const COLLAPSE_KEY = "boswa.sidebar.collapsed";
+
 export default function Sidebar() {
+  const [collapsed, setCollapsed] = useState<boolean>(() => {
+    try { return localStorage.getItem(COLLAPSE_KEY) === "1"; } catch { return false; }
+  });
+
+  const toggleCollapsed = () => {
+    setCollapsed(prev => {
+      const next = !prev;
+      try { localStorage.setItem(COLLAPSE_KEY, next ? "1" : "0"); } catch { /* private mode */ }
+      return next;
+    });
+  };
+
   const { db, currentUser, activePage, navigate, setCurrentUser } = useApp();
   const { isHR } = useUserRole();
   const role = currentUser?.role || "admin";
@@ -424,13 +443,14 @@ export default function Sidebar() {
         <div key={item.id}>
           <div
             className={`nav-item nav-group ${activeInside ? "has-active" : ""}`}
+            title={item.label}
             style={indentStyle}
             onClick={() => toggleGroup(item.id)}
           >
             <span className="ico">
               <i className={item.icon} />
             </span>
-            {item.label}
+            <span>{item.label}</span>
             <i
               className={`nav-caret fa-solid ${open ? "fa-chevron-down" : "fa-chevron-right"}`}
             />
@@ -448,13 +468,14 @@ export default function Sidebar() {
       <div
         key={item.id}
         className={`nav-item ${activePage === item.id ? "active" : ""} ${depth > 0 ? "nav-child" : ""}`}
+        title={item.label}
         style={indentStyle}
         onClick={() => navigate(item.id)}
       >
         <span className="ico">
           <i className={item.icon} />
         </span>
-        {item.label}
+        <span>{item.label}</span>
         {item.badge !== undefined && (
           <span className={`nav-badge ${item.badge > 0 ? "new" : ""}`}>{item.badge}</span>
         )}
@@ -463,7 +484,7 @@ export default function Sidebar() {
   };
 
   return (
-    <div className="sidebar">
+    <div className={`sidebar${collapsed ? " collapsed" : ""}`}>
       <div className="logo">
         <div className="logo-img">B</div>
         <div className="logo-text">
@@ -479,6 +500,17 @@ export default function Sidebar() {
           </div>
         ))}
       </div>
+      <button
+        type="button"
+        className="sidebar-toggle"
+        onClick={toggleCollapsed}
+        title={collapsed ? "Expand sidebar" : "Collapse sidebar"}
+        aria-label={collapsed ? "Expand sidebar" : "Collapse sidebar"}
+        aria-expanded={!collapsed}
+      >
+        <i className={`fa-solid ${collapsed ? "fa-angles-right" : "fa-angles-left"}`} />
+        <span>Collapse</span>
+      </button>
       <div className="sidebar-footer" onClick={() => navigate("profile")}>
         <div className="s-avatar" style={{ background: "linear-gradient(135deg,#d4920a,#f0b429)" }}>
           {currentUser?.name?.[0]?.toUpperCase() || "A"}
