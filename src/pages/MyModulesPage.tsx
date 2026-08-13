@@ -1,6 +1,8 @@
 import { useApp } from "@/context/AppContext";
-import { calcModuleMark, grade, gradeColor } from "@/data/db";
+import { grade, gradeColor, type DB, type Student } from "@/data/db";
 import { getLecturerForModuleClass } from "@/lib/lecturerHelpers";
+import { useAssessmentMarks } from "@/hooks/useAssessmentMarks";
+import { studentModuleResults, studentAverage } from "@/lib/studentMarks";
 
 export default function MyModulesPage() {
   const { db, currentUser } = useApp();
@@ -16,6 +18,12 @@ export default function MyModulesPage() {
       </div>
     );
 
+  return <MyModulesInner stu={stu} db={db} />;
+}
+
+// Split out so the marks hook is not called behind the early returns above.
+function MyModulesInner({ stu, db }: { stu: Student; db: DB }) {
+
   const cls = db.classes.find((c) => c.id === stu.classId);
   const prog = db.config.programmes.find((p) => p.id === stu.programme);
 
@@ -27,27 +35,27 @@ export default function MyModulesPage() {
   );
   const currentModIds = new Set([...currentClassMods, ...overrideMods].map((m) => m.id));
 
-  // All marks ever recorded for this student
-  const allMarks = db.marks.filter((m) => m.studentId === stu.studentId);
+  // Marks come from assessment_marks. This previously read db.marks, filtering
+  // by the student number against rows keyed by students.id — so it matched
+  // nothing and every student saw zero modules and no average.
+  const { scoreOf, loading: marksLoading } = useAssessmentMarks({ studentNumbers: [stu.studentId] });
+  const results = marksLoading ? [] : studentModuleResults(db, stu, scoreOf);
+  const markedResults = results.filter((r) => !r.unmarked);
+  const markOf = (moduleId: string) =>
+    markedResults.find((r) => r.module.id === moduleId)?.mark ?? null;
 
-  // Past modules: modules the student has marks for, that are NOT in the current class
-  // These represent modules from previous semesters/years
-  const pastModuleIds = allMarks.filter((mk) => !currentModIds.has(mk.moduleId)).map((mk) => mk.moduleId);
-  const pastMods = db.modules.filter((m) => pastModuleIds.includes(m.id));
+  // Past modules: marked modules that are not in the current class — i.e.
+  // carried over from an earlier semester or year.
+  const pastMods = markedResults
+    .filter((r) => !currentModIds.has(r.module.id))
+    .map((r) => r.module);
 
-  // Combine: past modules first (greyed out), then current (active)
-  // We'll render them in two sections
-
-  // Stats — based on all modules (current + past with marks)
-  const allModsWithMarks = allMarks.length;
+  const allModsWithMarks = markedResults.length;
   const currentMods = [...currentClassMods, ...overrideMods];
-  const currentMarks = allMarks.filter((mk) => currentModIds.has(mk.moduleId));
-  const markHasPrac = (mk: { moduleId: string }) =>
-    db.modules.find((mo) => mo.id === mk.moduleId)?.hasPractical !== false;
-  const passingCurrent = currentMarks.filter((mk) => calcModuleMark(mk, markHasPrac(mk)) >= 50).length;
-  const avgMark = allModsWithMarks
-    ? Math.round(allMarks.reduce((a, mk) => a + calcModuleMark(mk, markHasPrac(mk)), 0) / allModsWithMarks)
-    : null;
+  const passingCurrent = markedResults.filter(
+    (r) => currentModIds.has(r.module.id) && r.mark.moduleMark >= 50,
+  ).length;
+  const avgMark = studentAverage(results);
 
   const getLecturer = (mod: (typeof currentMods)[0]) => {
     // Find all lecturers assigned to this module across its classes
@@ -62,8 +70,9 @@ export default function MyModulesPage() {
   };
 
   const renderModuleCard = (m: (typeof currentMods)[0], isPast: boolean) => {
-    const mark = allMarks.find((mk) => mk.moduleId === m.id);
-    const mm = mark ? calcModuleMark(mark, m.hasPractical !== false) : null;
+    // Already weighted by computeStudentModuleMark — no second calculation here.
+    const mark = markOf(m.id);
+    const mm = mark ? mark.moduleMark : null;
     const g = mm !== null ? grade(mm) : null;
     const passed = mm !== null && mm >= 50;
     const dept = db.departments.find((d) => d.id === m.dept);

@@ -1,6 +1,53 @@
 import { useApp } from '@/context/AppContext';
-import { calcModuleMark, grade, gradeColor } from '@/data/db';
+import { calcModuleMark, grade, gradeColor, type DB, type Student } from '@/data/db';
 import { getLecturerClassIds } from '@/lib/lecturerHelpers';
+import { useAssessmentMarks } from '@/hooks/useAssessmentMarks';
+import { studentModuleResults } from '@/lib/studentMarks';
+
+/**
+ * A student's own results, read from `assessment_marks`.
+ *
+ * This used to read `db.marks`, filtering by the student number against rows
+ * keyed by `students.id` — so it matched nothing and every student saw "No
+ * results available yet" regardless of what they had been awarded. Split into
+ * its own component so the data hook isn't called behind a conditional.
+ */
+function StudentResults({ stu, db }: { stu: Student; db: DB }) {
+  const { scoreOf, loading, error } = useAssessmentMarks({ studentNumbers: [stu.studentId] });
+  const results = loading ? [] : studentModuleResults(db, stu, scoreOf);
+  const marked = results.filter(r => !r.unmarked);
+
+  return (<>
+    <div className="page-header"><div className="page-title">My Results</div></div>
+    {error && (
+      <div className="card" style={{ padding: 16, color: '#cf222e', fontSize: 13 }}>
+        <i className="fa-solid fa-triangle-exclamation" style={{ marginRight: 8 }} />
+        Your results could not be loaded: {error}
+      </div>
+    )}
+    {loading
+      ? <div className="card" style={{textAlign:'center',padding:40,color:'var(--text2)'}}>Loading your results…</div>
+      : marked.length === 0
+        ? <div className="card" style={{textAlign:'center',padding:40,color:'var(--text2)'}}>No results available yet. Results will appear here once your lecturer has entered marks.</div>
+        : <div className="card"><div className="table-wrap"><table>
+            <thead><tr><th>Module</th><th style={{textAlign:'center'}}>Coursework</th><th style={{textAlign:'center'}}>Practical</th><th style={{textAlign:'center'}}>Final Exam</th><th style={{textAlign:'center'}}>Total</th><th>Grade</th></tr></thead>
+            <tbody>{marked.map(({ module, mark }) => {
+              const g = grade(mark.moduleMark);
+              const pct = (v: number | null) => v === null ? '—' : `${Math.round(v)}%`;
+              return (
+                <tr key={module.id}>
+                  <td className="td-name">{module.name}</td>
+                  <td style={{fontFamily:"'JetBrains Mono',monospace",textAlign:'center'}}>{pct(mark.theory40)}</td>
+                  <td style={{fontFamily:"'JetBrains Mono',monospace",textAlign:'center'}}>{pct(mark.prac20)}</td>
+                  <td style={{fontFamily:"'JetBrains Mono',monospace",textAlign:'center'}}>{pct(mark.final40)}</td>
+                  <td style={{fontFamily:"'JetBrains Mono',monospace",fontWeight:700,textAlign:'center'}}>{mark.moduleMark}%</td>
+                  <td><span className={`badge ${gradeColor(g)}`}>{g}</span></td>
+                </tr>
+              );
+            })}</tbody>
+          </table></div></div>}
+  </>);
+}
 
 export default function ResultsPage() {
   const { db, currentUser } = useApp();
@@ -9,15 +56,7 @@ export default function ResultsPage() {
   if (role === 'student') {
     const stu = db.students.find(s => s.studentId === currentUser?.studentId);
     if (!stu) return <div className="card" style={{textAlign:'center',padding:40}}>Student record not found. Please contact admin.</div>;
-    const myMarks = db.marks.filter(m => m.studentId === stu.studentId);
-    return (<>
-      <div className="page-header"><div className="page-title">My Results</div></div>
-      {myMarks.length === 0
-        ? <div className="card" style={{textAlign:'center',padding:40,color:'var(--text2)'}}>No results available yet. Results will appear here once your lecturer has entered marks.</div>
-        : <div className="card"><div className="table-wrap"><table><thead><tr><th>Module</th><th style={{textAlign:'center'}}>Coursework</th><th style={{textAlign:'center'}}>Practical</th><th style={{textAlign:'center'}}>Final Exam</th><th style={{textAlign:'center'}}>Total</th><th>Grade</th></tr></thead>
-        <tbody>{myMarks.map(m=>{const mod=db.modules.find(mo=>mo.id===m.moduleId);const hasPrac=mod?.hasPractical!==false;const cwAvg=hasPrac?(m.test1+m.test2+m.practTest+m.indAss+m.grpAss)/5:(m.test1+m.test2+m.indAss+m.grpAss)/4;const cw=Math.round(cwAvg*(hasPrac?0.4:0.6));const pe=hasPrac?Math.round(m.practical*0.2):null;const fe=Math.round(m.finalExam*0.4);const mm=calcModuleMark(m,hasPrac);const g=grade(mm);return<tr key={m.moduleId}><td className="td-name">{mod?.name}</td><td style={{fontFamily:"'JetBrains Mono',monospace",textAlign:'center'}}>{cw}%</td><td style={{fontFamily:"'JetBrains Mono',monospace",textAlign:'center'}}>{pe!==null?`${pe}%`:'—'}</td><td style={{fontFamily:"'JetBrains Mono',monospace",textAlign:'center'}}>{fe}%</td><td style={{fontFamily:"'JetBrains Mono',monospace",fontWeight:700,textAlign:'center'}}>{mm}%</td><td><span className={`badge ${gradeColor(g)}`}>{g}</span></td></tr>;})}</tbody>
-      </table></div></div>}
-    </>);
+    return <StudentResults stu={stu} db={db} />;
   }
 
   if (!['admin','hod','hoa','lecturer'].includes(role || '')) {
