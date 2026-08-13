@@ -2,6 +2,7 @@ import { useApp } from '@/context/AppContext';
 import { grade, gradeColor, type DB, type Student } from '@/data/db';
 import { useAssessmentMarks } from '@/hooks/useAssessmentMarks';
 import { studentModuleResults } from '@/lib/studentMarks';
+import { PrincipalDashboard, HodDashboard, LecturerDashboard } from '@/pages/RoleDashboards';
 
 /**
  * Student dashboard. Marks come from assessment_marks; this previously read
@@ -59,6 +60,13 @@ export default function DashboardPage() {
   const totalAtt = db.attendance.length;
   const presentAtt = db.attendance.filter(a => a.status === 'present').length;
   const attPct = totalAtt ? Math.round(presentAtt / totalAtt * 100) : 92;
+
+  // Each role gets the dashboard built for the question it opens the system to
+  // ask, rather than one page showing everyone the same admin counters.
+  if (role === 'principal')        return <PrincipalDashboard academicOnly={false} />;
+  if (role === 'deputy_principal') return <PrincipalDashboard academicOnly />;
+  if (role === 'hod')              return <HodDashboard />;
+  if (role === 'lecturer')         return <LecturerDashboard />;
 
   if (role === 'student') {
     const stu = db.students.find(s => s.studentId === currentUser?.studentId);

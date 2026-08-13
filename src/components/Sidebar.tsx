@@ -204,6 +204,45 @@ function getNavConfig(role: string, db: any, hrPending: HrPendingCounts): NavSec
   const configs: Record<string, NavSection[]> = {
     admin: adminLmsSections,
     super_admin: [...adminLmsSections, HR_MANAGEMENT_SECTION],
+    // Read-only oversight. The principal sees admissions and operational health;
+    // the deputy's remit is academic, so admissions is omitted there.
+    principal: [
+      { section: "Main", items: [
+        { id: "dashboard", label: "School Overview", icon: "fa-solid fa-gauge" },
+        { id: "notifications", label: "Notifications", icon: "fa-solid fa-bullhorn" },
+      ] },
+      { section: "Academic", items: [
+        { id: "students", label: "All Students", icon: "fa-solid fa-user-graduate" },
+        { id: "lecturers", label: "All Lecturers", icon: "fa-solid fa-chalkboard-user" },
+        { id: "grades", label: "Grades Overview", icon: "fa-solid fa-star-half-stroke" },
+        { id: "progression", label: "Progression", icon: "fa-solid fa-arrow-up-right-dots" },
+      ] },
+      { section: "Insight", items: [
+        { id: "reports", label: "Reports", icon: "fa-solid fa-file-lines" },
+        { id: "transcripts", label: "Transcripts", icon: "fa-solid fa-scroll" },
+        { id: "attendance", label: "Attendance", icon: "fa-solid fa-clipboard-check" },
+        { id: "timetable", label: "Timetable", icon: "fa-solid fa-calendar-days" },
+        { id: "admissions", label: "Admissions", icon: "fa-solid fa-door-open" },
+      ] },
+    ],
+    deputy_principal: [
+      { section: "Main", items: [
+        { id: "dashboard", label: "Academic Overview", icon: "fa-solid fa-gauge" },
+        { id: "notifications", label: "Notifications", icon: "fa-solid fa-bullhorn" },
+      ] },
+      { section: "Academic", items: [
+        { id: "students", label: "All Students", icon: "fa-solid fa-user-graduate" },
+        { id: "lecturers", label: "All Lecturers", icon: "fa-solid fa-chalkboard-user" },
+        { id: "grades", label: "Grades Overview", icon: "fa-solid fa-star-half-stroke" },
+        { id: "progression", label: "Progression", icon: "fa-solid fa-arrow-up-right-dots" },
+      ] },
+      { section: "Insight", items: [
+        { id: "reports", label: "Reports", icon: "fa-solid fa-file-lines" },
+        { id: "transcripts", label: "Transcripts", icon: "fa-solid fa-scroll" },
+        { id: "attendance", label: "Attendance", icon: "fa-solid fa-clipboard-check" },
+        { id: "timetable", label: "Timetable", icon: "fa-solid fa-calendar-days" },
+      ] },
+    ],
     hod: [
       { section: "Main", items: [{ id: "dashboard", label: "Dashboard", icon: "fa-solid fa-gauge" }] },
       {
@@ -445,7 +484,7 @@ export default function Sidebar() {
         </div>
         <div>
           <div style={{ color: "#e6edf3", fontSize: 11, fontWeight: 600 }}>{currentUser?.name || "Admin"}</div>
-          <div style={{ color: "#484f58", fontSize: 9.5 }}>{role === "hoa" ? "HOA" : role.toUpperCase()}</div>
+          <div style={{ color: "#484f58", fontSize: 9.5 }}>{({ hoa: "HOA", principal: "PRINCIPAL", deputy_principal: "DEPUTY PRINCIPAL" } as Record<string,string>)[role] || role.toUpperCase()}</div>
         </div>
         <i
           className="fa-solid fa-right-from-bracket"

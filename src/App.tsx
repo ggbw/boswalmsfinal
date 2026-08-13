@@ -42,7 +42,7 @@ function AuthGate() {
 
   if (!user || !profile) return <LoginScreen />;
 
-  const staffRoles = ["admin", "super_admin", "hr", "manager", "employee", "hod", "hoa", "lecturer", "student"];
+  const staffRoles = ["admin", "super_admin", "hr", "manager", "employee", "hod", "hoa", "lecturer", "student", "principal", "deputy_principal"];
 
   // Applicants get their own portal — not the full SMS
   if (role === "applicant" || !role || !staffRoles.includes(role)) {
