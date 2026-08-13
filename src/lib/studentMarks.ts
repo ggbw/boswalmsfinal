@@ -23,6 +23,25 @@ export interface StudentModuleResult {
   unmarked: boolean;
 }
 
+/**
+ * Which class's offering of a module this student attends.
+ *
+ * Normally their own class. For a retake it is a DIFFERENT class — the student
+ * stays in their cohort but sits that one module with whichever class is running
+ * it. The enrolment row records which.
+ *
+ * This resolution is why retakes work at all: assessments belong to a class, so
+ * looking them up against the student's own class found nothing and the module
+ * read as unmarked. That applied to every per-student override too, not just
+ * retakes.
+ */
+export function classForModule(db: DB, student: Student, moduleId: string): string {
+  const enrolment = (db.studentModules || []).find(
+    sm => sm.studentId === student.id && sm.moduleId === moduleId,
+  );
+  return enrolment?.classId || student.classId;
+}
+
 /** Modules a student takes: their class's linked modules, plus any per-student override. */
 export function studentModuleIds(db: DB, student: Student): string[] {
   return [...new Set([
@@ -51,10 +70,13 @@ export function studentModuleResults(
       const module = db.modules.find(m => m.id === moduleId);
       if (!module) return null;
 
-      // Assessments are set per class, so scope to the student's own class.
-      const exams = db.exams.filter(e => e.classId === student.classId && e.moduleId === moduleId);
+      // Assessments belong to a class, so scope to the class the student
+      // actually attends for THIS module — their own, or another cohort's when
+      // they are retaking.
+      const classId = classForModule(db, student, moduleId);
+      const exams = db.exams.filter(e => e.classId === classId && e.moduleId === moduleId);
       const assignments = db.assignments.filter(
-        a => a.classId === student.classId && a.moduleId === moduleId,
+        a => a.classId === classId && a.moduleId === moduleId,
       );
 
       const cat = categorizeModuleAssessments(exams, assignments);

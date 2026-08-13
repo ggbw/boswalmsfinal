@@ -233,7 +233,7 @@ export function useDbData() {
         // at 1,000 rows and return a different subset each time.
         fetchAll("marks"),
         fetchAll("attendance"),
-        fetchAll("student_modules", "student_id,module_id,added_by,added_at"),
+        fetchAll("student_modules", "student_id,module_id,class_id,added_by,added_at"),
         supabase.from("exams").select("*"),
         // attachment_data / file_data are deliberately NOT selected: they hold
         // base64 file contents and would bloat this bulk load. The paths are
@@ -260,7 +260,7 @@ export function useDbData() {
             date: a.date, status: a.status, session: a.session || "start",
           })),
           studentModules: take("student_modules", studentModulesRes, failed).map((sm: any) => ({
-            studentId: sm.student_id, moduleId: sm.module_id,
+            studentId: sm.student_id, moduleId: sm.module_id, classId: sm.class_id || undefined,
             addedBy: sm.added_by || "", addedAt: sm.added_at || "",
           })),
           exams: take("exams", examsRes, failed).map((e: any) => ({

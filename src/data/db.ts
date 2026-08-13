@@ -221,6 +221,12 @@ export interface Room {
 export interface StudentModuleOverride {
   studentId: string;
   moduleId: string;
+  /**
+   * Class whose offering of this module the student attends. Empty means their
+   * own class. Set for retakes, where the student stays in their cohort but
+   * sits the module with a different one.
+   */
+  classId?: string;
   addedBy: string;
   addedAt: string;
 }

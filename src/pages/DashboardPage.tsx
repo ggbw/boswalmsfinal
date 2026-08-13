@@ -3,6 +3,7 @@ import { grade, gradeColor, type DB, type Student } from '@/data/db';
 import { useAssessmentMarks } from '@/hooks/useAssessmentMarks';
 import { studentModuleResults } from '@/lib/studentMarks';
 import { PrincipalDashboard, HodDashboard, LecturerDashboard } from '@/pages/RoleDashboards';
+import StudentRegistrationPanel from '@/components/StudentRegistrationPanel';
 
 /**
  * Student dashboard. Marks come from assessment_marks; this previously read
@@ -32,6 +33,7 @@ function StudentDashboard({ stu, db }: { stu: Student; db: DB }) {
         <div className="stat-card"><div className="stat-icon" style={{ background: '#f0e6ff' }}><i className="fa-solid fa-school" style={{ color: '#6639ba' }} /></div><div><div className="stat-val">{cls?.name || '—'}</div><div className="stat-label">My Class</div></div></div>
       </div>
       <div className="two-col">
+        <StudentRegistrationPanel student={stu} />
         <div className="card"><div className="card-title"><span><i className="fa-solid fa-book-open" /> My Modules &amp; Marks</span></div>
           {loading
             ? <div style={{ color: 'var(--text2)', fontSize: 12, padding: '10px 0' }}>Loading marks…</div>

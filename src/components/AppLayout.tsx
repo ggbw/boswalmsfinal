@@ -23,6 +23,7 @@ import MyStudentsPage from '@/pages/MyStudentsPage';
 import MyModulesPage from '@/pages/MyModulesPage';
 import MappingPage from '@/pages/MappingPage';
 import UserManagementPage from '@/pages/UserManagementPage';
+import RegistrationsPage from '@/pages/RegistrationsPage';
 import PhotoGalleryPage from '@/pages/PhotoGalleryPage';
 import NotesPage from '@/pages/NotesPage';
 import HRComingSoonPage from '@/pages/hr/HRComingSoonPage';
@@ -114,7 +115,7 @@ const pageComponents: Record<string, React.ComponentType> = {
   notifications: NotificationsPage, profile: ProfilePage, grades: GradesPage,
   mystudents: MyStudentsPage, mytimetable: MyStudentsPage,
   mymodules: MyModulesPage, mapping: MappingPage,
-  usermanagement: UserManagementPage, photogallery: PhotoGalleryPage, notes: NotesPage,
+  usermanagement: UserManagementPage, registrations: RegistrationsPage, photogallery: PhotoGalleryPage, notes: NotesPage,
   ...hrPlaceholders,
   // Real HR pages override the placeholders
   'hr-dashboard': HRDashboardPage,
@@ -174,6 +175,8 @@ const ROLE_PAGES: Record<string, string[]> = {
   transcripts:    ['admin','super_admin','hod','hoa','student','principal','deputy_principal'],
   admissions:     ['admin','super_admin','principal'],
   progression:    ['admin','super_admin','hod','hoa','principal','deputy_principal'],
+  // Approving a registration is what advances a student, so it is admin-only.
+  registrations:  ['admin','super_admin'],
   config:         ['admin','super_admin'],
   grades:         ['admin','super_admin','hod','hoa','principal','deputy_principal'],
   mystudents:     ['hod','hoa','lecturer'],
