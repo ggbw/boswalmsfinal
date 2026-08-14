@@ -1714,6 +1714,7 @@ export type Database = {
           file_name: string
           file_path: string
           id: string
+          link_url: string | null
           module_id: string
           title: string
           uploaded_at: string | null
@@ -1723,6 +1724,7 @@ export type Database = {
           file_name: string
           file_path: string
           id: string
+          link_url?: string | null
           module_id: string
           title: string
           uploaded_at?: string | null
@@ -1732,6 +1734,7 @@ export type Database = {
           file_name?: string
           file_path?: string
           id?: string
+          link_url?: string | null
           module_id?: string
           title?: string
           uploaded_at?: string | null
@@ -2914,6 +2917,7 @@ export type Database = {
       [_ in never]: never
     }
     Functions: {
+      activate_student_account: { Args: { p_user_id?: string }; Returns: Json }
       can_view_school: { Args: { _uid: string }; Returns: boolean }
       check_username_available: {
         Args: { p_exclude_id?: string; p_username: string }
