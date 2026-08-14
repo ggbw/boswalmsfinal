@@ -58,6 +58,31 @@ export function classForModule(db: DB, student: Student, moduleId: string): stri
   return enrolment?.classId || student.classId;
 }
 
+/**
+ * Assignments a student should see.
+ *
+ * Match on the CLASS they attend for that module, not on the module alone.
+ * Matching by module was wrong in both directions at once:
+ *
+ *   • An assignment set FOR a class was invisible whenever its module was not
+ *     linked to that class in module_classes. Ramseys and Reubens each had one.
+ *   • An assignment set for ANOTHER class sharing the module showed up. Cert
+ *     Jan 2025 had none of its own and was being shown two.
+ *
+ * An assignment with no class named belongs to the module, so everyone taking
+ * the module sees it — that is how a lecturer sets one piece of work for every
+ * class doing the subject.
+ */
+export function assignmentsForStudent<T extends { moduleId: string; classId?: string | null }>(
+  db: DB, student: Student, assignments: T[],
+): T[] {
+  const mine = new Set(studentModuleIds(db, student));
+  return assignments.filter(a =>
+    a.classId
+      ? a.classId === classForModule(db, student, a.moduleId)
+      : mine.has(a.moduleId));
+}
+
 /** Modules a student takes: their class's linked modules, plus any per-student override. */
 export function studentModuleIds(db: DB, student: Student): string[] {
   return [...new Set([

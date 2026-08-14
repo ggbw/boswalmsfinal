@@ -426,8 +426,37 @@ export default function UserManagementPage() {
     const errored = results.filter(r => r.status === 'error');
     const s = data?.summary || {};
 
+    // Nothing created. If any FAILED, the reasons matter more than the count —
+    // this used to toast "5 errors" and return, leaving no way to see what they
+    // were. An error you cannot read is not a report.
     if (created.length === 0) {
-      toast(`No new accounts. ${s.existing || 0} already existed, ${s.errors || 0} errors.`, errored.length ? 'error' : 'info');
+      if (errored.length === 0) {
+        toast(`No new accounts — all ${s.existing || 0} students already have one.`, 'info');
+        return;
+      }
+      showModal(`${errored.length} account(s) could not be created`, (
+        <div>
+          <div style={{ background: 'var(--bg2)', borderLeft: '3px solid #cf222e', borderRadius: 6, padding: '10px 14px', marginBottom: 12, fontSize: 12, color: 'var(--text2)', lineHeight: 1.6 }}>
+            {s.existing || 0} student(s) already had an account and were skipped.
+            The rest failed for the reasons below.
+          </div>
+          <div className="table-wrap" style={{ maxHeight: 340, overflowY: 'auto' }}>
+            <table>
+              <thead><tr><th>Student</th><th>ID</th><th>Email tried</th><th>Reason</th></tr></thead>
+              <tbody>
+                {errored.map(r => (
+                  <tr key={r.student_id}>
+                    <td className="td-name">{r.name}</td>
+                    <td style={{ fontFamily: "'JetBrains Mono',monospace", fontSize: 11 }}>{r.student_id}</td>
+                    <td style={{ fontFamily: "'JetBrains Mono',monospace", fontSize: 11 }}>{r.email || '—'}</td>
+                    <td style={{ fontSize: 12, color: '#cf222e' }}>{r.error || 'Unknown'}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      ), 'large');
       return;
     }
 

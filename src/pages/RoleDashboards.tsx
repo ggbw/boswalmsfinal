@@ -17,6 +17,7 @@ import {
   type DepartmentStats,
 } from '@/hooks/useDashboardStats';
 import { resolveDepartment } from '@/lib/scope';
+import { DeptPerformanceChart, BreakdownDonut } from '@/components/charts/DashboardCharts';
 
 // ── Shared pieces ───────────────────────────────────────────────────────────
 
@@ -158,7 +159,21 @@ export function PrincipalDashboard({ academicOnly }: { academicOnly: boolean }) 
           {depts.loading ? <Empty text="Loading departments…" />
             : depts.error ? <Empty text={`Could not load: ${depts.error}`} />
             : !depts.data?.length ? <Empty text="No departments configured." />
-            : <DeptTable rows={depts.data} metric="attendance_rate" />}
+            : (
+              <>
+                <DeptPerformanceChart rows={depts.data} />
+                {/* The table stays: it is the accessible view of the same data,
+                    and it carries the columns the chart does not. */}
+                <details style={{ marginTop: 10 }}>
+                  <summary style={{ fontSize: 11, color: 'var(--text2)', cursor: 'pointer' }}>
+                    Show as a table
+                  </summary>
+                  <div style={{ marginTop: 8 }}>
+                    <DeptTable rows={depts.data} metric="attendance_rate" />
+                  </div>
+                </details>
+              </>
+            )}
         </Panel>
 
         <Panel title="Needs attention" icon="fa-solid fa-triangle-exclamation">
@@ -200,14 +215,9 @@ export function PrincipalDashboard({ academicOnly }: { academicOnly: boolean }) 
           {Object.keys(s.applications || {}).length === 0
             ? <Empty text="No applications recorded." />
             : (
-              <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap', paddingTop: 8 }}>
-                {Object.entries(s.applications).map(([status, n]) => (
-                  <div key={status} style={{ background: 'var(--bg2)', borderRadius: 8, padding: '10px 16px', minWidth: 110 }}>
-                    <div style={{ fontSize: 20, fontWeight: 700, fontFamily: "'JetBrains Mono',monospace" }}>{n}</div>
-                    <div style={{ fontSize: 11, color: 'var(--text2)', textTransform: 'capitalize' }}>{status.replace(/_/g, ' ')}</div>
-                  </div>
-                ))}
-              </div>
+              <BreakdownDonut
+                data={Object.entries(s.applications).map(([name, value]) => ({ name, value }))}
+              />
             )}
         </Panel>
       )}
@@ -294,7 +304,15 @@ export function HodDashboard() {
 
         <Panel title="How the department compares" icon="fa-solid fa-chart-column"
                action={<button className="btn btn-outline btn-sm" onClick={() => navigate('reports')}>Reports</button>}>
-          {!depts.data?.length ? <Empty text="No comparison available." /> : <DeptTable rows={depts.data} metric="attendance_rate" />}
+          {!depts.data?.length ? <Empty text="No comparison available." /> : (
+            <>
+              <DeptPerformanceChart rows={depts.data} />
+              <details style={{ marginTop: 10 }}>
+                <summary style={{ fontSize: 11, color: 'var(--text2)', cursor: 'pointer' }}>Show as a table</summary>
+                <div style={{ marginTop: 8 }}><DeptTable rows={depts.data} metric="attendance_rate" /></div>
+              </details>
+            </>
+          )}
         </Panel>
       </div>
     </>
@@ -386,6 +404,25 @@ export function LecturerDashboard() {
               </button>
             </div>
           )}
+        </Panel>
+
+        <Panel title="Outstanding marking" icon="fa-solid fa-chart-pie">
+          {/* What is LEFT, split by kind — not a progress ring. The stats
+              function counts only outstanding work; there is no "done" figure
+              to divide by, and a denominator built out of the student count
+              would be a different quantity wearing the same label. Two honest
+              slices beat a percentage of nothing. */}
+          {todo === 0
+            ? <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center',
+                            gap: 8, height: 190, color: 'var(--viz-good)', fontSize: 13, fontWeight: 600 }}>
+                <i className="fa-solid fa-circle-check" /> All marking is up to date
+              </div>
+            : <BreakdownDonut
+                data={[
+                  { name: 'Submissions to grade', value: s.ungraded_submissions },
+                  { name: 'Assessments not started', value: s.unmarked_assessments },
+                ]}
+              />}
         </Panel>
 
         <Panel title="My modules" icon="fa-solid fa-book-open"

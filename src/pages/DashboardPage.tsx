@@ -1,9 +1,10 @@
 import { useApp } from '@/context/AppContext';
 import { grade, gradeColor, type DB, type Student } from '@/data/db';
 import { useAssessmentMarks } from '@/hooks/useAssessmentMarks';
-import { studentModuleResults } from '@/lib/studentMarks';
+import { studentModuleResults, assignmentsForStudent } from '@/lib/studentMarks';
 import { PrincipalDashboard, HodDashboard, LecturerDashboard } from '@/pages/RoleDashboards';
 import StudentRegistrationPanel from '@/components/StudentRegistrationPanel';
+import { ModuleMarksChart } from '@/components/charts/DashboardCharts';
 
 /**
  * Student dashboard. Marks come from assessment_marks; this previously read
@@ -21,7 +22,9 @@ function StudentDashboard({ stu, db }: { stu: Student; db: DB }) {
   // attendance.student_id holds students.id (the record key), not the number.
   const stuAtt = db.attendance.filter(a => a.studentId === stu.id);
   const attPct2 = stuAtt.length ? Math.round(stuAtt.filter(a => a.status === 'present').length / stuAtt.length * 100) : 0;
-  const stuAssign = db.assignments.filter(a => a.classId === stu.classId);
+  // Same rule as the Assignments page — matching classId alone missed work
+  // set for the module rather than a named class.
+  const stuAssign = assignmentsForStudent(db, stu, db.assignments);
 
   return (
     <>
@@ -38,10 +41,25 @@ function StudentDashboard({ stu, db }: { stu: Student; db: DB }) {
           {loading
             ? <div style={{ color: 'var(--text2)', fontSize: 12, padding: '10px 0' }}>Loading marks…</div>
             : marked.length
-              ? marked.map(({ module, mark }) => {
-                  const g = grade(mark.moduleMark);
-                  return <div key={module.id} className="info-row"><span className="info-label">{module.name}</span><div style={{ display: 'flex', gap: 6, alignItems: 'center' }}><span style={{ fontWeight: 700, fontFamily: "'JetBrains Mono', monospace" }}>{mark.moduleMark}%</span><span className={`badge ${gradeColor(g)}`}>{g}</span></div></div>;
-                })
+              ? (
+                <>
+                  {/* Bars against the pass line: which modules are safe and which
+                      need work reads instantly, where a column of numbers does
+                      not. Pass/fail is STATUS colour, never a data series. */}
+                  <ModuleMarksChart
+                    data={marked.map(({ module, mark }) => ({
+                      name: module.name.length > 22 ? module.name.slice(0, 21) + '…' : module.name,
+                      mark: mark.moduleMark,
+                    }))}
+                  />
+                  <div style={{ marginTop: 10 }}>
+                    {marked.map(({ module, mark }) => {
+                      const g = grade(mark.moduleMark);
+                      return <div key={module.id} className="info-row"><span className="info-label">{module.name}</span><div style={{ display: 'flex', gap: 6, alignItems: 'center' }}><span style={{ fontWeight: 700, fontFamily: "'JetBrains Mono', monospace" }}>{mark.moduleMark}%</span><span className={`badge ${gradeColor(g)}`}>{g}</span></div></div>;
+                    })}
+                  </div>
+                </>
+              )
               : <div style={{ color: 'var(--text2)', fontSize: 12, padding: '10px 0' }}>No marks recorded yet</div>}
         </div>
         <div className="card"><div className="card-title"><span><i className="fa-solid fa-calendar-check" /> Upcoming Assignments</span></div>

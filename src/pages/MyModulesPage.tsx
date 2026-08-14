@@ -1,6 +1,6 @@
 import { useApp } from "@/context/AppContext";
 import { grade, gradeColor, type DB, type Student } from "@/data/db";
-import { getLecturerForModuleClass } from "@/lib/lecturerHelpers";
+import { getLecturersForModuleClass } from "@/lib/lecturerHelpers";
 import { useAssessmentMarks } from "@/hooks/useAssessmentMarks";
 import { studentModuleResults, studentAverage } from "@/lib/studentMarks";
 
@@ -58,15 +58,18 @@ function MyModulesInner({ stu, db }: { stu: Student; db: DB }) {
   const avgMark = studentAverage(results);
 
   const getLecturer = (mod: (typeof currentMods)[0]) => {
-    // Find all lecturers assigned to this module across its classes
+    // Every lecturer teaching this module, across the classes it runs in. This
+    // used to take the FIRST match per class, so a co-taught module showed one
+    // name and the second assignment looked as though it had not saved.
     const lecturerIds = [...new Set(
-      mod.classes.flatMap(cid => {
-        const lmEntry = db.lecturerModules.find(lm => lm.moduleId === mod.id && lm.classId === cid);
-        return lmEntry ? [lmEntry.lecturerId] : [];
-      })
+      (mod.classes || []).flatMap((cid: string) =>
+        getLecturersForModuleClass(db.lecturerModules, mod.id, cid),
+      ),
     )];
-    const lecturerNames = lecturerIds.map(lid => db.users.find(u => u.id === lid)?.name).filter(Boolean);
-    return lecturerNames.join(", ") || "—";
+    const names = lecturerIds
+      .map((lid) => db.users.find((u) => u.id === lid)?.name)
+      .filter(Boolean);
+    return names.join(", ") || "—";
   };
 
   const renderModuleCard = (m: (typeof currentMods)[0], isPast: boolean) => {

@@ -274,3 +274,50 @@ tr:hover td { background: #fafbfc; }
 /* Module mapping */
 .map-cls-tab { background: var(--surface2); border: 1px solid var(--border); color: var(--text2); padding: 6px 14px; border-radius: 6px; font-size: 12px; cursor: pointer; transition: all .15s; white-space: nowrap; }
 .map-cls-tab:hover { color: var(--text); }
+
+/* ── Chart tokens ─────────────────────────────────────────────────────────────
+   Three categorical slots, validated in BOTH modes on the all-pairs pairlist
+   (pie slices and grouped bars put every pair on screen together):
+     CVD ΔE 9.2 light / 9.4 dark (≥8) · normal-vision ΔE 24.0 / 20.9 (≥15).
+   Light aqua is 2.82:1 on white — below 3:1 — so every chart carries visible
+   value labels (the relief rule). Dark steps are chosen for the dark surface,
+   not an automatic inversion of the light ones.
+   Status colours are separate and never reused as a data series. */
+:root {
+  --viz-1: #2a78d6;   /* blue   */
+  --viz-2: #eb6834;   /* orange */
+  --viz-3: #1baf7a;   /* aqua   */
+  --viz-other: #8b8b86;
+  --viz-good: #1a7f37;
+  --viz-bad:  #cf222e;
+  --viz-grid: #e8eaed;
+  --viz-axis: #6e7681;
+  --viz-surface: #ffffff;
+  --viz-hover: rgba(42,120,214,.07);
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --viz-1: #3987e5;
+    --viz-2: #d95926;
+    --viz-3: #199e70;
+    --viz-other: #7d7d78;
+    --viz-good: #3fb950;
+    --viz-bad:  #f85149;
+    --viz-grid: #263450;
+    --viz-axis: #8b949e;
+    --viz-surface: #121b2e;
+    --viz-hover: rgba(57,135,229,.12);
+  }
+}
+:root[data-theme="dark"] {
+  --viz-1: #3987e5;
+  --viz-2: #d95926;
+  --viz-3: #199e70;
+  --viz-other: #7d7d78;
+  --viz-good: #3fb950;
+  --viz-bad:  #f85149;
+  --viz-grid: #263450;
+  --viz-axis: #8b949e;
+  --viz-surface: #121b2e;
+  --viz-hover: rgba(57,135,229,.12);
+}

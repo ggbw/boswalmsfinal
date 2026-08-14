@@ -38,32 +38,50 @@ function ModuleAssignmentPanel({ classId, onClose }: { classId: string; onClose:
     return aLinked - bLinked || a.name.localeCompare(b.name);
   });
 
-  const getLecturerId = (moduleId: string) =>
-    db.lecturerModules.find((lm) => lm.moduleId === moduleId && lm.classId === classId)?.lecturerId || "";
+  /**
+   * Every lecturer teaching this module to this class.
+   *
+   * lecturer_modules is unique on (lecturer, module, class), so co-teaching has
+   * always been legal in the database. This panel just never allowed it: it
+   * found the FIRST row for a module and UPDATED it, so assigning a second
+   * lecturer silently replaced the first.
+   */
+  const getLecturerIds = (moduleId: string) =>
+    db.lecturerModules
+      .filter((lm) => lm.moduleId === moduleId && lm.classId === classId)
+      .map((lm) => lm.lecturerId);
 
-  const handleAssign = async (moduleId: string, lecturerId: string) => {
-    setSaving(moduleId);
-    const existing = db.lecturerModules.find((lm) => lm.moduleId === moduleId && lm.classId === classId);
-    if (existing) {
-      if (lecturerId === "") {
-        const { error } = await supabase.from("lecturer_modules").delete().eq("id", existing.id);
-        if (error) toast(error.message, "error");
-        else { toast("Assignment removed", "success"); reloadDb(); }
-      } else {
-        const { error } = await supabase.from("lecturer_modules").update({ lecturer_id: lecturerId }).eq("id", existing.id);
-        if (error) toast(error.message, "error");
-        else { toast("Lecturer updated", "success"); reloadDb(); }
-      }
-    } else if (lecturerId !== "") {
-      const { error } = await supabase.from("lecturer_modules").insert({
-        id: "lm_" + Date.now() + "_" + moduleId,
-        lecturer_id: lecturerId,
-        module_id: moduleId,
-        class_id: classId,
-      });
-      if (error) toast(error.message, "error");
-      else { toast("Lecturer assigned", "success"); reloadDb(); }
+  /** Add a lecturer to a module. Existing assignments are left alone. */
+  const handleAdd = async (moduleId: string, lecturerId: string) => {
+    if (!lecturerId) return;
+    if (getLecturerIds(moduleId).includes(lecturerId)) {
+      toast("That lecturer is already assigned to this module", "error");
+      return;
     }
+    setSaving(moduleId);
+    const { error } = await supabase.from("lecturer_modules").insert({
+      // Two lecturers can be added in the same millisecond, so the id carries
+      // the lecturer too — a bare timestamp collided and lost the second.
+      id: "lm_" + Date.now() + "_" + moduleId + "_" + lecturerId.slice(0, 8),
+      lecturer_id: lecturerId,
+      module_id: moduleId,
+      class_id: classId,
+    });
+    if (error) toast(error.message, "error");
+    else { toast("Lecturer assigned", "success"); reloadDb(); }
+    setSaving(null);
+  };
+
+  /** Remove one lecturer from a module, leaving any co-teachers in place. */
+  const handleRemove = async (moduleId: string, lecturerId: string) => {
+    setSaving(moduleId);
+    const row = db.lecturerModules.find(
+      (lm) => lm.moduleId === moduleId && lm.classId === classId && lm.lecturerId === lecturerId,
+    );
+    if (!row) { setSaving(null); return; }
+    const { error } = await supabase.from("lecturer_modules").delete().eq("id", row.id);
+    if (error) toast(error.message, "error");
+    else { toast("Assignment removed", "success"); reloadDb(); }
     setSaving(null);
   };
 
@@ -98,18 +116,57 @@ function ModuleAssignmentPanel({ classId, onClose }: { classId: string; onClose:
                   </div>
                 </td>
                 <td style={{ padding: "6px 8px" }}>
-                  <select
-                    className="form-select"
-                    value={getLecturerId(mod.id)}
-                    disabled={saving === mod.id}
-                    onChange={(e) => handleAssign(mod.id, e.target.value)}
-                    style={{ fontSize: 12, minWidth: 180 }}
-                  >
-                    <option value="">— Unassigned —</option>
-                    {lecturers.map((l) => (
-                      <option key={l.id} value={l.id}>{l.name}</option>
-                    ))}
-                  </select>
+                  {(() => {
+                    const assigned = getLecturerIds(mod.id);
+                    const available = lecturers.filter((l) => !assigned.includes(l.id));
+                    return (
+                      <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+                        {/* Each assignment removable on its own, so removing one
+                            co-teacher leaves the other in place. */}
+                        {assigned.length > 0 && (
+                          <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
+                            {assigned.map((id) => (
+                              <span
+                                key={id}
+                                className="badge badge-pass"
+                                style={{ display: "inline-flex", alignItems: "center", gap: 6 }}
+                              >
+                                {db.users.find((u) => u.id === id)?.name || id}
+                                <button
+                                  type="button"
+                                  onClick={() => handleRemove(mod.id, id)}
+                                  disabled={saving === mod.id}
+                                  title="Remove this lecturer"
+                                  aria-label={`Remove ${db.users.find((u) => u.id === id)?.name || "lecturer"}`}
+                                  style={{ background: "none", border: "none", cursor: "pointer", color: "inherit", padding: 0, fontSize: 12, lineHeight: 1 }}
+                                >
+                                  ×
+                                </button>
+                              </span>
+                            ))}
+                          </div>
+                        )}
+                        <select
+                          className="form-select"
+                          value=""
+                          disabled={saving === mod.id || available.length === 0}
+                          onChange={(e) => handleAdd(mod.id, e.target.value)}
+                          style={{ fontSize: 12, minWidth: 180 }}
+                        >
+                          <option value="">
+                            {assigned.length === 0
+                              ? "— Unassigned —"
+                              : available.length === 0
+                                ? "— all lecturers assigned —"
+                                : "+ Add another lecturer"}
+                          </option>
+                          {available.map((l) => (
+                            <option key={l.id} value={l.id}>{l.name}</option>
+                          ))}
+                        </select>
+                      </div>
+                    );
+                  })()}
                 </td>
               </tr>
             );

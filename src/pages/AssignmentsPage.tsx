@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { useApp } from '@/context/AppContext';
 import { supabase } from '@/integrations/supabase/client';
 import { getScopedClassIds, getScopedModuleIds, isUnrestricted, canManageAcademics } from '@/lib/scope';
+import { assignmentsForStudent } from '@/lib/studentMarks';
 import { ACCEPT_DOCUMENTS, MAX_ASSIGNMENT_BYTES, checkUpload } from '@/lib/uploads';
 
 const BUCKET = 'assignment-files';
@@ -246,11 +247,9 @@ export default function AssignmentsPage() {
   }
 
   if (role === 'student' && currentStudent) {
-    const myModuleIds = db.modules.filter(m => m.classes.includes(currentStudent.classId)).map(m => m.id);
-    const overrideModuleIds = db.studentModules.filter(sm => sm.studentId === currentStudent.id).map(sm => sm.moduleId);
-    const allModuleIds = [...new Set([...myModuleIds, ...overrideModuleIds])];
-    assignments = assignments.filter(a => allModuleIds.includes(a.moduleId));
+    assignments = assignmentsForStudent(db, currentStudent, assignments);
   }
+
 
   const handleCreateAssignment = () => {
     // Scope the pickers to what this person may work with. `isAdmin` alone was
