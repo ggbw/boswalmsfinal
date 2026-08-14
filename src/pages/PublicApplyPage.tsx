@@ -394,7 +394,9 @@ function RegistrationForm({
           >
             Applying for
           </div>
-          <div style={{ color: "#fff", fontSize: 18, fontWeight: 800, marginTop: 2 }}>{firstChoice.name}</div>
+          <h1 style={{ color: "#fff", fontSize: 18, fontWeight: 800, marginTop: 2 }}>
+            Apply for {firstChoice.name} — Boswa Culinary Institute
+          </h1>
           <div style={{ display: "flex", gap: 8, marginTop: 6 }}>
             <Chip col="#C9A227">{firstChoice.type}</Chip>
             {firstChoice.level && <Chip col="#C9A227">Level {firstChoice.level}</Chip>}
