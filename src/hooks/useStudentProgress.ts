@@ -16,7 +16,8 @@
  *   taken, by someone who can see what they are approving.
  */
 
-import { useMemo } from 'react';
+import { useEffect, useMemo, useState } from 'react';
+import { supabase } from '@/integrations/supabase/client';
 import type { DB, Student } from '@/data/db';
 import { useAssessmentMarks } from './useAssessmentMarks';
 import { studentModuleResults, classForModule, type StudentModuleResult } from '@/lib/studentMarks';
@@ -58,6 +59,51 @@ export function useStudentProgress(db: DB, student: Student | null): StudentProg
     studentNumbers: student ? [student.studentId] : [],
   });
 
+  /**
+   * The modules this student is actually taking THIS semester.
+   *
+   * Their class's curriculum is not the answer. A student repeating a semester
+   * stays in their own class — so the class still lists every module, including
+   * the ones they already passed. Judging them on that would mark a repeating
+   * student as having passed everything the moment they registered, and progress
+   * them again without doing any work.
+   *
+   * The approved registration is the record of what they are taking. Where one
+   * exists for their current year and semester, it is authoritative. Where none
+   * does — a student who has never registered, or a first semester — fall back
+   * to the class curriculum, which is the right answer for them.
+   */
+  const [registeredModuleIds, setRegisteredModuleIds] = useState<string[] | null>(null);
+
+  useEffect(() => {
+    if (!student) { setRegisteredModuleIds(null); return; }
+    let cancelled = false;
+    (async () => {
+      const { data: reg } = await supabase
+        .from('student_registrations' as never)
+        .select('id')
+        .eq('student_id', student.id)
+        .eq('year', student.year)
+        .eq('semester', student.semester)
+        .eq('status', 'approved')
+        .maybeSingle();
+      if (cancelled) return;
+      const regId = (reg as { id?: string } | null)?.id;
+      if (!regId) { setRegisteredModuleIds(null); return; }
+
+      const { data: mods } = await supabase
+        .from('student_registration_modules' as never)
+        .select('module_id')
+        .eq('registration_id', regId);
+      if (cancelled) return;
+      const ids = ((mods || []) as unknown as { module_id: string }[]).map(m => m.module_id);
+      // An approved registration with no modules tells us nothing useful —
+      // treat it as absent rather than as "taking nothing".
+      setRegisteredModuleIds(ids.length ? ids : null);
+    })();
+    return () => { cancelled = true; };
+  }, [student?.id, student?.year, student?.semester]);
+
   return useMemo(() => {
     if (!student || loading) {
       return {
@@ -66,7 +112,11 @@ export function useStudentProgress(db: DB, student: Student | null): StudentProg
       };
     }
 
-    const results = studentModuleResults(db, student, scoreOf);
+    const all = studentModuleResults(db, student, scoreOf);
+    // Narrow to what they registered for, when we know it.
+    const results = registeredModuleIds
+      ? all.filter(r => registeredModuleIds.includes(r.module.id))
+      : all;
 
     const standings: ModuleStanding[] = results.map(result => {
       // ONLY the Final Theory Exam can be supplemented.
@@ -145,5 +195,5 @@ export function useStudentProgress(db: DB, student: Student | null): StudentProg
       // Only meaningful once settled — a verdict mid-marking would be wrong.
       verdict: settledCheck.settled ? semesterVerdict(decided, carriedDecided) : null,
     };
-  }, [db, student, scoreOf, loading, error]);
+  }, [db, student, scoreOf, loading, error, registeredModuleIds]);
 }

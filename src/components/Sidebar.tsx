@@ -491,6 +491,19 @@ export default function Sidebar() {
           <div className="name">Boswa CIB SMS</div>
           <div className="sub">School Management</div>
         </div>
+        {/* Sits beside the brand so it is where the eye already is, and stays
+            reachable when collapsed — a toggle you cannot find to undo is worse
+            than no toggle. */}
+        <button
+          type="button"
+          className="sidebar-toggle"
+          onClick={toggleCollapsed}
+          title={collapsed ? "Expand sidebar" : "Collapse sidebar"}
+          aria-label={collapsed ? "Expand sidebar" : "Collapse sidebar"}
+          aria-expanded={!collapsed}
+        >
+          <i className={`fa-solid ${collapsed ? "fa-angles-right" : "fa-angles-left"}`} />
+        </button>
       </div>
       <div className="nav-menu">
         {navConfig.map((sec) => (
@@ -500,17 +513,6 @@ export default function Sidebar() {
           </div>
         ))}
       </div>
-      <button
-        type="button"
-        className="sidebar-toggle"
-        onClick={toggleCollapsed}
-        title={collapsed ? "Expand sidebar" : "Collapse sidebar"}
-        aria-label={collapsed ? "Expand sidebar" : "Collapse sidebar"}
-        aria-expanded={!collapsed}
-      >
-        <i className={`fa-solid ${collapsed ? "fa-angles-right" : "fa-angles-left"}`} />
-        <span>Collapse</span>
-      </button>
       <div className="sidebar-footer" onClick={() => navigate("profile")}>
         <div className="s-avatar" style={{ background: "linear-gradient(135deg,#d4920a,#f0b429)" }}>
           {currentUser?.name?.[0]?.toUpperCase() || "A"}

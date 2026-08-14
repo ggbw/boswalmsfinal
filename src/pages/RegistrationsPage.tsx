@@ -13,6 +13,7 @@
 
 import { useCallback, useEffect, useState } from 'react';
 import { useApp } from '@/context/AppContext';
+import { needsAcademicReview, MAX_SEMESTER_ATTEMPTS } from '@/lib/progression';
 import { supabase } from '@/integrations/supabase/client';
 
 interface RegModule {
@@ -64,6 +65,18 @@ export default function RegistrationsPage() {
   useEffect(() => { load(); }, [load]);
 
   const studentOf = (id: string) => db.students.find(s => s.id === id);
+
+  /**
+   * How many times this student has registered for this same year and semester.
+   *
+   * Shown to the admin because this is where the decision is made. The student
+   * sees the same count on their dashboard, but only an administrator can act
+   * on it — the system never excludes anyone by itself.
+   */
+  const attemptsAt = (r: Registration) =>
+    rows.filter(x => x.student_id === r.student_id
+                  && x.year === r.year && x.semester === r.semester
+                  && x.status !== 'rejected').length;
   const moduleName = (id: string) => db.modules.find(m => m.id === id)?.name || id;
   const className = (id: string | null) => (id ? db.classes.find(c => c.id === id)?.name || id : null);
 
@@ -84,7 +97,12 @@ export default function RegistrationsPage() {
       return;
     }
 
+    const attempts = attemptsAt(r);
     if (!confirm(
+      (needsAcademicReview(attempts)
+        ? `⚠ This is attempt ${attempts} at Year ${r.year} Semester ${r.semester}.\n`
+          + `After ${MAX_SEMESTER_ATTEMPTS} attempts this should go to academic review first.\n\n`
+        : '') +
       `Approve ${student.name}'s registration?\n\n` +
       `• They move to Year ${r.year} · Semester ${r.semester}\n` +
       (retakes.length ? `• ${retakes.length} retake module(s) enrolled with the chosen class\n` : '') +
@@ -129,7 +147,13 @@ export default function RegistrationsPage() {
       // 4. Tell them. user_notifications is per-user — the `notifications` table
       //    is a broadcast every account can read, so it cannot carry this.
       //    A failure here must not undo the approval.
-      const profile = db.users.find(u => u.studentId === student.studentId);
+      // Match on EITHER profile link — a profile carrying only student_ref would
+      // otherwise resolve to nobody and the student would never learn they had
+      // been approved.
+      const profile = db.users.find(
+        u => (u.studentId && u.studentId === student.studentId)
+          || (u.studentRef && u.studentRef === student.id),
+      );
       if (profile) {
         await supabase.from('user_notifications' as never).insert({
           user_id: profile.id,
@@ -141,7 +165,12 @@ export default function RegistrationsPage() {
         } as never);
       }
 
-      toast(`${student.name} moved to Year ${r.year} Semester ${r.semester}`, 'success');
+      toast(
+        profile
+          ? `${student.name} moved to Year ${r.year} Semester ${r.semester}`
+          : `${student.name} moved to Year ${r.year} Semester ${r.semester} — but they have no login, so no notification was sent.`,
+        profile ? 'success' : 'info',
+      );
       load();
     } catch (err) {
       toast(err instanceof Error ? err.message : 'Approval failed', 'error');
@@ -167,7 +196,10 @@ export default function RegistrationsPage() {
       .eq('id', r.id);
     if (err) { toast(err.message, 'error'); setBusyId(null); return; }
 
-    const profile = db.users.find(u => u.studentId === student?.studentId);
+    const profile = db.users.find(
+      u => (u.studentId && u.studentId === student?.studentId)
+        || (u.studentRef && student && u.studentRef === student.id),
+    );
     if (profile) {
       await supabase.from('user_notifications' as never).insert({
         user_id: profile.id,
@@ -177,7 +209,9 @@ export default function RegistrationsPage() {
         related_id: r.id,
       } as never);
     }
-    toast('Registration rejected and the student notified', 'success');
+    toast(profile
+      ? 'Registration rejected and the student notified'
+      : 'Registration rejected — the student has no login, so no notification was sent.', 'success');
     setBusyId(null);
     load();
   };
@@ -242,9 +276,27 @@ export default function RegistrationsPage() {
                     {' · '}submitted {new Date(r.submitted_at).toLocaleDateString('en-GB')}
                   </div>
                 </div>
-                <span className={`badge ${r.status === 'approved' ? 'badge-pass' : r.status === 'rejected' ? 'badge-fail' : 'badge-active'}`}>
-                  {r.status}
-                </span>
+                <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
+                  {(() => {
+                    const n = attemptsAt(r);
+                    if (n <= 1) return null;
+                    const flag = needsAcademicReview(n);
+                    return (
+                      <span
+                        className={`badge ${flag ? 'badge-fail' : 'badge-active'}`}
+                        title={flag
+                          ? `Attempt ${n} at this semester — at ${MAX_SEMESTER_ATTEMPTS} this needs academic review before approval.`
+                          : `Attempt ${n} at this semester.`}
+                      >
+                        {flag && <i className="fa-solid fa-triangle-exclamation" style={{ marginRight: 5 }} />}
+                        Attempt {n}
+                      </span>
+                    );
+                  })()}
+                  <span className={`badge ${r.status === 'approved' ? 'badge-pass' : r.status === 'rejected' ? 'badge-fail' : 'badge-active'}`}>
+                    {r.status}
+                  </span>
+                </div>
               </div>
 
               {retakes.length > 0 && (

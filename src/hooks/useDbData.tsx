@@ -87,7 +87,7 @@ export function useDbData() {
         supabase.from("notifications").select("*").order("date", { ascending: false }).limit(50),
         supabase.from("rooms").select("*"),
         supabase.from("lecturer_modules").select("id,lecturer_id,module_id,class_id"),
-        supabase.from("profiles").select("user_id,name,email,dept,code,student_id"),
+        supabase.from("profiles").select("user_id,name,email,dept,code,student_id,student_ref"),
         supabase.from("user_roles").select("user_id,role"),
         supabase.from("programme_modules" as any).select("programme_id,module_id,year,semester"),
       ]);
@@ -168,6 +168,7 @@ export function useDbData() {
             role: roleMap[p.user_id] || "", name: p.name || "",
             changed: false, email: p.email || "", dept: p.dept || "",
             code: p.code || "", studentId: p.student_id || "",
+            studentRef: p.student_ref || "",
           }));
         })(),
         classes: take("classes", classesRes, failed).map((c: any) => ({
