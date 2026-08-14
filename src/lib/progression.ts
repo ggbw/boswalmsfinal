@@ -15,8 +15,10 @@
  *   50, in which case the supp was passed but the module is retaken anyway —
  *   that is intended, not a bug.
  *
- *   End of semester: up to MAX_CARRIED unpassed modules and the student may
- *   progress, carrying them. More than that and they are discontinued.
+ *   End of semester: pass at least HALF the semester's modules (retakes
+ *   excluded) and the student moves on, carrying what they did not pass. Fall
+ *   short and they REPEAT the semester — taking only the modules they failed,
+ *   not the whole curriculum. Nobody is excluded by this rule.
  *
  *   There is no limit on retake attempts.
  */
@@ -32,8 +34,38 @@ export const SUPP_TRIGGER = 45;
 /** A passed supplementary is recorded as this, however high the actual score. */
 export const SUPP_CAPPED_MARK = 50;
 
-/** Unpassed modules a student may carry into the next semester. */
-export const MAX_CARRIED_FAILURES = 2;
+/**
+ * A student must pass at least HALF the modules they took this semester.
+ *
+ * Retakes are excluded from the count — the rule is about the semester's own
+ * curriculum, not modules being carried from earlier. Half is rounded UP: with
+ * five modules a student must pass three, not two and a half.
+ */
+export const PASS_FRACTION = 0.5;
+
+export function requiredPasses(moduleCount: number): number {
+  return Math.ceil(moduleCount * PASS_FRACTION);
+}
+
+/**
+ * How many times a student may attempt the same semester before it is referred.
+ *
+ * The system does NOT exclude anyone. Reaching this simply flags the student for
+ * academic review — a person decides what happens, because ending someone's
+ * studies is not a decision an automatic rule should make on its own. Set it to
+ * 0 to turn the flag off entirely.
+ */
+export const MAX_SEMESTER_ATTEMPTS = 3;
+
+/**
+ * Has this student repeated a semester often enough to need reviewing?
+ *
+ * `attempts` is how many times they have registered for this same year and
+ * semester, including the current one.
+ */
+export function needsAcademicReview(attempts: number): boolean {
+  return MAX_SEMESTER_ATTEMPTS > 0 && attempts >= MAX_SEMESTER_ATTEMPTS;
+}
 
 /** The exams.type value that marks an assessment as a supplementary. */
 export const SUPP_EXAM_TYPE = 'Supplementary Exam';
@@ -127,55 +159,83 @@ export function semesterIsSettled(
 }
 
 export interface SemesterVerdict {
+  /** Modules counted toward the rule — this semester's own, excluding retakes. */
+  counted: number;
   passed: number;
   supp: number;
   retake: number;
+  /** How many passes were needed. */
+  required: number;
   /** Modules not yet passed — supps and retakes together. */
   outstanding: number;
-  /** True when the student may move to the next semester, carrying what they owe. */
+  /** May move to the next semester, carrying anything not passed. */
   mayProgress: boolean;
-  /** True when too many modules were failed and the student is discontinued. */
-  discontinued: boolean;
+  /**
+   * Must take this semester again — but ONLY the modules not passed, not the
+   * whole curriculum. This is not an exclusion: the student stays enrolled and
+   * repeats, which is why there is no "discontinued" outcome anywhere.
+   */
+  mustRepeat: boolean;
   reason: string;
 }
 
 /**
  * Whether a student may move on at the end of a semester.
  *
- * IMPORTANT: only call this once supplementary results are in. A module awaiting
- * a supp is not yet failed, and counting it early would discontinue students who
- * go on to pass.
+ * The rule: pass at least half the modules taken this semester, retakes
+ * excluded. Fall short and the student REPEATS the semester, taking only the
+ * modules they did not pass.
+ *
+ * `outcomes` must be the outcomes of THIS semester's own modules. Retakes being
+ * carried are passed separately as `carriedOutcomes` — they are shown to the
+ * student and stay owed, but they do not count for or against the rule.
+ *
+ * IMPORTANT: only call this once every module is fully marked and any
+ * supplementary has been sat. A module awaiting a supp is not yet failed, and
+ * judging early would discontinue students who go on to pass.
  */
-export function semesterVerdict(outcomes: Outcome[]): SemesterVerdict {
+export function semesterVerdict(
+  outcomes: Outcome[],
+  carriedOutcomes: Outcome[] = [],
+): SemesterVerdict {
+  const counted = outcomes.length;
   const passed = outcomes.filter(o => o === 'passed').length;
-  const supp = outcomes.filter(o => o === 'supp').length;
-  const retake = outcomes.filter(o => o === 'retake').length;
+  const supp = [...outcomes, ...carriedOutcomes].filter(o => o === 'supp').length;
+  const retake = [...outcomes, ...carriedOutcomes].filter(o => o === 'retake').length;
+  const required = requiredPasses(counted);
   const outstanding = supp + retake;
 
+  const base = { counted, passed, supp, retake, required, outstanding };
+
+  // Nothing is settled while a supplementary is outstanding — it may yet pass.
   if (supp > 0) {
     return {
-      passed, supp, retake, outstanding,
-      mayProgress: false,
-      discontinued: false,
+      ...base, mayProgress: false, mustRepeat: false,
       reason: `${supp} supplementary exam(s) outstanding — the result is not settled until those are sat.`,
     };
   }
 
-  if (retake > MAX_CARRIED_FAILURES) {
+  if (counted === 0) {
     return {
-      passed, supp, retake, outstanding,
-      mayProgress: false,
-      discontinued: true,
-      reason: `${retake} modules failed. More than ${MAX_CARRIED_FAILURES} is a discontinuation.`,
+      ...base, mayProgress: false, mustRepeat: false,
+      reason: 'No modules recorded for this semester.',
+    };
+  }
+
+  if (passed < required) {
+    // Repeat the semester, taking ONLY what was not passed. The student is not
+    // excluded and does not redo modules they already passed.
+    return {
+      ...base, mayProgress: false, mustRepeat: true,
+      reason: `Passed ${passed} of ${counted} modules — at least ${required} are needed to move on. `
+            + `This semester is repeated, taking only the ${counted - passed} module(s) not passed.`,
     };
   }
 
   return {
-    passed, supp, retake, outstanding,
-    mayProgress: true,
-    discontinued: false,
-    reason: retake === 0
-      ? 'All modules passed.'
-      : `${retake} module(s) to retake, carried into the next semester.`,
+    ...base, mayProgress: true, mustRepeat: false,
+    reason: passed === counted
+      ? `All ${counted} modules passed.`
+      : `Passed ${passed} of ${counted} (${required} required). ${counted - passed} module(s) carried as retakes.`,
   };
 }

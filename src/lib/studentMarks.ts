@@ -19,8 +19,24 @@ import {
 export interface StudentModuleResult {
   module: Module;
   mark: StudentModuleMark;
-  /** True when no assessment in this module has been marked for this student. */
+  /** True when NO assessment in this module has been marked for this student. */
   unmarked: boolean;
+  /**
+   * True when EVERY assessment that exists for this module has a mark.
+   *
+   * This distinction matters far more than it looks. computeStudentModuleMark
+   * treats a missing component as zero, so a student with coursework at 80% and
+   * no final exam yet scores 32% — which reads as a fail. Fine on a report a
+   * person interprets; catastrophic once that number decides progression and
+   * discontinuation.
+   *
+   * So no outcome is decided until this is true. A partly-marked module is
+   * "still being marked", not a failure.
+   */
+  fullyMarked: boolean;
+  /** How many of this module's assessments have a mark, and how many exist. */
+  markedCount: number;
+  assessmentCount: number;
 }
 
 /**
@@ -87,10 +103,18 @@ export function studentModuleResults(
         scoreOf,
       });
 
-      const unmarked = [...exams, ...assignments]
-        .every(a => scoreOf(student.studentId, a.id) === null);
+      const all = [...exams, ...assignments];
+      const markedCount = all.filter(a => scoreOf(student.studentId, a.id) !== null).length;
 
-      return { module, mark, unmarked };
+      return {
+        module, mark,
+        unmarked: markedCount === 0,
+        // A module with no assessments at all is not "fully marked" — there is
+        // nothing to have marked, so it cannot produce a result.
+        fullyMarked: all.length > 0 && markedCount === all.length,
+        markedCount,
+        assessmentCount: all.length,
+      };
     })
     .filter((r): r is StudentModuleResult => r !== null)
     .sort((a, b) => a.module.name.localeCompare(b.module.name));

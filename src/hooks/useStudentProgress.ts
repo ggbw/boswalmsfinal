@@ -27,6 +27,12 @@ import {
 
 export interface ModuleStanding {
   result: StudentModuleResult;
+  /**
+   * True when this module is being RETAKEN — carried from an earlier semester.
+   * Retakes are excluded from the pass-half rule: it measures this semester's
+   * own curriculum, not what is being carried.
+   */
+  isRetake: boolean;
   /** null when nothing has been marked — deliberately not treated as a failure. */
   outcome: Outcome | null;
   /** The final-exam component the 45% rule is judged on. */
@@ -63,17 +69,17 @@ export function useStudentProgress(db: DB, student: Student | null): StudentProg
     const results = studentModuleResults(db, student, scoreOf);
 
     const standings: ModuleStanding[] = results.map(result => {
-      // The 45% rule is judged on the FINAL exams — Written and Oral count
-      // toward coursework and are deliberately excluded.
+      // ONLY the Final Theory Exam can be supplemented.
       //
-      // NOT averaged. Where a module carries both a Final Theory and a Final
-      // Practical, EITHER falling below 45 earns a supplementary — you resit the
-      // exam you failed, and a strong mark in one does not cancel a weak mark in
-      // the other. The lowest is reported, because that is the one that
-      // triggered it.
-      const finals = [result.mark.finalTheory, result.mark.finalPrac]
-        .filter((v): v is number => v !== null && v !== undefined);
-      const examMark = finals.length ? Math.min(...finals) : null;
+      // A practical cannot be resat as a supplementary — a kitchen assessment is
+      // not something you sit again in an exam hall a fortnight later. So a
+      // module is judged for supplementary eligibility on its Final Theory Exam
+      // alone. A student who failed on the practical goes to a retake, where
+      // they do the module again in full.
+      //
+      // Written and Oral exams are excluded too: those count toward coursework,
+      // not the 40% exam component.
+      const examMark = result.mark.finalTheory ?? null;
 
       // A supplementary is an ordinary exam row typed 'Supplementary Exam', so
       // it needs no special storage — only recognising here.
@@ -87,17 +93,49 @@ export function useStudentProgress(db: DB, student: Student | null): StudentProg
       );
       const suppMark = supp ? scoreOf(student.studentId, supp.id) : null;
 
+      // A retake is an enrolment carrying a class other than the student's own —
+      // they sit that module with a different cohort.
+      const isRetake = moduleClassId !== student.classId;
+
       return {
         result,
-        outcome: result.unmarked ? null : moduleOutcome(result.mark.moduleMark, examMark),
+        isRetake,
+        // No outcome until EVERY assessment is marked. computeStudentModuleMark
+        // treats a missing component as zero, so a part-marked module scores far
+        // below what the student has actually earned — 80% coursework with no
+        // final exam yet reads as 32%. Deciding an outcome from that would tell
+        // a mid-semester cohort they had failed.
+        outcome: result.fullyMarked ? moduleOutcome(result.mark.moduleMark, examMark) : null,
         examMark,
         suppOffered: !!supp,
         suppMark,
       };
     });
 
-    const decided = standings.filter(s => s.outcome !== null).map(s => s.outcome as Outcome);
-    const settledCheck = semesterIsSettled(decided, standings.length);
+    // Which modules the pass-half rule counts.
+    //
+    // Normally: this semester's own curriculum, excluding modules carried from
+    // an earlier semester. A student progressing with 5 new modules and 2 carried
+    // must pass 3 of the 5.
+    //
+    // BUT a student REPEATING a semester takes ONLY the modules they failed —
+    // every one of which is carried. Excluding carried modules would leave
+    // nothing to count, the verdict would read "no modules recorded", and they
+    // could never progress again. So when there is no fresh curriculum, the
+    // carried modules ARE the semester and the rule applies to them.
+    const fresh = standings.filter(s => !s.isRetake);
+    const isRepeatingSemester = fresh.length === 0 && standings.length > 0;
+
+    const thisSemester = isRepeatingSemester ? standings : fresh;
+    const carried = isRepeatingSemester ? [] : standings.filter(s => s.isRetake);
+
+    const decided = thisSemester
+      .filter(s => s.outcome !== null).map(s => s.outcome as Outcome);
+    const carriedDecided = carried
+      .filter(s => s.outcome !== null).map(s => s.outcome as Outcome);
+
+    // Settled is judged on this semester's modules being FULLY marked.
+    const settledCheck = semesterIsSettled(decided, thisSemester.length);
 
     return {
       loading, error, standings,
@@ -105,7 +143,7 @@ export function useStudentProgress(db: DB, student: Student | null): StudentProg
       settled: settledCheck.settled,
       settledReason: settledCheck.reason,
       // Only meaningful once settled — a verdict mid-marking would be wrong.
-      verdict: settledCheck.settled ? semesterVerdict(decided) : null,
+      verdict: settledCheck.settled ? semesterVerdict(decided, carriedDecided) : null,
     };
   }, [db, student, scoreOf, loading, error]);
 }

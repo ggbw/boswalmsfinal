@@ -265,7 +265,10 @@ export default function LecturersPage() {
               return;
             }
             const { data, error: fnErr } = await supabase.functions.invoke("create-user", {
-              body: { email: email.trim(), password: "Boswa@2024", name: name.trim(), role, dept, code },
+              // Was hardcoded to "Boswa@2024" — a third shared password, different from
+              // the two in use elsewhere and documented nowhere. Now the standard
+              // staff password, from one place.
+              body: { email: email.trim(), password: defaultPasswordFor(role), name: name.trim(), role, dept, code },
             });
             // Surface the function's real error body (on fnErr.context) instead of
             // supabase-js's generic "non-2xx status code" message.

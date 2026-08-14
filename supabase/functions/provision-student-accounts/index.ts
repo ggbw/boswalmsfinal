@@ -5,24 +5,17 @@ const corsHeaders = {
   "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
 };
 
-// Unique single-use temporary password, one per student. Replaces the shared
-// "BoswaStudent2026!" every student account used to get — since emails are
-// derived from student numbers, a shared password meant any student who knew
-// the pattern could sign in as any other. Ambiguous characters (0/O, 1/l/I) are
-// excluded so it survives being printed and typed.
-const PWD_ALPHABET =
-  "ABCDEFGHJKLMNPQRSTUVWXYZ" + "abcdefghijkmnpqrstuvwxyz" + "23456789"; // 56 chars
-function generatePassword(groups = 3, size = 4): string {
-  const limit = 256 - (256 % PWD_ALPHABET.length); // reject above this to avoid modulo bias
-  const chars: string[] = [];
-  const buf = new Uint8Array(1);
-  while (chars.length < groups * size) {
-    crypto.getRandomValues(buf);
-    if (buf[0] < limit) chars.push(PWD_ALPHABET[buf[0] % PWD_ALPHABET.length]);
-  }
-  return Array.from({ length: groups }, (_, g) =>
-    chars.slice(g * size, (g + 1) * size).join("")
-  ).join("-");
+// The two standard passwords. There are exactly two — one for students, one for
+// staff — and every account created with either is flagged
+// must_change_password, so the holder replaces it at first sign-in.
+//
+// ⚠ Admin and super_admin passwords are NEVER changed in bulk. force-password-change
+// excludes them unconditionally, so an administrator cannot be locked out by a
+// mass reset.
+const STUDENT_PASSWORD = "BoswaStudent2026!";
+const STAFF_PASSWORD   = "BoswaStaff2026!";
+function defaultPasswordFor(role: string | null | undefined): string {
+  return role === "student" ? STUDENT_PASSWORD : STAFF_PASSWORD;
 }
 
 function generateEmail(name: string, studentId: string): string {
@@ -74,8 +67,7 @@ Deno.serve(async (req) => {
 
     const body = await req.json().catch(() => ({}));
     const studentIds: string[] | undefined = body.student_ids;
-    // NOTE: body.default_password is deliberately ignored. Every account now
-    // gets its own generated password; there is no shared default any more.
+    // body.default_password is ignored — the student password is fixed.
 
     // Get all students
     let query = adminClient.from("students").select("*");
@@ -113,7 +105,7 @@ Deno.serve(async (req) => {
         await adminClient.from("students").update({ email }).eq("id", student.id);
       }
 
-      const tempPassword = generatePassword();
+      const tempPassword = STUDENT_PASSWORD;
 
       try {
         const { data: newUser, error: createErr } = await adminClient.auth.admin.createUser({

@@ -12,8 +12,9 @@ import { useCallback, useEffect, useState } from 'react';
 import { useApp } from '@/context/AppContext';
 import { supabase } from '@/integrations/supabase/client';
 import { useStudentProgress } from '@/hooks/useStudentProgress';
-import { MAX_CARRIED_FAILURES } from '@/lib/progression';
+
 import { recordOutcomes } from '@/lib/recordOutcomes';
+import { needsAcademicReview, MAX_SEMESTER_ATTEMPTS } from '@/lib/progression';
 import type { Student } from '@/data/db';
 
 interface Registration {
@@ -72,19 +73,33 @@ export default function StudentRegistrationPanel({ student }: { student: Student
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [settledKey, student.id]);
 
-  // Where they'd be going next. Semester 1 → 2 within a year, then Year N+1 S1.
+  // Where they register for next. Passing moves them on; falling short means
+  // repeating THIS semester, taking only what they did not pass.
   const programme = db.config.programmes.find(p => p.id === student.programme);
   const maxSemester = programme?.semesters || 2;
-  const nextSemester = student.semester < maxSemester ? student.semester + 1 : 1;
-  const nextYear = student.semester < maxSemester ? student.year : student.year + 1;
+  const mustRepeat = progress.verdict?.mustRepeat === true;
+
+  const nextSemester = mustRepeat
+    ? student.semester
+    : (student.semester < maxSemester ? student.semester + 1 : 1);
+  const nextYear = mustRepeat
+    ? student.year
+    : (student.semester < maxSemester ? student.year : student.year + 1);
 
   // The end of the programme. Without this a final-year student who passed was
   // invited to register for a year their programme does not have — Year 4 of a
   // three-year course. They have finished; they should be told so.
   const totalYears = programme?.years ?? 0;
-  const hasCompleted = totalYears > 0
+  const hasCompleted = !mustRepeat && totalYears > 0
     && student.year >= totalYears
     && student.semester >= maxSemester;
+
+  // Attempts at this same semester, including any current registration. Drives
+  // the review flag — the system never excludes anyone by itself.
+  const attemptsAtThisPeriod = registrations.filter(
+    r => r.year === nextYear && r.semester === nextSemester && r.status !== 'rejected',
+  ).length + (mustRepeat ? 1 : 0);
+  const underReview = mustRepeat && needsAcademicReview(attemptsAtThisPeriod);
 
   const alreadyRegistered = registrations.find(
     r => r.year === nextYear && r.semester === nextSemester && r.status !== 'rejected',
@@ -161,14 +176,50 @@ export default function StudentRegistrationPanel({ student }: { student: Student
         </div>
       )}
 
-      {/* Discontinued. */}
-      {v?.discontinued && (
-        <div style={{ background: '#fae9e7', border: '1px solid #f0b8b2', borderRadius: 8, padding: '12px 14px', fontSize: 13, color: '#a8261e', lineHeight: 1.6 }}>
-          <strong>You have not met the requirements to continue.</strong>
-          <div style={{ marginTop: 4 }}>
-            {v.reason} Please speak to the academic office.
+      {/* Repeating the semester — not an exclusion, and only the failed modules. */}
+      {v?.mustRepeat && (
+        <>
+          <div style={{ background: '#fbf1dc', border: '1px solid #e8cf95', borderRadius: 8, padding: '12px 14px', fontSize: 13, color: '#8a5a00', lineHeight: 1.6, marginBottom: 12 }}>
+            <strong>You need to repeat this semester.</strong>
+            <div style={{ marginTop: 4 }}>
+              {v.reason} You keep the modules you passed — register below to take
+              the ones you still owe.
+            </div>
           </div>
-        </div>
+
+          {underReview && (
+            <div style={{ background: '#fae9e7', border: '1px solid #f0b8b2', borderRadius: 8, padding: '12px 14px', fontSize: 13, color: '#a8261e', lineHeight: 1.6, marginBottom: 12 }}>
+              <strong>This is attempt {attemptsAtThisPeriod} at this semester.</strong>
+              <div style={{ marginTop: 4 }}>
+                Please speak to the academic office before registering again — after
+                {' '}{MAX_SEMESTER_ATTEMPTS} attempts your registration needs to be
+                reviewed. You can still submit it; an administrator will decide.
+              </div>
+            </div>
+          )}
+
+          {alreadyRegistered ? (
+            <div className="info-row">
+              <span className="info-label">Registration for Year {nextYear} Semester {nextSemester}</span>
+              <span className="info-val">
+                <span className={`badge ${alreadyRegistered.status === 'approved' ? 'badge-pass' : 'badge-active'}`}>
+                  {alreadyRegistered.status === 'approved' ? 'Approved' : 'Awaiting approval'}
+                </span>
+              </span>
+            </div>
+          ) : (
+            <>
+              {lastRejected?.decision_note && (
+                <div style={{ fontSize: 12, color: '#a8261e', marginBottom: 8 }}>
+                  Your previous registration was not approved: {lastRejected.decision_note}
+                </div>
+              )}
+              <button className="btn btn-primary" style={{ width: '100%' }} disabled={busy} onClick={handleRegister}>
+                {busy ? 'Submitting…' : `Repeat Year ${nextYear} · Semester ${nextSemester} — ${progress.owed.length} module(s)`}
+              </button>
+            </>
+          )}
+        </>
       )}
 
       {/* Finished the programme — no next semester to register for. */}
@@ -228,7 +279,7 @@ export default function StudentRegistrationPanel({ student }: { student: Student
       {progress.owed.length > 0 && (
         <div style={{ marginTop: 14 }}>
           <div style={{ fontSize: 11, textTransform: 'uppercase', letterSpacing: '.08em', color: 'var(--text3)', marginBottom: 8 }}>
-            Outstanding ({progress.owed.length} of a permitted {MAX_CARRIED_FAILURES})
+            Outstanding ({progress.owed.length})
           </div>
           <div style={{ display: 'grid', gap: 8 }}>
             {progress.owed.map(s => (

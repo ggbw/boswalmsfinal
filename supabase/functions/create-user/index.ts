@@ -5,39 +5,17 @@ const corsHeaders = {
   "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
 };
 
-// Unique single-use temporary password. Replaces the shared "BoswaStaff2026!"
-// every account used to get. Ambiguous characters (0/O, 1/l/I) are excluded so
-// it can be read off a printout and typed without confusion.
-const PWD_ALPHABET =
-  "ABCDEFGHJKLMNPQRSTUVWXYZ" + "abcdefghijkmnpqrstuvwxyz" + "23456789"; // 56 chars
-function generatePassword(groups = 3, size = 4): string {
-  const limit = 256 - (256 % PWD_ALPHABET.length); // reject above this to avoid modulo bias
-  const chars: string[] = [];
-  const buf = new Uint8Array(1);
-  while (chars.length < groups * size) {
-    crypto.getRandomValues(buf);
-    if (buf[0] < limit) chars.push(PWD_ALPHABET[buf[0] % PWD_ALPHABET.length]);
-  }
-  return Array.from({ length: groups }, (_, g) =>
-    chars.slice(g * size, (g + 1) * size).join("")
-  ).join("-");
-}
-
-// auth.admin.listUsers() returns a single page (default 50 users). Walking every
-// page makes "find the existing user" reliable no matter how many accounts exist —
-// without this, re-adding an email belonging to an older account fails with a
-// false "User exists but could not be found".
-async function findUserByEmail(adminClient: any, email: string) {
-  const target = email.toLowerCase();
-  for (let page = 1; page <= 100; page++) {
-    const { data, error } = await adminClient.auth.admin.listUsers({ page, perPage: 200 });
-    if (error) return null;
-    const users = data?.users ?? [];
-    if (users.length === 0) return null;
-    const found = users.find((u: any) => (u.email || "").toLowerCase() === target);
-    if (found) return found;
-  }
-  return null;
+// The two standard passwords. There are exactly two — one for students, one for
+// staff — and every account created with either is flagged
+// must_change_password, so the holder replaces it at first sign-in.
+//
+// ⚠ Admin and super_admin passwords are NEVER changed in bulk.
+// force-password-change excludes them unconditionally, so an administrator
+// cannot be locked out by a mass reset.
+const STUDENT_PASSWORD = "BoswaStudent2026!";
+const STAFF_PASSWORD   = "BoswaStaff2026!";
+function defaultPasswordFor(role: string | null | undefined): string {
+  return role === "student" ? STUDENT_PASSWORD : STAFF_PASSWORD;
 }
 
 Deno.serve(async (req) => {
@@ -94,10 +72,9 @@ Deno.serve(async (req) => {
       });
     }
 
-    // `password` is now optional. When the caller doesn't supply one we mint a
-    // unique temporary password and return it, so no two accounts ever share
-    // the same starting credential.
-    const tempPassword: string = password || generatePassword();
+    // `password` is optional. Without one, the standard password for the role is
+    // used — student or staff.
+    const tempPassword: string = password || defaultPasswordFor(role);
 
     // Try to create the user with service role
     const { data: newUser, error: createError } = await adminClient.auth.admin.createUser({

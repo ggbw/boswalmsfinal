@@ -4,6 +4,7 @@ import { supabase } from '@/integrations/supabase/client';
 // Temporary passwords exist only in the response that creates them — they are
 // hashed on save and can never be read back, so saving them has to be easy.
 import { downloadCsv } from '@/lib/csv';
+import { defaultPasswordFor } from '@/lib/passwords';
 
 
 /**
@@ -31,35 +32,6 @@ interface UserRow {
   authUserId?: string;
   /** students.id — present only if they have a student record. */
   studentRecordId?: string;
-}
-
-// Unique single-use temporary password, matching the generator in the
-// create-user / provision-student-accounts edge functions. Ambiguous characters
-// (0/O, 1/l/I) are excluded so it can be read off a printout and typed.
-const PWD_ALPHABET =
-  'ABCDEFGHJKLMNPQRSTUVWXYZ' + 'abcdefghijkmnpqrstuvwxyz' + '23456789'; // 56 chars
-function generatePassword(groups = 3, size = 4): string {
-  const limit = 256 - (256 % PWD_ALPHABET.length); // reject above this to avoid modulo bias
-  const chars: string[] = [];
-  const buf = new Uint8Array(1);
-  while (chars.length < groups * size) {
-    crypto.getRandomValues(buf);
-    if (buf[0] < limit) chars.push(PWD_ALPHABET[buf[0] % PWD_ALPHABET.length]);
-  }
-  return Array.from({ length: groups }, (_, g) =>
-    chars.slice(g * size, (g + 1) * size).join(''),
-  ).join('-');
-}
-
-
-/**
- * Student IDs are hand-typed in this form, and two in the live data ended up
- * with stray spaces ("BCI2024D 43", "BCI2025C- 15"). That is not cosmetic:
- * assessment_marks is keyed on this string, so a mismatched space silently
- * detaches a student from their own marks. Normalise on save.
- */
-function cleanStudentId(v: string): string {
-  return (v || "").trim().replace(/\s+/g, "");
 }
 
 export default function UserManagementPage() {
@@ -192,14 +164,16 @@ export default function UserManagementPage() {
       return;
     }
     const targetUserId = u.authUserId;
-    let newPwd = generatePassword();
+    // The person's role is already known here, so the right default is certain.
+    let newPwd = defaultPasswordFor(u.role);
     showModal('Reset Password: ' + u.name, (
       <div>
         <div className="form-group">
           <label>New Password</label>
           <input className="form-input" type="text" defaultValue={newPwd} onChange={e => newPwd = e.target.value} />
           <div style={{ fontSize: 11, color: 'var(--text2)', marginTop: 4 }}>
-            Freshly generated and unique to this reset. Copy it before you close this box — it cannot be read back afterwards.
+            The standard password for this role. Change it here if you'd rather set
+            something else — either way they must replace it at next sign-in.
           </div>
         </div>
         <div style={{ background: 'var(--bg2)', borderRadius: 8, padding: '8px 12px', fontSize: 12, color: 'var(--text2)' }}>
@@ -345,7 +319,11 @@ export default function UserManagementPage() {
   };
 
   const handleCreate = () => {
-    let name = '', email = '', password = generatePassword(), role = 'lecturer', dept = '';
+    let name = '', email = '', role = 'lecturer', dept = '';
+    // Left empty until submit so it can follow the role the admin picks. A
+    // defaultValue set now would keep the staff password even if they chose
+    // Student, and hand out the wrong credential.
+    let password = '';
     showModal('Create New User', (
       <div>
         <div className="form-row cols2">
@@ -355,9 +333,15 @@ export default function UserManagementPage() {
         <div className="form-row cols2">
           <div className="form-group">
             <label>Temporary Password</label>
-            <input className="form-input" type="text" defaultValue={password} onChange={e => password = e.target.value} />
+            <input
+              className="form-input"
+              type="text"
+              placeholder={`Leave blank for the standard password (${defaultPasswordFor('lecturer')} / ${defaultPasswordFor('student')})`}
+              onChange={e => password = e.target.value}
+            />
             <div style={{ fontSize: 11, color: 'var(--text2)', marginTop: 4 }}>
-              Unique to this account. Copy it now — it cannot be read back later.
+              Leave blank and the standard password for the chosen role is used.
+              Either way they must set their own the first time they sign in.
             </div>
           </div>
           <div className="form-group"><label>Role</label>
@@ -383,7 +367,9 @@ export default function UserManagementPage() {
         <button className="btn btn-primary" style={{ marginTop: 12 }} onClick={async () => {
           if (!name || !email) { toast('Name and email required', 'error'); return; }
           const { data, error } = await supabase.functions.invoke('create-user', {
-            body: { email, password, name, role, dept },
+            // Blank means "use the standard password for this role" — resolved
+            // here rather than in the field, so it follows the role chosen.
+            body: { email, password: password.trim() || defaultPasswordFor(role), name, role, dept },
           });
           // When the function returns non-2xx, supabase-js gives a generic
           // "non-2xx status code" message and puts the real JSON body on
