@@ -25,6 +25,7 @@
 import {
   BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend,
   ResponsiveContainer, Cell, PieChart, Pie, ReferenceLine, LabelList,
+  LineChart, Line,
 } from 'recharts';
 
 const GRID = 'var(--viz-grid)';
@@ -197,6 +198,83 @@ export function ModuleMarksChart({ data }: { data: { name: string; mark: number 
           ))}
           <LabelList dataKey="mark" position="right" formatter={(v: number) => `${v}%`}
                      style={{ fontSize: 11, fill: 'var(--text2)', fontWeight: 600 }} />
+        </Bar>
+      </BarChart>
+    </ResponsiveContainer>
+  );
+}
+
+// ── Attendance over time ────────────────────────────────────────────────────
+
+/**
+ * Attendance week by week.
+ *
+ * A single percentage cannot show a decline; a sequence can. Attendance also
+ * falls before marks do, so this is the earliest warning the data holds — which
+ * is the whole reason it is a line and not another counter.
+ *
+ * One series, so no legend: the panel title names it. 2px stroke, 8px markers,
+ * and a dashed line at the 75% at-risk threshold — without that line a reader
+ * has no way to tell a good week from a bad one.
+ */
+export function TrendChart({ data, threshold = 75 }: {
+  data: { label: string; rate: number | null }[];
+  threshold?: number;
+}) {
+  if (data.length < 2) {
+    return <Empty text="Not enough weeks of registers yet to show a trend." />;
+  }
+
+  return (
+    <ResponsiveContainer width="100%" height={230}>
+      <LineChart data={data} margin={{ top: 8, right: 16, bottom: 4, left: 4 }}>
+        <CartesianGrid vertical={false} stroke={GRID} />
+        <XAxis dataKey="label" tick={{ fontSize: 10, fill: AXIS }} axisLine={false} tickLine={false} />
+        <YAxis domain={[0, 100]} tick={{ fontSize: 11, fill: AXIS }} axisLine={false} tickLine={false} unit="%" />
+        <Tooltip content={<VizTooltip suffix="%" />} cursor={{ stroke: AXIS, strokeDasharray: '3 3' }} />
+        <ReferenceLine y={threshold} stroke={AXIS} strokeDasharray="3 3"
+                       label={{ value: `${threshold}% target`, position: 'insideTopRight', fontSize: 10, fill: 'var(--text3)' }} />
+        <Line type="monotone" dataKey="rate" name="Attendance" stroke={S1} strokeWidth={2}
+              dot={{ r: 4, fill: S1, strokeWidth: 0 }} activeDot={{ r: 6 }} connectNulls />
+      </LineChart>
+    </ResponsiveContainer>
+  );
+}
+
+// ── Weakest modules ─────────────────────────────────────────────────────────
+
+/**
+ * Pass rate per module-in-a-class, weakest first.
+ *
+ * The unit is module × class deliberately. A module that fails in every class
+ * is a curriculum or assessment problem; the same module failing in one class
+ * is a teaching or timetable problem. Aggregating them away hides exactly the
+ * distinction the reader needs to act.
+ *
+ * Pass and fail are STATUS, so they use the status palette and are never
+ * mistaken for two data series.
+ */
+export function ModulePerformanceChart({ data }: {
+  data: { name: string; sub: string; rate: number }[];
+}) {
+  if (!data.length) return <Empty text="No marks recorded yet." />;
+
+  return (
+    <ResponsiveContainer width="100%" height={Math.max(200, data.length * 40)}>
+      <BarChart data={data} layout="vertical" margin={{ top: 4, right: 46, bottom: 4, left: 4 }}>
+        <CartesianGrid horizontal={false} stroke={GRID} />
+        <XAxis type="number" domain={[0, 100]} tick={{ fontSize: 11, fill: AXIS }}
+               axisLine={false} tickLine={false} unit="%" />
+        <YAxis type="category" dataKey="name" width={165}
+               tick={{ fontSize: 10, fill: AXIS }} axisLine={false} tickLine={false} />
+        <Tooltip content={<VizTooltip suffix="%" />} cursor={{ fill: 'var(--viz-hover)' }} />
+        <ReferenceLine x={50} stroke={AXIS} strokeDasharray="3 3" />
+        <Bar dataKey="rate" radius={[0, 4, 4, 0]} maxBarSize={14}>
+          {data.map((d, i) => (
+            <Cell key={i} fill={d.rate >= 50 ? 'var(--viz-good)' : 'var(--viz-bad)'} />
+          ))}
+          <LabelList dataKey="rate" position="right" formatter={(v: number) => `${v}%`}
+                     style={{ fontSize: 10, fill: 'var(--text2)', fontWeight: 600 }} />
         </Bar>
       </BarChart>
     </ResponsiveContainer>

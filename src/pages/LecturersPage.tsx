@@ -1,6 +1,8 @@
 import { useState, useEffect, useCallback } from "react";
 import { useApp } from "@/context/AppContext";
 import { supabase } from "@/integrations/supabase/client";
+import { invokeFn } from "@/lib/invokeFn";
+import { defaultPasswordFor } from "@/lib/passwords";
 import { getLecturerClasses, getLecturerModulesList } from "@/lib/lecturerHelpers";
 import { getScopedFacultyIds, isAdminRole } from '@/lib/scope';
 
@@ -192,13 +194,8 @@ export default function LecturersPage() {
             onClick={async () => {
               // Same reason as User Management: deleting the profile and role
               // alone leaves a working login with no profile behind it.
-              const { data, error } = await supabase.functions.invoke("delete-user", {
-                body: { user_id: f.user_id },
-              });
-              if (error || data?.error) {
-                toast(data?.error || error?.message || "Delete failed", "error");
-                return;
-              }
+              const { error } = await invokeFn("delete-user", { user_id: f.user_id });
+              if (error) { toast(error, "error"); return; }
               toast(`${f.name} and their login deleted`, "success");
               closeModal();
               setFaculty((prev) => prev.filter((x) => x.user_id !== f.user_id));
@@ -264,25 +261,12 @@ export default function LecturersPage() {
               toast("Name and email are required", "error");
               return;
             }
-            const { data, error: fnErr } = await supabase.functions.invoke("create-user", {
-              // Was hardcoded to "Boswa@2024" — a third shared password, different from
-              // the two in use elsewhere and documented nowhere. Now the standard
-              // staff password, from one place.
-              body: { email: email.trim(), password: defaultPasswordFor(role), name: name.trim(), role, dept, code },
-            });
-            // Surface the function's real error body (on fnErr.context) instead of
-            // supabase-js's generic "non-2xx status code" message.
-            let errMsg = "";
-            if (fnErr) {
-              errMsg = fnErr.message || "Failed to create account";
-              try { const b = await (fnErr as any).context?.json?.(); if (b?.error) errMsg = b.error; } catch { /* keep generic */ }
-            } else if (data?.error) {
-              errMsg = data.error;
-            }
-            if (errMsg) {
-              toast(errMsg, "error");
-              return;
-            }
+            // Was hardcoded to "Boswa@2024" — a third shared password, different from
+            // the two in use elsewhere and documented nowhere. Now the standard
+            // staff password, from one place.
+            const { error: fnErr } = await invokeFn("create-user",
+              { email: email.trim(), password: defaultPasswordFor(role), name: name.trim(), role, dept, code });
+            if (fnErr) { toast(fnErr, "error"); return; }
             toast("Lecturer created!", "success");
             closeModal();
             load();

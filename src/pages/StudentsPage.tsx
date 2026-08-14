@@ -2,6 +2,7 @@ import { useState } from "react";
 import { useApp } from "@/context/AppContext";
 import { grade, gradeColor } from "@/data/db";
 import { supabase } from "@/integrations/supabase/client";
+import { cleanStudentId } from "@/lib/studentId";
 import { getScopedStudents, isAdminRole } from '@/lib/scope';
 import { useAssessmentMarks } from "@/hooks/useAssessmentMarks";
 import { studentModuleResults } from "@/lib/studentMarks";
@@ -12,9 +13,7 @@ import { studentModuleResults } from "@/lib/studentMarks";
  * assessment_marks is keyed on this string, so a mismatched space silently
  * detaches a student from their own marks. Normalise on save.
  */
-function cleanStudentId(v: string): string {
-  return (v || "").trim().replace(/\s+/g, "");
-}
+
 
 const SECTIONS = {
   personal: "Personal Details",

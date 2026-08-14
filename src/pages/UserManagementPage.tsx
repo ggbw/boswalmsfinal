@@ -1,10 +1,21 @@
 import { useState, useEffect, useCallback } from 'react';
 import { useApp } from '@/context/AppContext';
 import { supabase } from '@/integrations/supabase/client';
+import { invokeFn } from '@/lib/invokeFn';
 // Temporary passwords exist only in the response that creates them — they are
 // hashed on save and can never be read back, so saving them has to be easy.
 import { downloadCsv } from '@/lib/csv';
 import { defaultPasswordFor } from '@/lib/passwords';
+import { cleanStudentId } from '@/lib/studentId';
+
+/** What provision-student-accounts sends back, per student and in total. */
+interface ProvisionResult {
+  results?: Array<{
+    student_id: string; name: string; email: string;
+    status: string; temp_password?: string; error?: string;
+  }>;
+  summary?: { created?: number; existing?: number; errors?: number };
+}
 
 
 /**
@@ -120,10 +131,8 @@ export default function UserManagementPage() {
         : `This cannot be undone.`)
     )) return;
 
-    const { data, error } = await supabase.functions.invoke('delete-user', {
-      body: { user_id: u.authUserId },
-    });
-    if (error || data?.error) { toast(data?.error || error?.message || 'Delete failed', 'error'); return; }
+    const { data, error } = await invokeFn('delete-user', { user_id: u.authUserId });
+    if (error) { toast(error, 'error'); return; }
     toast('Login removed', 'success');
     loadUsers(); reloadDb();
   };
@@ -146,10 +155,8 @@ export default function UserManagementPage() {
     )) return;
 
     if (u.authUserId) {
-      const { data, error } = await supabase.functions.invoke('delete-user', {
-        body: { user_id: u.authUserId },
-      });
-      if (error || data?.error) { toast(data?.error || error?.message || 'Could not remove the login', 'error'); return; }
+      const { data, error } = await invokeFn('delete-user', { user_id: u.authUserId });
+      if (error) { toast(error, 'error'); return; }
     }
     const { error } = await supabase.from('students').delete().eq('id', u.studentRecordId);
     if (error) { toast(error.message, 'error'); return; }
@@ -181,10 +188,8 @@ export default function UserManagementPage() {
           {u.name} will be required to choose their own password the next time they sign in.
         </div>
         <button className="btn btn-primary" style={{ marginTop: 12 }} onClick={async () => {
-          const { data, error } = await supabase.functions.invoke('reset-password', {
-            body: { user_id: targetUserId, new_password: newPwd, must_change_password: true },
-          });
-          if (error || data?.error) { toast(data?.error || error?.message || 'Reset failed', 'error'); }
+          const { data, error } = await invokeFn('reset-password', { user_id: targetUserId, new_password: newPwd, must_change_password: true });
+          if (error) { toast(error, 'error'); }
           else { toast('Password reset successfully', 'success'); closeModal(); }
         }}>Reset Password</button>
       </div>
@@ -366,22 +371,11 @@ export default function UserManagementPage() {
         </div>
         <button className="btn btn-primary" style={{ marginTop: 12 }} onClick={async () => {
           if (!name || !email) { toast('Name and email required', 'error'); return; }
-          const { data, error } = await supabase.functions.invoke('create-user', {
-            // Blank means "use the standard password for this role" — resolved
-            // here rather than in the field, so it follows the role chosen.
-            body: { email, password: password.trim() || defaultPasswordFor(role), name, role, dept },
-          });
-          // When the function returns non-2xx, supabase-js gives a generic
-          // "non-2xx status code" message and puts the real JSON body on
-          // error.context (a Response). Surface that so the actual reason shows.
-          let errMsg = '';
-          if (error) {
-            errMsg = error.message || 'Create failed';
-            try { const b = await (error as any).context?.json?.(); if (b?.error) errMsg = b.error; } catch { /* keep generic */ }
-          } else if (data?.error) {
-            errMsg = data.error;
-          }
-          if (errMsg) { toast(errMsg, 'error'); return; }
+          // Blank means "use the standard password for this role" — resolved
+          // here rather than in the field, so it follows the role chosen.
+          const { data, error } = await invokeFn<{ password_applied?: boolean; temp_password?: string }>('create-user',
+            { email, password: password.trim() || defaultPasswordFor(role), name, role, dept });
+          if (error) { toast(error, 'error'); return; }
           loadUsers(); reloadDb();
           // Show the credential rather than just a toast: this is the only
           // moment the temporary password is readable.
@@ -416,8 +410,8 @@ export default function UserManagementPage() {
 
   const handleProvisionStudents = async () => {
     if (!confirm('Create login accounts for students who don\'t have one yet?\n\nEach account gets its own unique temporary password, and you\'ll be shown the full list to download afterwards. Existing accounts are left alone.')) return;
-    const { data, error } = await supabase.functions.invoke('provision-student-accounts', { body: {} });
-    if (error) { toast('Provisioning failed: ' + error.message, 'error'); return; }
+    const { data, error } = await invokeFn<ProvisionResult>('provision-student-accounts', {});
+    if (error) { toast('Provisioning failed: ' + error, 'error'); return; }
     loadUsers(); reloadDb();
 
     const results: Array<{ student_id: string; name: string; email: string; status: string; temp_password?: string; error?: string }> =
@@ -534,18 +528,14 @@ export default function UserManagementPage() {
         </div>
         <div style={{ display: 'flex', gap: 8 }}>
           <button className="btn btn-outline" style={{ flex: 1 }} onClick={async () => {
-            const { data, error } = await supabase.functions.invoke('force-password-change', {
-              body: { scope, dry_run: true },
-            });
-            if (error || data?.error) { toast(data?.error || error?.message || 'Check failed', 'error'); return; }
+            const { data, error } = await invokeFn<{ would_update?: number }>('force-password-change', { scope, dry_run: true });
+            if (error) { toast(error, 'error'); return; }
             toast(`${data.would_update} account(s) would be asked to change their password.`, 'info');
           }}>Preview count</button>
           <button className="btn btn-primary" style={{ flex: 1 }} onClick={async () => {
             if (!confirm(`Require a password change for: ${SCOPE_LABELS[scope]}?\n\nThey will be prompted at their next sign-in.`)) return;
-            const { data, error } = await supabase.functions.invoke('force-password-change', {
-              body: { scope },
-            });
-            if (error || data?.error) { toast(data?.error || error?.message || 'Failed', 'error'); return; }
+            const { data, error } = await invokeFn<{ updated?: number }>('force-password-change', { scope });
+            if (error) { toast(error, 'error'); return; }
             toast(`${data.updated} account(s) will be asked to set a new password at next sign-in.`, 'success');
             closeModal();
           }}>Apply</button>

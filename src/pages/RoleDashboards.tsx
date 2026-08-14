@@ -3,6 +3,7 @@
  *
  * Each answers the question that role actually opens the system to ask:
  *   Principal / Deputy  how is the school doing?
+ *   HOA                 the same, across the whole school's academics
  *   HOD                 how is my department doing, and what needs chasing?
  *   Lecturer            what is waiting on me?
  *
@@ -11,13 +12,15 @@
  * and attendance row into the browser.
  */
 
+import { useState } from 'react';
 import { useApp } from '@/context/AppContext';
 import {
   useSchoolStats, useDepartmentStats, useLecturerStats,
+  useModulePerformance, useAttendanceTrend, useAtRisk,
   type DepartmentStats,
 } from '@/hooks/useDashboardStats';
 import { resolveDepartment } from '@/lib/scope';
-import { DeptPerformanceChart, BreakdownDonut } from '@/components/charts/DashboardCharts';
+import { DeptPerformanceChart, BreakdownDonut, TrendChart, ModulePerformanceChart } from '@/components/charts/DashboardCharts';
 
 // ── Shared pieces ───────────────────────────────────────────────────────────
 
@@ -108,6 +111,189 @@ function DeptTable({ rows, metric }: { rows: DepartmentStats[]; metric: 'attenda
         </tbody>
       </table>
     </div>
+  );
+}
+
+// ── Analysis shared by principal, deputy, HOA and HOD ───────────────────────
+
+/**
+ * The panels that support a decision rather than describe the school.
+ *
+ * Three questions, in the order they get asked:
+ *
+ *   1. Is attendance drifting?  — a trend, because a single percentage cannot
+ *      show a decline, and attendance falls before marks do.
+ *   2. What is going wrong, and where?  — pass rate per module IN A CLASS. A
+ *      module weak in every class is a curriculum problem; the same module weak
+ *      in one class is a teaching or timetable problem. Aggregating them hides
+ *      the distinction that decides who you talk to.
+ *   3. Who do we act on?  — students by name. A percentage cannot be acted on.
+ *
+ * A HOD passes their own department as `lockedDept` and the filter disappears:
+ * the scope is not theirs to change. Everyone else can move between
+ * departments, which is what makes one department's numbers mean anything —
+ * 62% is good or bad only next to the others.
+ */
+function AnalyticsSection({ lockedDept }: { lockedDept?: string | null }) {
+  const { navigate } = useApp();
+  const [dept, setDept]   = useState<string>(lockedDept || 'all');
+  const [weeks, setWeeks] = useState(12);
+
+  const perf   = useModulePerformance();
+  const trend  = useAttendanceTrend(weeks);
+  const atRisk = useAtRisk();
+
+  const effectiveDept = lockedDept || dept;
+  const inScope = <T extends { dept_id?: string | null }>(rows: T[] | null) =>
+    (rows || []).filter(r => effectiveDept === 'all' || r.dept_id === effectiveDept);
+
+  // Department list comes from the performance rows, so it can only ever offer
+  // departments that actually have data behind them.
+  const deptOptions = Array.from(
+    new Map((perf.data || [])
+      .filter(r => r.dept_id)
+      .map(r => [r.dept_id as string, r.dept_name || r.dept_id as string])).entries(),
+  ).sort((a, b) => a[1].localeCompare(b[1]));
+
+  // Trend: several departments report in the same week, so sum first and take
+  // the rate from the totals. Averaging the per-department rates would weight a
+  // department of nine the same as one of ninety.
+  const byWeek = new Map<string, { present: number; sessions: number }>();
+  inScope(trend.data).forEach(r => {
+    const acc = byWeek.get(r.week_start) || { present: 0, sessions: 0 };
+    acc.present += Number(r.present) || 0;
+    acc.sessions += Number(r.sessions) || 0;
+    byWeek.set(r.week_start, acc);
+  });
+  const trendData = Array.from(byWeek.entries())
+    .sort((a, b) => a[0].localeCompare(b[0]))
+    .map(([wk, v]) => ({
+      label: new Date(wk).toLocaleDateString('en-GB', { day: 'numeric', month: 'short' }),
+      rate: v.sessions ? Math.round((v.present / v.sessions) * 1000) / 10 : null,
+    }));
+
+  // Only modules that have been marked. A module with no marks has a null pass
+  // rate, and showing it as 0% would report "everyone failed" when the truth is
+  // "nobody has marked it".
+  const weakest = inScope(perf.data)
+    .filter(r => r.marks_recorded > 0 && r.pass_rate !== null)
+    .sort((a, b) => (a.pass_rate ?? 100) - (b.pass_rate ?? 100))
+    .slice(0, 12);
+
+  const unmarked = inScope(perf.data).filter(r => r.unmarked_assessments > 0);
+  const risk = (atRisk.data || []).filter(r =>
+    effectiveDept === 'all' ||
+    deptOptions.find(([id]) => id === effectiveDept)?.[1] === r.dept_name);
+
+  const label = (r: { module_name: string; class_name: string }) => {
+    const m = r.module_name.length > 20 ? r.module_name.slice(0, 19) + '…' : r.module_name;
+    return `${m} · ${r.class_name}`;
+  };
+
+  return (
+    <>
+      {/* Filters in one row above the charts, so the scope of everything below
+          is visible without hunting for it. */}
+      <div style={{ display: 'flex', gap: 10, alignItems: 'center', flexWrap: 'wrap', margin: '4px 0 14px' }}>
+        {!lockedDept && (
+          <label style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 12, color: 'var(--text2)' }}>
+            Department
+            <select className="form-select" style={{ width: 'auto', minWidth: 160, padding: '5px 8px', fontSize: 12 }}
+                    value={dept} onChange={e => setDept(e.target.value)}>
+              <option value="all">All departments</option>
+              {deptOptions.map(([id, name]) => <option key={id} value={id}>{name}</option>)}
+            </select>
+          </label>
+        )}
+        <label style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 12, color: 'var(--text2)' }}>
+          Period
+          <select className="form-select" style={{ width: 'auto', padding: '5px 8px', fontSize: 12 }}
+                  value={weeks} onChange={e => setWeeks(Number(e.target.value))}>
+            <option value={4}>Last 4 weeks</option>
+            <option value={8}>Last 8 weeks</option>
+            <option value={12}>Last 12 weeks</option>
+            <option value={26}>Last 26 weeks</option>
+          </select>
+        </label>
+        <div style={{ marginLeft: 'auto', fontSize: 11, color: 'var(--text3)' }}>
+          {risk.length} student(s) flagged · {unmarked.length} module(s) part-marked
+        </div>
+      </div>
+
+      <Panel title="Attendance over time" icon="fa-solid fa-chart-line">
+        {trend.loading ? <Empty text="Loading…" />
+          : trend.error ? <Empty text={`Could not load: ${trend.error}`} />
+          : <TrendChart data={trendData} threshold={75} />}
+      </Panel>
+
+      <div className="two-col">
+        <Panel title="Weakest modules — by class" icon="fa-solid fa-arrow-trend-down"
+               action={<button className="btn btn-outline btn-sm" onClick={() => navigate('reports')}>Reports</button>}>
+          {perf.loading ? <Empty text="Loading…" />
+            : perf.error ? <Empty text={`Could not load: ${perf.error}`} />
+            : !weakest.length ? <Empty text="No marks recorded yet." />
+            : (
+              <>
+                <ModulePerformanceChart
+                  data={weakest.map(r => ({ name: label(r), sub: r.lecturers, rate: r.pass_rate as number }))}
+                />
+                <details style={{ marginTop: 10 }}>
+                  <summary style={{ fontSize: 11, color: 'var(--text2)', cursor: 'pointer' }}>Show as a table</summary>
+                  <table className="data-table" style={{ marginTop: 8, fontSize: 11 }}>
+                    <thead><tr><th>Module</th><th>Class</th><th>Taught by</th><th>Marks</th><th>Avg</th><th>Pass</th><th>Att.</th></tr></thead>
+                    <tbody>
+                      {weakest.map(r => (
+                        <tr key={r.module_id + r.class_id}>
+                          <td>{r.module_name}</td><td>{r.class_name}</td><td>{r.lecturers}</td>
+                          <td>{r.marks_recorded}</td><td>{pct(r.avg_mark)}</td>
+                          <td style={{ color: (r.pass_rate ?? 0) >= 50 ? 'var(--viz-good)' : 'var(--viz-bad)', fontWeight: 700 }}>{pct(r.pass_rate)}</td>
+                          <td>{pct(r.attendance_rate)}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </details>
+                {unmarked.length > 0 && (
+                  <div style={{ marginTop: 10, fontSize: 11, color: 'var(--text3)', lineHeight: 1.5 }}>
+                    {unmarked.length} module(s) in scope still have assessments with no marks entered.
+                    Pass rates above are computed only from what has been marked.
+                  </div>
+                )}
+              </>
+            )}
+        </Panel>
+
+        <Panel title="Students at risk" icon="fa-solid fa-user-clock"
+               action={<button className="btn btn-outline btn-sm" onClick={() => navigate('students')}>Students</button>}>
+          {atRisk.loading ? <Empty text="Loading…" />
+            : atRisk.error ? <Empty text={`Could not load: ${atRisk.error}`} />
+            : !risk.length ? <Empty text="No student is currently below the thresholds." />
+            : (
+              <>
+                <table className="data-table" style={{ fontSize: 11 }}>
+                  <thead><tr><th>Student</th><th>Class</th><th>Avg</th><th>Att.</th><th>Why</th></tr></thead>
+                  <tbody>
+                    {risk.slice(0, 15).map(r => (
+                      <tr key={r.student_id}>
+                        <td><strong>{r.student_name}</strong><div style={{ color: 'var(--text3)' }}>{r.student_id}</div></td>
+                        <td>{r.class_name}</td>
+                        <td style={{ color: (r.avg_mark ?? 100) < 50 ? 'var(--viz-bad)' : undefined, fontWeight: 700 }}>{pct(r.avg_mark)}</td>
+                        <td style={{ color: (r.attendance_rate ?? 100) < 75 ? 'var(--viz-bad)' : undefined }}>{pct(r.attendance_rate)}</td>
+                        <td style={{ color: 'var(--text2)' }}>{r.reason}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+                {risk.length > 15 && (
+                  <div style={{ marginTop: 8, fontSize: 11, color: 'var(--text3)' }}>
+                    Showing the 15 most at risk of {risk.length}.
+                  </div>
+                )}
+              </>
+            )}
+        </Panel>
+      </div>
+    </>
   );
 }
 
@@ -221,6 +407,11 @@ export function PrincipalDashboard({ academicOnly }: { academicOnly: boolean }) 
             )}
         </Panel>
       )}
+
+      {/* The counters above say how big the school is. This says what to do
+          about it — and it is the same analysis a HOD sees, scoped wider, so
+          the two are talking about the same numbers when they meet. */}
+      <AnalyticsSection />
     </>
   );
 }
@@ -315,6 +506,11 @@ export function HodDashboard() {
           )}
         </Panel>
       </div>
+
+      {/* Locked to this department — the scope is not the HOD's to change, but
+          it is the same analysis the principal sees, so both are reading the
+          same numbers when they discuss them. */}
+      <AnalyticsSection lockedDept={dept.id} />
     </>
   );
 }

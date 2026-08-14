@@ -38,7 +38,30 @@ export interface LecturerStats {
   registers_last_14d: number; attendance_rate: number | null;
 }
 
-function useRpc<T>(fn: string, enabled = true) {
+export interface ModulePerformance {
+  dept_id: string | null; dept_name: string | null;
+  module_id: string; module_name: string;
+  class_id: string; class_name: string;
+  lecturers: string;
+  students: number; marks_recorded: number;
+  avg_mark: number | null; pass_rate: number | null; attendance_rate: number | null;
+  unmarked_assessments: number;
+}
+
+export interface AttendanceTrendRow {
+  week_start: string; dept_id: string | null; dept_name: string | null;
+  present: number; sessions: number; rate: number | null;
+}
+
+export interface AtRiskRow {
+  student_id: string; student_name: string;
+  class_name: string; dept_name: string;
+  avg_mark: number | null; attendance_rate: number | null;
+  failing_marks: number; total_marks: number;
+  reason: string;
+}
+
+function useRpc<T>(fn: string, enabled = true, args?: Record<string, unknown>) {
   const [data, setData] = useState<T | null>(null);
   const [loading, setLoading] = useState(enabled);
   const [error, setError] = useState<string | null>(null);
@@ -48,7 +71,7 @@ function useRpc<T>(fn: string, enabled = true) {
     let cancelled = false;
     (async () => {
       setLoading(true);
-      const { data: res, error: err } = await supabase.rpc(fn as never);
+      const { data: res, error: err } = await supabase.rpc(fn as never, (args ?? undefined) as never);
       if (cancelled) return;
       // Surfaced, not swallowed — an empty dashboard and a failed one must not
       // look the same.
@@ -57,7 +80,7 @@ function useRpc<T>(fn: string, enabled = true) {
       setLoading(false);
     })();
     return () => { cancelled = true; };
-  }, [fn, enabled]);
+  }, [fn, enabled, JSON.stringify(args ?? null)]);
 
   return { data, loading, error };
 }
@@ -65,3 +88,12 @@ function useRpc<T>(fn: string, enabled = true) {
 export const useSchoolStats     = (enabled = true) => useRpc<SchoolStats>('dashboard_school_stats', enabled);
 export const useDepartmentStats = (enabled = true) => useRpc<DepartmentStats[]>('dashboard_department_stats', enabled);
 export const useLecturerStats   = (enabled = true) => useRpc<LecturerStats>('dashboard_lecturer_stats', enabled);
+
+export const useModulePerformance = (enabled = true) =>
+  useRpc<ModulePerformance[]>('dashboard_module_performance', enabled);
+
+export const useAttendanceTrend = (weeks = 12, enabled = true) =>
+  useRpc<AttendanceTrendRow[]>('dashboard_attendance_trend', enabled, { weeks });
+
+export const useAtRisk = (enabled = true) =>
+  useRpc<AtRiskRow[]>('dashboard_at_risk', enabled);

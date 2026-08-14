@@ -85,6 +85,10 @@ export default function DashboardPage() {
   // ask, rather than one page showing everyone the same admin counters.
   if (role === 'principal')        return <PrincipalDashboard academicOnly={false} />;
   if (role === 'deputy_principal') return <PrincipalDashboard academicOnly />;
+  // Head of Academics has whole-school academic oversight — the same remit as
+  // the deputy. It was falling through to the generic admin counters, which
+  // answer a different question entirely.
+  if (role === 'hoa')              return <PrincipalDashboard academicOnly />;
   if (role === 'hod')              return <HodDashboard />;
   if (role === 'lecturer')         return <LecturerDashboard />;
 
