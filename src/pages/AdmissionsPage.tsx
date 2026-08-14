@@ -833,33 +833,50 @@ async function doEnroll(
     return;
   }
 
-  // 2 — Upgrade user role from applicant → student
-  // Both writes are checked: if the role doesn't flip, the person stays in the
-  // applicant portal; if the profile link doesn't stick, they sign in but the
-  // app can't find their student record. Either failure reads to them as
-  // "I can't log in", so it must not pass silently.
+  // 2 — Mark the application enrolled. This has to happen BEFORE the role
+  // flip: activate_student_account() refuses to convert an account whose
+  // application is not yet enrolled, which is exactly the check that makes the
+  // student's own "sign in to my student account" button safe.
+  const { error: appErr } = await supabase
+    .from("applications")
+    .update({ status: "enrolled", enrolled_at: new Date().toISOString() })
+    .eq("id", a.id)
+    .select("id");
+  if (appErr) {
+    toast("Student record created, but the application status could not be updated: " + appErr.message, "error");
+    return;
+  }
+
+  // 3 — Convert applicant → student.
+  //
+  // This was two bare UPDATEs from the browser, and both were silent when they
+  // failed: PostgREST reports success with zero rows changed when RLS refuses a
+  // write, and an UPDATE that matches no row is not an error either. So the
+  // role stayed 'applicant', the student was sent back to the applicant portal
+  // on every login, and nothing anywhere said so.
+  //
+  // The RPC does it server-side as a unit and reports what it did.
   if (a.applicant_user_id) {
-    const { error: roleErr } = await supabase
-      .from("user_roles").update({ role: "student" }).eq("user_id", a.applicant_user_id);
-    if (roleErr) {
-      toast("Student record created, but their role could not be changed to student: " + roleErr.message, "error");
-      return;
-    }
-    const { error: profErr } = await supabase
-      .from("profiles")
-      .update({ student_ref: sId, student_id: studentId })
-      .eq("user_id", a.applicant_user_id);
-    if (profErr) {
-      toast("Student record created, but their profile could not be linked: " + profErr.message, "error");
+    const { data, error: actErr } = await supabase
+      .rpc("activate_student_account" as never, { p_user_id: a.applicant_user_id } as never);
+    const res = data as { ok?: boolean; reason?: string } | null;
+
+    if (actErr || !res?.ok) {
+      const why = actErr
+        ? (/function .* does not exist|schema cache/i.test(actErr.message)
+            ? "the activate_student_account migration has not been applied yet"
+            : actErr.message)
+        : res?.reason;
+      toast(
+        `Student ${studentId} was created and the application is marked enrolled, ` +
+        `but their login is still an applicant account — ${why}. ` +
+        `They will keep landing on the application page until this is resolved.`,
+        "error",
+      );
+      closeModal(); load(); reloadDb();
       return;
     }
   }
-
-  // 3 — Mark application enrolled
-  await supabase
-    .from("applications")
-    .update({ status: "enrolled", enrolled_at: new Date().toISOString() })
-    .eq("id", a.id);
 
   toast("✓ Student enrolled successfully! Class assignment can be done from the Students page.", "success");
   closeModal();

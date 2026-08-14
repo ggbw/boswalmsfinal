@@ -29,11 +29,11 @@ UNION ALL SELECT 'attendance',    count(*)::text FROM attendance;
 -- 1 ── LOGIN. An account that cannot resolve to a person cannot sign in, and
 --      the failure looks like a wrong password.
 SELECT 'auth account with no profile' AS fault, u.email AS detail
-  FROM auth.users u LEFT JOIN profiles p ON p.id = u.id
- WHERE p.id IS NULL
+  FROM auth.users u LEFT JOIN profiles p ON p.user_id = u.id
+ WHERE p.user_id IS NULL
 UNION ALL
 SELECT 'profile with no role', p.email
-  FROM profiles p LEFT JOIN user_roles r ON r.user_id = p.id
+  FROM profiles p LEFT JOIN user_roles r ON r.user_id = p.user_id
  WHERE r.user_id IS NULL
 UNION ALL
 SELECT 'two accounts, one email', lower(email) || ' ×' || count(*)
@@ -47,7 +47,7 @@ SELECT 'two accounts, one email', lower(email) || ' ×' || count(*)
 SELECT 'student login not linked to a student record' AS fault,
        coalesce(p.email, p.student_id) AS detail
   FROM profiles p
-  JOIN user_roles r ON r.user_id = p.id AND r.role = 'student'
+  JOIN user_roles r ON r.user_id = p.user_id AND r.role = 'student'
  WHERE p.student_ref IS NULL OR p.student_id IS NULL
 UNION ALL
 SELECT 'student_ref points at nothing', p.email
@@ -121,12 +121,15 @@ SELECT 'attendance row belongs to no student' AS fault,
 
 -- 7 ── STAFF. A lecturer with no modules sees an empty system and reports it
 --      as broken; the cause is an unfinished assignment step, not a bug.
+-- lecturer_modules.lecturer_id is TEXT holding the auth user id, so it needs a
+-- cast — profiles.id (the row PK) is NOT what it points at.
 SELECT 'teaching staff with no modules assigned' AS fault,
        p.name || ' (' || r.role || ')' AS detail
   FROM profiles p
-  JOIN user_roles r ON r.user_id = p.id
+  JOIN user_roles r ON r.user_id = p.user_id
  WHERE r.role IN ('lecturer', 'hod')
-   AND NOT EXISTS (SELECT 1 FROM lecturer_modules lm WHERE lm.lecturer_id = p.id);
+   AND NOT EXISTS (SELECT 1 FROM lecturer_modules lm
+                    WHERE lm.lecturer_id = p.user_id::text);
 
 
 -- 8 ── SECURITY. A write policy naming 'admin' without 'super_admin' fails
@@ -149,11 +152,27 @@ SELECT 'table holds personal data with RLS OFF',
                      'attendance','submissions','applications','applicants');
 
 
--- 9 ── PASSWORDS. Everyone issued a default must be forced to change it.
-SELECT 'never forced to change the shared default password' AS fault,
-       p.email AS detail
+-- 9 ── PASSWORDS. profiles carries must_change_password but no timestamp, so
+--      "already changed it" and "never asked" look identical once the flag is
+--      false. The answerable question is who still owes a change. Informational.
+SELECT r.role::text AS role,
+       count(*) FILTER (WHERE coalesce(p.must_change_password, false)) AS still_to_change,
+       count(*)                                                        AS accounts
   FROM profiles p
-  JOIN user_roles r ON r.user_id = p.id
- WHERE r.role NOT IN ('admin', 'super_admin')
-   AND coalesce(p.must_change_password, false) = false
-   AND coalesce(p.password_changed_at, NULL) IS NULL;
+  JOIN user_roles r ON r.user_id = p.user_id
+ GROUP BY r.role
+ ORDER BY still_to_change DESC, role;
+
+
+-- 10 ── MARKS ↔ STUDENTS. assessment_marks.student_id holds the student NUMBER
+--       (what a lecturer types), while attendance.student_id holds students.id
+--       (the record key). The two tables disagree by design, and code that
+--       assumes either one everywhere is the single largest source of faults
+--       in this system.
+SELECT 'mark recorded against an unknown student number' AS fault,
+       am.student_id AS detail, count(*) AS marks
+  FROM assessment_marks am
+ WHERE NOT EXISTS (SELECT 1 FROM students s WHERE s.student_id = am.student_id)
+ GROUP BY am.student_id
+ ORDER BY marks DESC
+ LIMIT 25;
