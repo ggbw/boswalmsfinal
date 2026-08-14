@@ -771,7 +771,7 @@ function SuccessScreen() {
         >
           ✓
         </div>
-        <h2 style={{ color: "#002060", marginBottom: 10, fontSize: 22 }}>Application Submitted!</h2>
+        <h1 style={{ color: "#002060", marginBottom: 10, fontSize: 22 }}>Application Submitted</h1>
         <p style={{ color: "#555", lineHeight: 1.7, fontSize: 14 }}>
           Your application has been received. You can log in at any time to track the status of your application.
         </p>
