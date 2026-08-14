@@ -1,3 +1,4 @@
+import * as React from "react";
 import { useState, useEffect, useRef } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import logoImg from "@/assets/logo.jpg";
@@ -393,7 +394,9 @@ function RegistrationForm({
           >
             Applying for
           </div>
-          <div style={{ color: "#fff", fontSize: 18, fontWeight: 800, marginTop: 2 }}>{firstChoice.name}</div>
+          <h1 style={{ color: "#fff", fontSize: 18, fontWeight: 800, marginTop: 2 }}>
+            Apply for {firstChoice.name} — Boswa Culinary Institute
+          </h1>
           <div style={{ display: "flex", gap: 8, marginTop: 6 }}>
             <Chip col="#C9A227">{firstChoice.type}</Chip>
             {firstChoice.level && <Chip col="#C9A227">Level {firstChoice.level}</Chip>}
@@ -768,7 +771,7 @@ function SuccessScreen() {
         >
           ✓
         </div>
-        <h2 style={{ color: "#002060", marginBottom: 10, fontSize: 22 }}>Application Submitted!</h2>
+        <h1 style={{ color: "#002060", marginBottom: 10, fontSize: 22 }}>Application Submitted</h1>
         <p style={{ color: "#555", lineHeight: 1.7, fontSize: 14 }}>
           Your application has been received. You can log in at any time to track the status of your application.
         </p>
@@ -852,10 +855,16 @@ function FSec({ title, children }: { title: string; children: React.ReactNode })
   );
 }
 function FG({ label, children }: { label: string; children: React.ReactNode }) {
+  const id = React.useId();
+  const kids = React.Children.map(children, (child) =>
+    React.isValidElement(child) && !(child.props as { id?: string }).id
+      ? React.cloneElement(child as React.ReactElement<{ id?: string }>, { id })
+      : child,
+  );
   return (
     <div className="form-group">
-      <label>{label}</label>
-      {children}
+      <label htmlFor={id}>{label}</label>
+      {kids}
     </div>
   );
 }

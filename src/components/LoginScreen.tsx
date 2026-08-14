@@ -49,10 +49,10 @@ export default function LoginScreen() {
         <div className="login-card">
           <img
             src={logoImg}
-            alt="Boswa CIB Logo"
+            alt="Boswa Culinary Institute"
             style={{ width: 160, marginBottom: 12, display: "block", marginLeft: "auto", marginRight: "auto" }}
           />
-          <div className="login-title">Boswa CIB</div>
+          <h1 className="login-title">Boswa Culinary Institute Portal</h1>
           <div className="login-sub">School Management System</div>
           {error && (
             <div

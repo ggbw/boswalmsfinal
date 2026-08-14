@@ -2177,6 +2177,7 @@ export type Database = {
         Row: {
           added_at: string | null
           added_by: string | null
+          class_id: string | null
           id: string
           module_id: string
           student_id: string
@@ -2184,6 +2185,7 @@ export type Database = {
         Insert: {
           added_at?: string | null
           added_by?: string | null
+          class_id?: string | null
           id?: string
           module_id: string
           student_id: string
@@ -2191,11 +2193,19 @@ export type Database = {
         Update: {
           added_at?: string | null
           added_by?: string | null
+          class_id?: string | null
           id?: string
           module_id?: string
           student_id?: string
         }
         Relationships: [
+          {
+            foreignKeyName: "student_modules_class_id_fkey"
+            columns: ["class_id"]
+            isOneToOne: false
+            referencedRelation: "classes"
+            referencedColumns: ["id"]
+          },
           {
             foreignKeyName: "student_modules_module_id_fkey"
             columns: ["module_id"]
