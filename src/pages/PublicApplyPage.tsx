@@ -852,10 +852,16 @@ function FSec({ title, children }: { title: string; children: React.ReactNode })
   );
 }
 function FG({ label, children }: { label: string; children: React.ReactNode }) {
+  const id = React.useId();
+  const kids = React.Children.map(children, (child) =>
+    React.isValidElement(child) && !(child.props as { id?: string }).id
+      ? React.cloneElement(child as React.ReactElement<{ id?: string }>, { id })
+      : child,
+  );
   return (
     <div className="form-group">
-      <label>{label}</label>
-      {children}
+      <label htmlFor={id}>{label}</label>
+      {kids}
     </div>
   );
 }
