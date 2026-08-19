@@ -47,7 +47,12 @@ Deno.serve(async (req) => {
     });
     const { data: { user: caller } } = await callerClient.auth.getUser();
     if (!caller) {
-      return new Response(JSON.stringify({ error: "Unauthorized" }), {
+      // "Unauthorized" told the admin nothing. This branch means the JWT did
+      // not resolve to a user — almost always an expired session in a tab that
+      // has been open a long time, not a permissions problem.
+      return new Response(JSON.stringify({
+        error: "Your session is no longer valid — sign out and sign in again, then retry.",
+      }), {
         status: 401, headers: { ...corsHeaders, "Content-Type": "application/json" },
       });
     }
@@ -60,7 +65,16 @@ Deno.serve(async (req) => {
       .in("role", ["admin", "super_admin"]);
 
     if (!roleData || roleData.length === 0) {
-      return new Response(JSON.stringify({ error: "Only admins can provision accounts" }), {
+      // Say what role the caller actually holds. "Only admins can provision accounts"
+      // is unactionable when the person believes they ARE an admin — and this
+      // system has five roles that look administrative from the inside.
+      const { data: actual } = await adminClient
+        .from("user_roles").select("role").eq("user_id", caller.id);
+      const held = (actual ?? []).map((r: { role: string }) => r.role).join(", ") || "none";
+      return new Response(JSON.stringify({
+        error: `Your account holds the role: ${held}. Only admin and super_admin may provision accounts. `
+             + `Ask a system administrator to perform this, or to grant you the role.`,
+      }), {
         status: 403, headers: { ...corsHeaders, "Content-Type": "application/json" },
       });
     }
