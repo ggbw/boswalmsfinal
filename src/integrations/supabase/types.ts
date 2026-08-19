@@ -2924,6 +2924,31 @@ export type Database = {
         Returns: boolean
       }
       current_employee_id: { Args: never; Returns: string }
+      dashboard_at_risk: {
+        Args: never
+        Returns: {
+          attendance_rate: number
+          avg_mark: number
+          class_name: string
+          dept_name: string
+          failing_marks: number
+          reason: string
+          student_id: string
+          student_name: string
+          total_marks: number
+        }[]
+      }
+      dashboard_attendance_trend: {
+        Args: { weeks?: number }
+        Returns: {
+          dept_id: string
+          dept_name: string
+          present: number
+          rate: number
+          sessions: number
+          week_start: string
+        }[]
+      }
       dashboard_department_stats: {
         Args: never
         Returns: {
@@ -2938,6 +2963,24 @@ export type Database = {
         }[]
       }
       dashboard_lecturer_stats: { Args: never; Returns: Json }
+      dashboard_module_performance: {
+        Args: never
+        Returns: {
+          attendance_rate: number
+          avg_mark: number
+          class_id: string
+          class_name: string
+          dept_id: string
+          dept_name: string
+          lecturers: string
+          marks_recorded: number
+          module_id: string
+          module_name: string
+          pass_rate: number
+          students: number
+          unmarked_assessments: number
+        }[]
+      }
       dashboard_school_stats: { Args: never; Returns: Json }
       get_login_email: { Args: { p_identifier: string }; Returns: string }
       get_user_role: {
