@@ -72,13 +72,26 @@ function ExamFormModal({
       name, module_id: moduleId, class_id: classId || null, date: date || null,
       start_time: startTime || null, end_time: endTime || null, room: room || null, type,
     };
-    const { error } = exam
-      ? await supabase.from('exams').update(payload).eq('id', exam.id)
+    // .select() is not decoration. Without it, a write refused by RLS comes
+    // back as success with zero rows changed — no error — and the toast below
+    // reports "Exam created!" for an exam that does not exist. The UI offers
+    // this to HOA; the policy grants admin, hod, lecturer and super_admin. So
+    // an HOA was being congratulated on saving nothing.
+    const { data, error } = exam
+      ? await supabase.from('exams').update(payload).eq('id', exam.id).select('id')
       : await supabase.from('exams').insert({
           id: 'exam_' + Date.now(), status: 'scheduled', created_by: currentUser?.id || null, ...payload,
-        });
+        }).select('id');
     setSaving(false);
     if (error) { toast(error.message, 'error'); return; }
+    if (!data || data.length === 0) {
+      toast(
+        `The exam was not saved — your account does not have permission to ${exam ? 'change' : 'create'} exams. ` +
+        `Please ask an administrator.`,
+        'error',
+      );
+      return;
+    }
     toast(exam ? 'Exam updated!' : 'Exam created!', 'success');
     onDone();
   };
