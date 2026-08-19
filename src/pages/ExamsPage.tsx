@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { useRowSelection } from '@/lib/useRowSelection';
 import { useApp } from '@/context/AppContext';
 import { canManageAcademics } from '@/lib/scope';
 import { SUPP_EXAM_TYPE } from '@/lib/progression';
@@ -45,7 +46,12 @@ function ExamFormModal({
   const firstModuleId = exam?.moduleId || availableModules[0]?.id || '';
   const [name, setName] = useState(exam?.name || '');
   const [moduleId, setModuleId] = useState(firstModuleId);
-  const [classId, setClassId] = useState(exam?.classId || classesForModule(firstModuleId)[0]?.id || '');
+  // Several classes may sit the same paper. Editing stays single-class: an
+  // exam row IS one class's sitting, so widening an existing one would have to
+  // mean either moving it or silently creating siblings.
+  const [classIds, setClassIds] = useState<string[]>(
+    exam?.classId ? [exam.classId] : (classesForModule(firstModuleId)[0]?.id ? [classesForModule(firstModuleId)[0].id] : []),
+  );
   const [date, setDate] = useState(exam?.date || '');
   const [type, setType] = useState(exam?.type || 'Written Exam');
   const [startTime, setStartTime] = useState(exam?.startTime || '');
@@ -58,7 +64,10 @@ function ExamFormModal({
   const handleModuleChange = (mid: string) => {
     setModuleId(mid);
     const next = classesForModule(mid);
-    setClassId(prev => (next.some((c: any) => c.id === prev) ? prev : next[0]?.id || ''));
+    setClassIds(prev => {
+      const stillValid = prev.filter(id => next.some((c: any) => c.id === id));
+      return stillValid.length ? stillValid : (next[0]?.id ? [next[0].id] : []);
+    });
     const validTypes = typeOptionsFor(mid);
     setType(prev => (validTypes.includes(prev) ? prev : validTypes[0]));
   };
@@ -67,21 +76,31 @@ function ExamFormModal({
 
   const handleSave = async () => {
     if (!name || !moduleId) { toast('Name and module are required', 'error'); return; }
+    if (classIds.length === 0) { toast('Select at least one class', 'error'); return; }
     setSaving(true);
-    const payload = {
-      name, module_id: moduleId, class_id: classId || null, date: date || null,
+    const common = {
+      name, module_id: moduleId, date: date || null,
       start_time: startTime || null, end_time: endTime || null, room: room || null, type,
     };
+    const payload = { ...common, class_id: classIds[0] || null };
     // .select() is not decoration. Without it, a write refused by RLS comes
     // back as success with zero rows changed — no error — and the toast below
     // reports "Exam created!" for an exam that does not exist. The UI offers
     // this to HOA; the policy grants admin, hod, lecturer and super_admin. So
     // an HOA was being congratulated on saving nothing.
+    // Creating: one row PER CLASS. An exam row is one class's sitting — it
+    // carries that class's marks sheet and register — so three classes taking
+    // the same paper is three rows, not one row pointing at three classes.
+    // Distinct ids: 'exam_' + Date.now() alone would collide, because the whole
+    // loop is built inside the same millisecond.
     const { data, error } = exam
       ? await supabase.from('exams').update(payload).eq('id', exam.id).select('id')
-      : await supabase.from('exams').insert({
-          id: 'exam_' + Date.now(), status: 'scheduled', created_by: currentUser?.id || null, ...payload,
-        }).select('id');
+      : await supabase.from('exams').insert(
+          classIds.map((cid, i) => ({
+            id: `exam_${Date.now()}_${i}`, status: 'scheduled',
+            created_by: currentUser?.id || null, ...common, class_id: cid,
+          })),
+        ).select('id');
     setSaving(false);
     if (error) { toast(error.message, 'error'); return; }
     if (!data || data.length === 0) {
@@ -92,7 +111,13 @@ function ExamFormModal({
       );
       return;
     }
-    toast(exam ? 'Exam updated!' : 'Exam created!', 'success');
+    // Report how many were actually written, not how many were asked for.
+    if (exam) toast('Exam updated!', 'success');
+    else if (data.length < classIds.length) {
+      toast(`Only ${data.length} of ${classIds.length} exams were created — the rest were refused.`, 'error');
+    } else {
+      toast(data.length > 1 ? `${data.length} exams created, one per class.` : 'Exam created!', 'success');
+    }
     onDone();
   };
 
@@ -107,11 +132,39 @@ function ExamFormModal({
             {availableModules.map(m => <option key={m.id} value={m.id}>{m.name}</option>)}
           </select>
         </div>
-        <div className="form-group"><label>Class *</label>
-          <select className="form-select" value={classId} onChange={e => setClassId(e.target.value)}>
-            <option value="">— Select class —</option>
-            {classOptions.map((c: any) => <option key={c.id} value={c.id}>{c.name}</option>)}
-          </select>
+        <div className="form-group">
+          <label>Class{exam ? ' *' : 'es *'}</label>
+          {exam ? (
+            <select className="form-select" value={classIds[0] || ''} onChange={e => setClassIds(e.target.value ? [e.target.value] : [])}>
+              <option value="">— Select class —</option>
+              {classOptions.map((c: any) => <option key={c.id} value={c.id}>{c.name}</option>)}
+            </select>
+          ) : (
+            <div style={{ border: '1px solid var(--border)', borderRadius: 8, padding: '8px 10px',
+                          maxHeight: 140, overflowY: 'auto', display: 'grid', gap: 6 }}>
+              {classOptions.length === 0 && (
+                <span style={{ fontSize: 12, color: 'var(--text3)' }}>No classes take this module.</span>
+              )}
+              {classOptions.map((c: any) => (
+                <label key={c.id} style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 13, cursor: 'pointer' }}>
+                  <input type="checkbox" checked={classIds.includes(c.id)}
+                         onChange={() => setClassIds(prev =>
+                           prev.includes(c.id) ? prev.filter(x => x !== c.id) : [...prev, c.id])} />
+                  {c.name}
+                </label>
+              ))}
+            </div>
+          )}
+          {!exam && classIds.length > 1 && (
+            // Say what is about to happen. They are separate exams afterwards:
+            // each keeps its own marks sheet, and editing the date on one will
+            // not move the others. Better stated now than discovered later.
+            <div style={{ marginTop: 6, fontSize: 11, color: 'var(--text2)', lineHeight: 1.5 }}>
+              <i className="fa-solid fa-circle-info" /> This creates <strong>{classIds.length} exams</strong>, one per class,
+              sharing the same name, date, time, room and type. They are independent afterwards —
+              each class keeps its own marks sheet, and editing one will not change the others.
+            </div>
+          )}
         </div>
       </div>
       <div className="form-row cols2">
@@ -139,6 +192,172 @@ function ExamFormModal({
       <button className="btn btn-primary" style={{ marginTop: 12, width: '100%' }} disabled={saving} onClick={handleSave}>
         {exam ? 'Save Changes' : 'Create Exam'}
       </button>
+    </div>
+  );
+}
+
+
+/**
+ * Exam marks sheet, with tick-box selection.
+ *
+ * Was inline JSX passed to showModal() with a plain mutable object for the
+ * marks. That works for typing into inputs — nothing needs to re-render — but
+ * selection has to be visible, so it has to be state, so this has to be a
+ * component.
+ *
+ * The bulk action here is "set the selected students to N", which in practice
+ * means zero: absentees and no-shows are the students a lecturer would
+ * otherwise type 0 into one box at a time. Same shape as the register.
+ */
+function ExamMarksSheet({ exam, className, students, initialMarks, existing, db, toast, closeModal, reloadDb }: {
+  exam: any; className?: string; students: any[];
+  initialMarks: Record<string, number>; existing: any[];
+  db: any; toast: (m: string, t?: string) => void; closeModal: () => void; reloadDb: () => void;
+}) {
+  const [marks, setMarks] = useState<Record<string, number>>(initialMarks);
+  const [bulkValue, setBulkValue] = useState('0');
+  const [saving, setSaving] = useState(false);
+  const sel = useRowSelection(students.map((s: any) => s.studentId));
+
+  const applyToSelected = () => {
+    const v = Number(bulkValue);
+    if (!Number.isFinite(v) || v < 0 || v > 100) { toast('Enter a score between 0 and 100.', 'error'); return; }
+    setMarks(prev => {
+      const next = { ...prev };
+      sel.selected.forEach(sid => { next[sid] = v; });
+      return next;
+    });
+    sel.clear();
+  };
+
+  const marksMap = marks;   // the save body below reads this name
+
+  return (
+    <div>
+      <div style={{ background: 'var(--bg2)', borderRadius: 8, padding: '8px 14px', marginBottom: 12, fontSize: 12, color: 'var(--text2)' }}>
+        <strong>{exam.type || 'Exam'}</strong> · Class: <strong>{className}</strong> · {students.length} student(s)
+      </div>
+
+      <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap', padding: '8px 10px',
+                    marginBottom: 10, borderRadius: 8,
+                    background: sel.count ? 'var(--bg2)' : 'transparent',
+                    border: `1px solid ${sel.count ? 'var(--border)' : 'transparent'}` }}>
+        <label style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 12, cursor: 'pointer' }}>
+          <input type="checkbox" checked={sel.allSelected}
+                 ref={el => { if (el) el.indeterminate = sel.someSelected; }}
+                 onChange={sel.toggleAll} />
+          Select all
+        </label>
+        {sel.count > 0 ? (<>
+          <span style={{ fontSize: 12, fontWeight: 700 }}>{sel.count} selected</span>
+          <span style={{ fontSize: 12, color: 'var(--text2)' }}>Set score to:</span>
+          <input className="form-input" type="number" min={0} max={100} value={bulkValue}
+                 onChange={e => setBulkValue(e.target.value)} style={{ width: 70 }} />
+          <button className="btn btn-primary btn-sm" onClick={applyToSelected}>Apply</button>
+          <button className="btn btn-outline btn-sm" onClick={sel.clear}>Clear</button>
+        </>) : (
+          <span style={{ fontSize: 11, color: 'var(--text3)' }}>
+            Tick students to set several scores at once · shift-click for a range
+          </span>
+        )}
+      </div>
+
+      <div className="table-wrap" style={{ maxHeight: 400, overflowY: 'auto' }}>
+        <table>
+          <thead><tr><th style={{ width: 32 }} /><th>Student</th><th>ID</th><th>Score (0–100)</th></tr></thead>
+          <tbody>
+            {students.map((s: any) => (
+              <tr key={s.id} style={sel.isSelected(s.studentId) ? { background: 'var(--bg2)' } : undefined}>
+                <td>
+                  <input type="checkbox" checked={sel.isSelected(s.studentId)}
+                         onClick={(e) => { e.stopPropagation(); sel.toggle(s.studentId, (e as unknown as MouseEvent).shiftKey); }}
+                         onChange={() => { /* handled in onClick so shiftKey is available */ }} />
+                </td>
+                <td className="td-name">{s.name}</td>
+                <td style={{ fontFamily: "'JetBrains Mono',monospace", fontSize: 11 }}>{s.studentId}</td>
+                <td>
+                  <input className="form-input" type="number" min={0} max={100}
+                         value={marks[s.studentId] ?? 0} style={{ width: 80 }}
+                         onChange={e => setMarks(prev => ({ ...prev, [s.studentId]: Number(e.target.value) }))} />
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+
+      <button className="btn btn-primary" style={{ marginTop: 14, width: '100%' }} disabled={saving}
+              onClick={async () => {
+        setSaving(true);
+
+          // Save the whole class in ONE idempotent upsert per table instead of a
+          // per-student insert/update loop. Upsert keys on each table's unique
+          // constraint, so re-saving always works whether or not a row already
+          // exists — this removes the old "insert-from-a-stale-snapshot" path
+          // that silently failed (and lost marks) whenever the initial lookup
+          // hiccupped, and the partial-failure window of N separate writes.
+
+          // Validate BEFORE writing anything. min/max on a number input are
+          // hints — they gate the spinner arrows and nothing else, so a typed
+          // 500 or -20 reaches Number() and then the database unchallenged.
+          // Exam scores are already percentages, so the bound is 0-100.
+          const bad = students
+            .map(s => ({ name: s.name, v: marksMap[s.studentId] ?? 0 }))
+            .filter(x => !Number.isFinite(x.v) || x.v < 0 || x.v > 100);
+          if (bad.length > 0) {
+            toast(
+              `${bad.length} mark(s) are outside 0-100: ` +
+              bad.slice(0, 3).map(b => `${b.name} (${b.v})`).join(', ') +
+              (bad.length > 3 ? `, and ${bad.length - 3} more` : ''),
+              'error',
+            );
+            return;
+          }
+
+          // Step 1: assessment_marks (the report + transcript source of truth).
+          // Reuse the existing row id when known so the primary key stays stable;
+          // genuinely new rows get a fresh id.
+          const existingById: Record<string, string> = {};
+          (existing || []).forEach((x: any) => { existingById[x.student_id] = x.id; });
+          const asmRows = students.map(s => ({
+            id: existingById[s.studentId] || ('am_' + Date.now() + '_' + s.studentId),
+            student_id: s.studentId, assessment_id: exam.id, assessment_type: 'exam',
+            class_id: exam.classId, module_id: exam.moduleId,
+            score: marksMap[s.studentId] ?? 0,
+          }));
+          const { error: asmErr } = await supabase
+            .from('assessment_marks')
+            .upsert(asmRows, { onConflict: 'student_id,assessment_id' });
+
+          // Step 2: sync to the legacy marks table (final_exam) for the Reports
+          // overview. Scoped to the CURRENT academic period so a retake (later
+          // year/semester) is a separate attempt, not an overwrite. Only the
+          // final_exam column is sent, so coursework columns on existing rows are
+          // preserved; new rows fall back to the table's DEFAULT 0.
+          const curYear = db.config.currentYear;
+          const curSemester = db.config.currentSemester;
+          const markRows = students.map(s => ({
+            student_id: s.studentId, module_id: exam.moduleId, class_id: exam.classId,
+            final_exam: marksMap[s.studentId] ?? 0,
+            year: curYear, semester: curSemester,
+          }));
+          const { error: marksErr } = await supabase
+            .from('marks')
+            .upsert(markRows, { onConflict: 'student_id,module_id,class_id,year,semester' });
+
+          await supabase.from('exams').update({ status: 'done' }).eq('id', exam.id);
+
+          // Success is determined by the report/transcript source (assessment_marks).
+          // The legacy marks sync is best-effort and must never block saving.
+          if (asmErr) {
+            toast(asmErr.message || 'Marks could not be saved. Please try again.', 'error');
+          } else {
+            toast(marksErr ? 'Marks saved (overview sync pending).' : 'Marks saved!', 'success');
+            closeModal(); reloadDb();
+          }
+        
+        setSaving(false);
+      }}>{saving ? 'Saving…' : 'Save Marks'}</button>
     </div>
   );
 }
@@ -238,96 +457,11 @@ export default function ExamsPage() {
     });
 
     showModal(`Enter Marks — ${exam.name}`, (
-      <div>
-        <div style={{ background: 'var(--bg2)', borderRadius: 8, padding: '8px 14px', marginBottom: 12, fontSize: 12, color: 'var(--text2)' }}>
-          <strong>{exam.type || 'Exam'}</strong> · Class: <strong>{cls?.name}</strong> · {students.length} student(s)
-        </div>
-        <div className="table-wrap" style={{ maxHeight: 400, overflowY: 'auto' }}>
-          <table>
-            <thead><tr><th>Student</th><th>ID</th><th>Score (0–100)</th></tr></thead>
-            <tbody>
-              {students.map(s => (
-                <tr key={s.id}>
-                  <td className="td-name">{s.name}</td>
-                  <td style={{ fontFamily: "'JetBrains Mono',monospace", fontSize: 11 }}>{s.studentId}</td>
-                  <td>
-                    <input className="form-input" type="number" min={0} max={100}
-                      defaultValue={marksMap[s.studentId] ?? 0} style={{ width: 80 }}
-                      onChange={e => { marksMap[s.studentId] = Number(e.target.value); }} />
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-        <button className="btn btn-primary" style={{ marginTop: 14, width: '100%' }} onClick={async () => {
-          // Save the whole class in ONE idempotent upsert per table instead of a
-          // per-student insert/update loop. Upsert keys on each table's unique
-          // constraint, so re-saving always works whether or not a row already
-          // exists — this removes the old "insert-from-a-stale-snapshot" path
-          // that silently failed (and lost marks) whenever the initial lookup
-          // hiccupped, and the partial-failure window of N separate writes.
-
-          // Validate BEFORE writing anything. min/max on a number input are
-          // hints — they gate the spinner arrows and nothing else, so a typed
-          // 500 or -20 reaches Number() and then the database unchallenged.
-          // Exam scores are already percentages, so the bound is 0-100.
-          const bad = students
-            .map(s => ({ name: s.name, v: marksMap[s.studentId] ?? 0 }))
-            .filter(x => !Number.isFinite(x.v) || x.v < 0 || x.v > 100);
-          if (bad.length > 0) {
-            toast(
-              `${bad.length} mark(s) are outside 0-100: ` +
-              bad.slice(0, 3).map(b => `${b.name} (${b.v})`).join(', ') +
-              (bad.length > 3 ? `, and ${bad.length - 3} more` : ''),
-              'error',
-            );
-            return;
-          }
-
-          // Step 1: assessment_marks (the report + transcript source of truth).
-          // Reuse the existing row id when known so the primary key stays stable;
-          // genuinely new rows get a fresh id.
-          const existingById: Record<string, string> = {};
-          (existing || []).forEach((x: any) => { existingById[x.student_id] = x.id; });
-          const asmRows = students.map(s => ({
-            id: existingById[s.studentId] || ('am_' + Date.now() + '_' + s.studentId),
-            student_id: s.studentId, assessment_id: exam.id, assessment_type: 'exam',
-            class_id: exam.classId, module_id: exam.moduleId,
-            score: marksMap[s.studentId] ?? 0,
-          }));
-          const { error: asmErr } = await supabase
-            .from('assessment_marks')
-            .upsert(asmRows, { onConflict: 'student_id,assessment_id' });
-
-          // Step 2: sync to the legacy marks table (final_exam) for the Reports
-          // overview. Scoped to the CURRENT academic period so a retake (later
-          // year/semester) is a separate attempt, not an overwrite. Only the
-          // final_exam column is sent, so coursework columns on existing rows are
-          // preserved; new rows fall back to the table's DEFAULT 0.
-          const curYear = db.config.currentYear;
-          const curSemester = db.config.currentSemester;
-          const markRows = students.map(s => ({
-            student_id: s.studentId, module_id: exam.moduleId, class_id: exam.classId,
-            final_exam: marksMap[s.studentId] ?? 0,
-            year: curYear, semester: curSemester,
-          }));
-          const { error: marksErr } = await supabase
-            .from('marks')
-            .upsert(markRows, { onConflict: 'student_id,module_id,class_id,year,semester' });
-
-          await supabase.from('exams').update({ status: 'done' }).eq('id', exam.id);
-
-          // Success is determined by the report/transcript source (assessment_marks).
-          // The legacy marks sync is best-effort and must never block saving.
-          if (asmErr) {
-            toast(asmErr.message || 'Marks could not be saved. Please try again.', 'error');
-          } else {
-            toast(marksErr ? 'Marks saved (overview sync pending).' : 'Marks saved!', 'success');
-            closeModal(); reloadDb();
-          }
-        }}>Save Marks</button>
-      </div>
+      <ExamMarksSheet
+        exam={exam} className={cls?.name} students={students}
+        initialMarks={marksMap} existing={existing || []}
+        db={db} toast={toast} closeModal={closeModal} reloadDb={reloadDb}
+      />
     ), 'large');
   };
 

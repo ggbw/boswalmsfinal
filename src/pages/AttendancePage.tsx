@@ -3,6 +3,7 @@ import { useApp } from '@/context/AppContext';
 import { supabase } from '@/integrations/supabase/client';
 import { getScopedClasses, isReadOnlyOversight } from '@/lib/scope';
 import { downloadCsv, slug } from '@/lib/csv';
+import { useRowSelection } from '@/lib/useRowSelection';
 
 type Session = 'start' | 'end';
 type Tab = 'mark' | 'summary';
@@ -58,6 +59,21 @@ export default function AttendancePage() {
 
   const setAtt = (id: string, status: string) =>
     setAttState(prev => ({ ...prev, [id]: status }));
+
+  // Tick-box selection over the register. "All Present" was the only bulk
+  // action, so marking six absentees meant six individual clicks — and because
+  // "all present" is all-or-nothing it gets used as a starting point rather
+  // than an answer, which is how a wrong register gets saved by accident.
+  const sel = useRowSelection(students.map(s => s.id));
+
+  const setSelectedTo = (status: string) => {
+    setAttState(prev => {
+      const next = { ...prev };
+      sel.selected.forEach(id => { next[id] = status; });
+      return next;
+    });
+    sel.clear();
+  };
 
   const saveAttendance = async () => {
     if (!attClass) { toast('Please select a class', 'error'); return; }
@@ -193,9 +209,42 @@ export default function AttendancePage() {
         <div style={{ background: '#ddf4ff', border: '1px solid #addcff', borderRadius: 8, padding: '12px 14px' }}><div style={{ fontSize: 24, fontWeight: 700, color: '#0969da', fontFamily: "'JetBrains Mono',monospace" }}>{students.length}</div><div style={{ fontSize: 11, color: '#0969da', fontWeight: 600 }}>Total</div></div>
       </div>
 
+      {/* Selection toolbar. Appears only once something is ticked, so the
+          register looks exactly as before until it is needed. */}
+      <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap',
+                    padding: '8px 10px', marginBottom: 10, borderRadius: 8,
+                    background: sel.count ? 'var(--bg2)' : 'transparent',
+                    border: sel.count ? '1px solid var(--border)' : '1px solid transparent' }}>
+        <label style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 12, cursor: 'pointer' }}>
+          <input type="checkbox" checked={sel.allSelected}
+                 ref={el => { if (el) el.indeterminate = sel.someSelected; }}
+                 onChange={sel.toggleAll} />
+          Select all
+        </label>
+        {sel.count > 0 && (<>
+          <span style={{ fontSize: 12, fontWeight: 700 }}>{sel.count} selected</span>
+          <span style={{ fontSize: 12, color: 'var(--text2)' }}>Mark as:</span>
+          <button className="att-btn present" onClick={() => setSelectedTo('present')}>P</button>
+          <button className="att-btn absent"  onClick={() => setSelectedTo('absent')}>A</button>
+          {!isEnd && <button className="att-btn late" onClick={() => setSelectedTo('late')}>L</button>}
+          <button className="btn btn-outline btn-sm" onClick={sel.clear}>Clear</button>
+        </>)}
+        {sel.count === 0 && (
+          <span style={{ fontSize: 11, color: 'var(--text3)' }}>
+            Tick students to mark several at once · shift-click for a range
+          </span>
+        )}
+      </div>
+
       <div className="att-grid">{students.map(s => (
-        <div key={s.id} className="att-card">
-          <div className="att-name">{s.name.split(' ').slice(0, 2).join(' ')}</div>
+        <div key={s.id} className="att-card"
+             style={sel.isSelected(s.id) ? { outline: '2px solid var(--accent)', outlineOffset: 1 } : undefined}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+            <input type="checkbox" checked={sel.isSelected(s.id)}
+                   onClick={(e) => { e.stopPropagation(); sel.toggle(s.id, (e as unknown as MouseEvent).shiftKey); }}
+                   onChange={() => { /* handled in onClick so shiftKey is available */ }} />
+            <div className="att-name">{s.name.split(' ').slice(0, 2).join(' ')}</div>
+          </div>
           <div className="att-toggle">
             <button className={`att-btn present ${attState[s.id] === 'present' ? 'active' : ''}`} onClick={() => setAtt(s.id, 'present')}>P</button>
             <button className={`att-btn absent ${attState[s.id] === 'absent' ? 'active' : ''}`} onClick={() => setAtt(s.id, 'absent')}>A</button>
