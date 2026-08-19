@@ -268,6 +268,23 @@ export default function ExamsPage() {
           // that silently failed (and lost marks) whenever the initial lookup
           // hiccupped, and the partial-failure window of N separate writes.
 
+          // Validate BEFORE writing anything. min/max on a number input are
+          // hints — they gate the spinner arrows and nothing else, so a typed
+          // 500 or -20 reaches Number() and then the database unchallenged.
+          // Exam scores are already percentages, so the bound is 0-100.
+          const bad = students
+            .map(s => ({ name: s.name, v: marksMap[s.studentId] ?? 0 }))
+            .filter(x => !Number.isFinite(x.v) || x.v < 0 || x.v > 100);
+          if (bad.length > 0) {
+            toast(
+              `${bad.length} mark(s) are outside 0-100: ` +
+              bad.slice(0, 3).map(b => `${b.name} (${b.v})`).join(', ') +
+              (bad.length > 3 ? `, and ${bad.length - 3} more` : ''),
+              'error',
+            );
+            return;
+          }
+
           // Step 1: assessment_marks (the report + transcript source of truth).
           // Reuse the existing row id when known so the primary key stays stable;
           // genuinely new rows get a fresh id.

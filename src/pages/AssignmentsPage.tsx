@@ -362,6 +362,23 @@ export default function AssignmentsPage() {
           // insert over an existing row when the initial lookup came back stale.
           const existingById: Record<string, string> = {};
           (existing || []).forEach((x: any) => { existingById[x.student_id] = x.id; });
+          // min/max on a number input are HINTS, not enforcement — they block
+          // the spinner arrows and nothing else. Typing 500 or -20 goes
+          // straight through Number() into the database, which is how
+          // impossible marks were being stored.
+          const bad = students
+            .map(s => ({ name: s.name, v: marksMap[s.studentId] ?? 0 }))
+            .filter(x => !Number.isFinite(x.v) || x.v < 0 || x.v > a.marks);
+          if (bad.length > 0) {
+            toast(
+              `${bad.length} mark(s) are outside 0–${a.marks}: ` +
+              bad.slice(0, 3).map(b => `${b.name} (${b.v})`).join(', ') +
+              (bad.length > 3 ? `, and ${bad.length - 3} more` : ''),
+              'error',
+            );
+            return;
+          }
+
           const rows = students.map(s => {
             const score = marksMap[s.studentId] ?? 0;
             // Normalise to 0-100
@@ -410,12 +427,50 @@ export default function AssignmentsPage() {
           <textarea className="form-input" rows={3} defaultValue={feedback} placeholder="Provide feedback to the student..." onChange={e => feedback = e.target.value} />
         </div>
         <button className="btn btn-primary" style={{ marginTop: 12 }} onClick={async () => {
-          const { error } = await supabase.from('submissions').update({
-            grade: Number(grade), feedback, status: 'graded'
-          }).eq('id', submission.id);
-          if (error) { toast(error.message, 'error'); } else {
-            toast('Submission graded!', 'success'); closeModal(); reloadDb();
+          const raw = Number(grade);
+          if (!Number.isFinite(raw) || raw < 0 || raw > assignment.marks) {
+            toast(`Grade must be between 0 and ${assignment.marks}.`, 'error');
+            return;
           }
+
+          const { error } = await supabase.from('submissions').update({
+            grade: raw, feedback, status: 'graded'
+          }).eq('id', submission.id).select('id');
+          if (error) { toast(error.message, 'error'); return; }
+
+          // Grading a submission has to reach assessment_marks as well, or the
+          // mark exists only on the submission: it never appears in Marks,
+          // Reports, the module mark or progression. That is why soft-copy
+          // results "don't appear at marks" — they were being saved to one
+          // table and read from another.
+          //
+          // Two conversions matter here:
+          //   • the score is stored as a PERCENTAGE (score >= 50 passes), so a
+          //     grade out of assignment.marks must be normalised. 25 out of 30
+          //     is 83, not 25.
+          //   • assessment_marks keys on the student NUMBER, while
+          //     submissions.student_id holds students.id. Writing the wrong one
+          //     detaches the mark from the student.
+          const stu = db.students.find((st: any) => st.id === submission.studentId);
+          if (!stu) {
+            toast('Grade saved, but the student record could not be matched — it will not appear in Marks.', 'error');
+            closeModal(); reloadDb(); return;
+          }
+          const normalised = assignment.marks > 0 ? Math.round((raw / assignment.marks) * 100) : raw;
+
+          const { error: amErr } = await supabase.from('assessment_marks').upsert({
+            id: 'am_' + Date.now() + '_' + stu.studentId,
+            student_id: stu.studentId, assessment_id: assignment.id,
+            assessment_type: 'assignment', class_id: assignment.classId,
+            module_id: assignment.moduleId, score: normalised,
+          }, { onConflict: 'student_id,assessment_id' });
+
+          if (amErr) {
+            toast('Grade saved on the submission, but it could not be recorded in Marks: ' + amErr.message, 'error');
+          } else {
+            toast(`Graded — ${raw}/${assignment.marks} (${normalised}%) recorded in Marks.`, 'success');
+          }
+          closeModal(); reloadDb();
         }}>Save Grade</button>
       </div>
     ));
