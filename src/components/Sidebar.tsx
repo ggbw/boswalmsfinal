@@ -309,7 +309,10 @@ function getNavConfig(role: string, db: any, hrPending: HrPendingCounts): NavSec
         section: "Teaching",
         items: [
           { id: "mystudents", label: "My Students", icon: "fa-solid fa-users" },
-          { id: "modules", label: "My Modules", icon: "fa-solid fa-book-open" },
+          // Route id must be "mymodules". Pointing this at "modules" opened the
+          // ADMIN modules page, which lists every module in the school — the
+          // lecturer saw all 50 under a heading saying "My Modules".
+          { id: "mymodules", label: "My Modules", icon: "fa-solid fa-book-open" },
           { id: "timetable", label: "Timetable", icon: "fa-solid fa-calendar-days" },
           { id: "attendance", label: "Mark Attendance", icon: "fa-solid fa-clipboard-check" },
         ],

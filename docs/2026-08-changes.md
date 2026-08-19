@@ -1,4 +1,4 @@
-# Boswa CIB SMS — changes, week of 12 August 2026
+# Boswa CIB SMS — changes, 12–14 August 2026
 
 What began as an investigation into ten reported faults became a substantial
 repair and extension of the system. This is the record of what was found, what
@@ -141,6 +141,43 @@ two real problems within minutes during this week's work.
 The tables that outgrow the 1,000-row response cap are now paged in a stable
 order. Attendance alone will add roughly 1,400 rows a week.
 
+### 3.5 Assignment visibility, corrected again
+
+Reported a second time on 14 August: *students cannot see assignments meant for
+them.* A per-class query found two opposite faults sharing one cause.
+
+The filter matched on **module** and ignored class:
+
+| Class | Set for this class | Students could see |
+|---|---|---|
+| Ramseys | 1 | **0** |
+| Reubens | 1 | **0** |
+| Cert Jan 2025 | **0** | 2 |
+
+Ramseys and Reubens had work set *for them* that none of their 19 students could
+see, because the assignment's module was not linked to the class in
+`module_classes`. Meanwhile Cert Jan 2025 had no assignments of its own and was
+being shown two belonging to another class that shares a module.
+
+Both are now one rule in `src/lib/studentMarks.ts`: an assignment naming a class
+goes to **that class**, resolved through `classForModule` so a retaking student
+gets the assignments of the cohort they actually sit with; an assignment naming
+no class belongs to the module, so everyone taking it sees it.
+
+The dashboard had been using a **third** filter (`classId` only), so its count
+never matched the list on the Assignments page. Both now call the same function.
+
+### 3.6 Errors that were being swallowed
+
+Two reporting faults, each of which made a working system look broken:
+
+**Edge function calls** returned *"Edge Function returned a non-2xx status
+code"* regardless of what actually went wrong. Nine call sites now read the real
+message. Deleting a student had been failing this way.
+
+**Provisioning** reported *"5 errors"* with no way to see them. It now renders
+the failures per student.
+
 ---
 
 ## 4. New features
@@ -219,6 +256,104 @@ un-failing someone already told to retake.
   different actions
 - `delete-user` function, so deleting a user removes their login
 
+### 4.6 Notes may be links
+
+A note can now be a URL instead of a file. Bare domains are normalised to
+`https://`, link notes show a chain icon and an **Open** button rather than
+Download, and deleting one skips the storage removal that would otherwise fail.
+A database constraint prevents a note existing with neither a file nor a link.
+
+### 4.7 Two lecturers on one module in one class
+
+The database always allowed this. The Classes panel did not — assigning a
+lecturer **replaced** the existing one rather than adding, so a second
+co-teacher silently removed the first. Each lecturer is now a removable chip
+with *"+ Add another lecturer"* beneath, and My Modules lists every co-teacher.
+
+### 4.8 Enrolled applicants can reach their student account
+
+An enrolled student downloaded their welcome letter, signed out, signed back in
+— and landed on the applicant portal again. Every time.
+
+Enrolment did try to change the role:
+
+```
+UPDATE user_roles SET role = 'student' WHERE user_id = ...
+```
+
+from the browser. That statement is **silent in both of its failure modes**:
+PostgREST returns success with zero rows changed when RLS refuses a write, and
+an `UPDATE` matching no row is not an error either. So the role stayed
+`applicant`, `AuthGate` routed them back to the portal, and the only evidence
+was a student saying "it still shows my application".
+
+Replaced by `activate_student_account()` — one `SECURITY DEFINER` function that
+does the conversion as a unit and **reports what it did**. It serves two
+callers: the admin enrolling someone, and the student themselves via a
+**"Sign in to my student account"** button on the enrolled panel.
+
+Self-activation is safe because the precondition is checked **in the database,
+not asserted by the browser**: the caller must already have an application in
+status `enrolled`. Nobody can grant themselves a role — only claim one
+admissions has already decided. `student` is also the least-privileged role.
+
+Activation sets `must_change_password`, so the student goes straight to the
+change-password screen and then into the system — **no sign-out in between**.
+They had been signing in with the password they chose as an *applicant*, which
+should not carry over to a student account.
+
+### 4.9 Analytical dashboards
+
+The dashboards described how big the school was. They now answer the questions
+someone opens a dashboard to decide:
+
+- **Attendance over time** — a line, not a number. A single percentage cannot
+  show a decline, and attendance falls before marks do, making it the earliest
+  warning the data holds.
+- **Weakest modules, per class.** The unit is module × class deliberately: a
+  module failing in *every* class is a curriculum or assessment problem; the
+  same module failing in *one* class is a teaching or timetable problem.
+  Aggregating them hides the distinction that decides who you talk to.
+- **Students at risk, by name**, with the reason. A percentage cannot be acted
+  on.
+
+**Filters** sit in one row above the charts — department and period. A HOD's
+department is locked; it is not theirs to change. But it is the same analysis
+the principal sees, so both read the same numbers when they meet.
+
+**HOA was falling through to the generic admin counters** and now gets the
+academic dashboard alongside the Deputy.
+
+Two rules worth recording, because they will come up again:
+
+*Modules with no marks are excluded from pass rates.* Showing them as 0% would
+report "everyone failed" when the truth is "nobody has marked it".
+
+*At risk is a share, not a count.* The first version flagged any three marks
+below 50 and caught students averaging 74% — a count punishes volume. Half or
+more of a student's marks, over at least four marks, asks whether failing is the
+**pattern**. Minimum counts on every criterion, because two marks and one bad
+day early in a semester are not a pattern, and a list that cries wolf gets
+ignored.
+
+The at-risk rule deliberately does **not** recompute the module mark. That is a
+weighted composite living in `src/lib/moduleMark.ts`; copying it into SQL would
+give the school two versions of its own pass rule, and they would drift.
+
+### 4.10 Charts
+
+Bars and donuts across all four role dashboards, on a palette **validated rather
+than chosen by eye** — checked in both light and dark for colour-blind
+separation (ΔE 9.2 / 9.4 against a target of 8) and normal-vision distinctness
+(24.0 / 20.9 against a floor of 15).
+
+Light-mode aqua measures 2.82:1, below the 3:1 contrast floor, so **every chart
+carries visible value labels**. Colour never carries meaning alone. Each
+department chart also keeps its table behind a *"Show as a table"* toggle.
+
+Pass/fail uses **status colours held separate from the categorical set**, so a
+red bar always means "below the pass mark" and never "series three".
+
 ---
 
 ## 5. Migrations
@@ -247,9 +382,22 @@ Twenty, all applied. In order:
 | `…180000_fix_student_ids_with_spaces` | Two IDs corrected; 36 marks moved with one of them |
 | `…190000_registration_supp_retake` | Registration, registration modules, module outcomes |
 | `…200000_student_modules_class` | Which class a student takes a module with |
+| `…210000_submission_policies_use_helper` | Coursework upload refused for some students |
+| `…220000_fix_department_stats_ambiguity` | `column reference "dept_id" is ambiguous` |
+| `…230000_link_omaatla_profile` | One student profile with only half its link |
+| `…240000_module_notes_links` | Notes may hold a URL instead of a file |
+| `…250000_super_admin_policy_sweep` | super_admin write access across 13 tables |
+| `…260000_super_admin_admissions` | The stalled admissions chain |
+| `20260814000000_activate_student_account` | Enrolled applicants trapped in the portal; repairs those already stuck |
+| `20260814010000_dashboard_analytics` | Module performance, attendance trend, at-risk list |
+| `20260814020000_audit_repairs` | Policies covering anonymous visitors, tightened |
 
 `20260812070000_close_lecturer_modules_public_write` is superseded by `060000`
 and need not be run.
+
+`220000` was written on 12 August and **never took**, so the dashboards kept
+reporting the `dept_id` error for two days. `010000` re-applies it. The lesson
+is in section 6: a migration written is not a migration applied.
 
 ---
 
@@ -273,28 +421,83 @@ referring to a label that no longer exists.
 **`assessment_marks` is keyed on a human-typed student number**, not a record
 id. That is the root of three separate faults this week. Worth revisiting.
 
+**A browser-side `.update()` cannot tell success from refusal.** This is the
+single most expensive pattern in the codebase. PostgREST returns success with
+zero rows changed when RLS declines a write, and an `UPDATE` matching no row is
+not an error either — so the UI reports nothing and the record simply never
+moves. It produced, over three days: the stalled admissions chain, the swallowed
+timetable notifications, and enrolled students trapped in the applicant portal.
+Three symptoms, reported separately, one cause. Any write that matters should
+either `.select()` its result or go through a function that reports what it did.
+
+**`functions.invoke()` hides the real error.** On any non-2xx it returns
+`data: null` and the message *"Edge Function returned a non-2xx status code"*,
+putting the actual reason on `error.context`. Every call site read
+`data?.error || error.message` — and on a 4xx there is no `data.error` to
+prefer, so the generic string always won. Deleting a student reported "something
+about edge functions" for exactly this reason: the function was explaining
+itself and nobody was listening. Now centralised in `src/lib/invokeFn.ts`.
+
+**A shared helper defined privately in a page will eventually be called from
+another one.** `cleanStudentId` lived inside `StudentsPage` and was called from
+`UserManagementPage`, which broke the build. It is now `src/lib/studentId.ts`.
+The same thing had already happened with the assignment-visibility rule, which
+existed in three slightly different versions across two pages.
+
+**Audit a table, not a policy.** A check that flagged every write policy naming
+`admin` without `super_admin` reported 32 faults. Postgres combines PERMISSIVE
+policies with OR, so an old admin-only policy beside a newer admin-or-super_admin
+one blocks nothing — only **two** were real. The question is never whether a
+policy omits a role; it is whether the table has any policy that grants it.
+RESTRICTIVE policies are the exception, since those are ANDed.
+
+**Verification that runs as the database owner proves nothing about a gated
+function.** `SECURITY DEFINER` functions checking `auth.uid()` correctly refuse
+in the SQL editor, where there is no signed-in user. Verify queries have to run
+the logic directly; the function itself is only testable from the app.
+
+**A SQL editor shows one result set.** An audit written as ten statements ran
+ten checks and displayed the last. It is now a single query returning
+`severity · area · finding · detail`, faults first.
+
 ---
 
 ## 7. Outstanding
 
 ### Needs doing in the app
 
-- Link **Escoffiers** and **Soyers** to their modules — 26 students currently see
-  no assignments or notes
-- Assign modules to the **6 teaching staff who have none** — they see no
-  classes, no students, and cannot take a register
-- **Provision the 6 active students with no login**
-- Assign the **Principal** role
-- Confirm whether **three Heads of Academics** is intended
+- Link **Escoffiers** and **Soyers** to their modules — 26 students see no
+  assignments, notes or marks. *Deferred by instruction on 14 August.*
+- Assign modules to the **5 lecturers who have none** — they see an empty system
+  and report it as broken
+- **7 active students have no login.** Some already have an account under the
+  same email and need only linking
+- **No Deputy Principal account exists.** The role is built and routed, but
+  nobody holds it. One HOD across the whole school — worth confirming that is
+  intended
+
+### Known and accepted
+
+- **45 orphaned marks** across three deleted exams (`exam_1779084373462`,
+  `…678805`, `…619484`), 15 each. They count toward nothing and no student can
+  see them. *Left for later by instruction.*
+- **`attendance` and `timetable` do not grant super_admin write access.**
+  Confirmed as intended — staff and lecturer policies cover the register, and
+  `timetable` is the legacy table superseded by `timetable_documents`.
+- Two accounts are broken: one auth account with no profile, and one student
+  login not linked to a student record. Both signed off as acceptable for now.
 
 ### Untested
 
-Nothing from this week has been used in anger. Worth confirming in order:
+Nothing from this week has been used in anger.
 
-1. A student's marks matching Reports — everything else reads through that path
-2. Taking and saving an attendance register
-3. Each dashboard with a real account
+1. **Taking an attendance register.** The table is still empty at 0 rows — but
+   the unique index the upsert depends on is present, so this is now believed to
+   be *unused* rather than broken. One register settles it.
+2. A student's marks matching Reports
+3. Each dashboard with a real account, including the new analytical panels
 4. The registration flow end to end with **one** student before anyone else
+5. The admissions chain, and the new enrolled → student conversion
 
 ### Open questions
 
@@ -305,3 +508,10 @@ Nothing from this week has been used in anger. Worth confirming in order:
   from this work by instruction
 - Attendance is still bulk-loaded into the browser. Paging fixed correctness;
   loading a year of registers on every page load is still the wrong shape
+- A **cohort-level marks notification** was asked for and never built. What
+  exists fires per student as their own modules settle, so classmates are told
+  at different times
+- **149 accounts will hit the forced password change** on first sign-in — 136
+  students, 8 of 9 lecturers, all 3 HOAs, the HOD and HR. Admin and super_admin
+  were deliberately left alone. Worth expecting the support load when logins go
+  out

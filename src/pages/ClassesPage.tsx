@@ -1,6 +1,6 @@
 import { useState, Fragment } from "react";
 import { useApp } from "@/context/AppContext";
-import { isAdminRole } from '@/lib/scope';
+import { isAdminRole, getScopedClassIds } from '@/lib/scope';
 import { supabase } from "@/integrations/supabase/client";
 
 // Sync module_classes for a class based on its programme + year + semester
@@ -182,6 +182,15 @@ export default function ClassesPage() {
   // super_admin was excluded, so the highest role could not assign lecturers
   // to modules — the very thing this page exists for.
   const isAdmin = isAdminRole(currentUser?.role);
+  // Classes this person may see. The list was rendered straight from db.classes
+  // with no scoping at all — a lecturer or HOD reaching this page by direct
+  // navigation saw every class in the school. Not in their menu is not a
+  // control; the filter has to be here.
+  const scopedClassIds = getScopedClassIds(db, currentUser);
+  const visibleClasses = scopedClassIds === null
+    ? db.classes
+    : db.classes.filter((c) => scopedClassIds.includes(c.id));
+
   const [syncing, setSyncing] = useState(false);
   const [openPanelId, setOpenPanelId] = useState<string | null>(null);
 
@@ -439,7 +448,7 @@ export default function ClassesPage() {
               </tr>
             </thead>
             <tbody>
-              {db.classes.map((cls) => {
+              {visibleClasses.map((cls) => {
                 const prog = db.config.programmes.find((p) => p.id === cls.programme);
                 const studCount = db.students.filter((s) => s.classId === cls.id).length;
                 const classLecturers = [...new Set(

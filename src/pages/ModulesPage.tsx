@@ -1,16 +1,30 @@
 import { useApp } from "@/context/AppContext";
-import { isAdminRole } from '@/lib/scope';
+import { isAdminRole, getScopedModuleIds } from '@/lib/scope';
 import { supabase } from "@/integrations/supabase/client";
 
 export default function ModulesPage() {
   const { db, currentUser, toast, showModal, closeModal, reloadDb } = useApp();
   const role = currentUser?.role;
   const isAdmin = isAdminRole(role);
-  const isHod = role === "hod";
-  const hodDept = isHod ? db.departments.find((d) => d.hod === currentUser?.name) : null;
-  const visibleModules = isHod && hodDept
-    ? db.modules.filter((m) => m.dept === hodDept.id)
-    : db.modules;
+
+  // Scope through the shared rule rather than a role check written here.
+  //
+  // This page previously filtered for HOD and NOBODY ELSE, so every other role
+  // reaching it saw all 50 modules. That mattered because the lecturer's
+  // "My Modules" menu item pointed at this page, not MyModulesPage.
+  //
+  // The old HOD lookup was `d.hod === currentUser?.name` — an exact match on a
+  // display name. Any difference in spelling, or a rename, silently matched
+  // nothing and fell through to showing the whole school.
+  // resolveDepartment() exists precisely to fix that: it tries the department's
+  // hod field, then falls back to the department on their profile, tolerating
+  // profiles.dept holding a NAME while modules.dept holds an ID.
+  //
+  // null means unrestricted; [] means nothing. Never collapse the two.
+  const scopedIds = getScopedModuleIds(db, currentUser);
+  const visibleModules = scopedIds === null
+    ? db.modules
+    : db.modules.filter((m) => scopedIds.includes(m.id));
 
   const showEditModule = (modId: string) => {
     const mod = db.modules.find((m) => m.id === modId);
