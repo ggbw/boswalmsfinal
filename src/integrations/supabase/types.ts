@@ -2994,8 +2994,10 @@ export type Database = {
         }
         Returns: boolean
       }
+      is_hr_admin: { Args: { _uid: string }; Returns: boolean }
       is_managed_by_current_user: { Args: { emp_id: string }; Returns: boolean }
       is_oversight_only: { Args: { _uid: string }; Returns: boolean }
+      is_own_attendance_code: { Args: { _code: string }; Returns: boolean }
       is_school_staff: { Args: { _uid: string }; Returns: boolean }
       my_student_number: { Args: { _uid: string }; Returns: string }
       my_student_ref: { Args: { _uid: string }; Returns: string }
