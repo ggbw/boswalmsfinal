@@ -1,3 +1,4 @@
+import { useState } from 'react';
 import { useApp } from '@/context/AppContext';
 import Sidebar from '@/components/Sidebar';
 import Dashboard from '@/pages/DashboardPage';
@@ -22,6 +23,7 @@ import MyStudentsPage from '@/pages/MyStudentsPage';
 import MyModulesPage from '@/pages/MyModulesPage';
 import MappingPage from '@/pages/MappingPage';
 import UserManagementPage from '@/pages/UserManagementPage';
+import RegistrationsPage from '@/pages/RegistrationsPage';
 import PhotoGalleryPage from '@/pages/PhotoGalleryPage';
 import NotesPage from '@/pages/NotesPage';
 import HRComingSoonPage from '@/pages/hr/HRComingSoonPage';
@@ -113,7 +115,7 @@ const pageComponents: Record<string, React.ComponentType> = {
   notifications: NotificationsPage, profile: ProfilePage, grades: GradesPage,
   mystudents: MyStudentsPage, mytimetable: MyStudentsPage,
   mymodules: MyModulesPage, mapping: MappingPage,
-  usermanagement: UserManagementPage, photogallery: PhotoGalleryPage, notes: NotesPage,
+  usermanagement: UserManagementPage, registrations: RegistrationsPage, photogallery: PhotoGalleryPage, notes: NotesPage,
   ...hrPlaceholders,
   // Real HR pages override the placeholders
   'hr-dashboard': HRDashboardPage,
@@ -155,31 +157,35 @@ const pageComponents: Record<string, React.ComponentType> = {
 };
 
 const ROLE_PAGES: Record<string, string[]> = {
-  dashboard:      ['admin','super_admin','hr','manager','employee','hod','hoy','lecturer','student'],
-  profile:        ['admin','super_admin','hr','manager','employee','hod','hoy','lecturer','student'],
-  notifications:  ['admin','super_admin','hr','manager','employee','hod','hoy','lecturer','student'],
-  students:       ['admin','super_admin','hod','hoy','lecturer'],
-  lecturers:      ['admin','super_admin'],
+  dashboard:      ['admin','super_admin','hr','manager','employee','hod','hoa','lecturer','student','principal','deputy_principal'],
+  profile:        ['admin','super_admin','hr','manager','employee','hod','hoa','lecturer','student','principal','deputy_principal'],
+  notifications:  ['admin','super_admin','hr','manager','employee','hod','hoa','lecturer','student','principal','deputy_principal'],
+  students:       ['admin','super_admin','hod','hoa','lecturer','principal','deputy_principal'],
+  // HOA sees all teaching staff; a HOD sees their own department's. The page
+  // scopes the list itself — see getScopedFacultyIds.
+  lecturers:      ['admin','super_admin','hod','hoa','principal','deputy_principal'],
   classes:        ['admin','super_admin'],
-  modules:        ['admin','super_admin','hod','lecturer'],
-  timetable:      ['admin','super_admin','hod','hoy','lecturer'],
-  attendance:     ['admin','super_admin','hod','hoy','lecturer'],
-  exams:          ['admin','super_admin','hod','hoy','lecturer'],
-  assignments:    ['admin','super_admin','hod','hoy','lecturer','student'],
-  results:        ['admin','super_admin','hod','hoy','lecturer','student'],
-  reports:        ['admin','super_admin','hod','hoy'],
-  transcripts:    ['admin','super_admin','hod','hoy','student'],
-  admissions:     ['admin','super_admin'],
-  progression:    ['admin','super_admin','hod','hoy'],
+  modules:        ['admin','super_admin','hod','lecturer','principal','deputy_principal'],
+  timetable:      ['admin','super_admin','hod','hoa','lecturer','principal','deputy_principal'],
+  attendance:     ['admin','super_admin','hod','hoa','lecturer','principal','deputy_principal'],
+  exams:          ['admin','super_admin','hod','hoa','lecturer','principal','deputy_principal'],
+  assignments:    ['admin','super_admin','hod','hoa','lecturer','student','principal','deputy_principal'],
+  results:        ['admin','super_admin','hod','hoa','lecturer','student','principal','deputy_principal'],
+  reports:        ['admin','super_admin','hod','hoa','principal','deputy_principal'],
+  transcripts:    ['admin','super_admin','hod','hoa','student','principal','deputy_principal'],
+  admissions:     ['admin','super_admin','principal'],
+  progression:    ['admin','super_admin','hod','hoa','principal','deputy_principal'],
+  // Approving a registration is what advances a student, so it is admin-only.
+  registrations:  ['admin','super_admin'],
   config:         ['admin','super_admin'],
-  grades:         ['admin','super_admin','hod','hoy'],
-  mystudents:     ['hod','hoy','lecturer'],
+  grades:         ['admin','super_admin','hod','hoa','principal','deputy_principal'],
+  mystudents:     ['hod','hoa','lecturer'],
   mytimetable:    ['student'],
   mymodules:      ['student'],
-  mapping:        ['admin','super_admin','hod'],
+  mapping:        ['admin','super_admin','hod','principal','deputy_principal'],
   usermanagement: ['admin','super_admin'],
-  photogallery:   ['admin','super_admin','hod','hoy','lecturer','student'],
-  notes:          ['admin','super_admin','hod','hoy','lecturer','student'],
+  photogallery:   ['admin','super_admin','hod','hoa','lecturer','student','principal','deputy_principal'],
+  notes:          ['admin','super_admin','hod','hoa','lecturer','student','principal','deputy_principal'],
 
   // HR Management — super_admin/hr full access; manager read-only.
   // 'admin' is intentionally excluded: admin is LMS-only.
@@ -219,12 +225,55 @@ const ROLE_PAGES: Record<string, string[]> = {
 
   // Employee self-service — visible to anyone with an HR self-service role.
   // 'admin' is intentionally excluded: admin is LMS-only.
-  'my-payslips':       ['super_admin','hr','manager','employee','lecturer','hod','hoy'],
-  'my-leaves':         ['super_admin','hr','manager','employee','lecturer','hod','hoy'],
-  'my-loans':          ['super_admin','hr','manager','employee','lecturer','hod','hoy'],
-  'my-employee-file':  ['super_admin','hr','manager','employee','lecturer','hod','hoy'],
-  'my-advance-salary': ['super_admin','hr','manager','employee','lecturer','hod','hoy'],
+  'my-payslips':       ['super_admin','hr','manager','employee','lecturer','hod','hoa'],
+  'my-leaves':         ['super_admin','hr','manager','employee','lecturer','hod','hoa'],
+  'my-loans':          ['super_admin','hr','manager','employee','lecturer','hod','hoa'],
+  'my-employee-file':  ['super_admin','hr','manager','employee','lecturer','hod','hoa'],
+  'my-advance-salary': ['super_admin','hr','manager','employee','lecturer','hod','hoa'],
 };
+
+/**
+ * Shown when part of the last data load failed.
+ *
+ * Without this, a failed query renders as an empty list — so "the database
+ * refused this request" and "there is genuinely nothing here" look identical.
+ * That is the single biggest reason faults in this system were hard to
+ * reproduce: nobody, including the person reporting them, could tell which
+ * one they were looking at.
+ */
+function LoadFailureBanner() {
+  const { failures, reloadDb } = useApp();
+  const [dismissed, setDismissed] = useState(false);
+  if (!failures.length || dismissed) return null;
+
+  return (
+    <div
+      role="alert"
+      style={{
+        background: '#fff8c5', borderBottom: '1px solid #ffe07c', color: '#7a4f00',
+        padding: '10px 18px', fontSize: 12.5, lineHeight: 1.55,
+        display: 'flex', alignItems: 'flex-start', gap: 12,
+      }}
+    >
+      <i className="fa-solid fa-triangle-exclamation" style={{ marginTop: 2 }} />
+      <div style={{ flex: 1, minWidth: 0 }}>
+        <strong>Some data could not be loaded.</strong> What you see below is incomplete —
+        please don't rely on it for reporting or marking until this is resolved.
+        <div style={{ marginTop: 4, fontFamily: "'JetBrains Mono',monospace", fontSize: 11, opacity: 0.85 }}>
+          {failures.map(f => `${f.table}: ${f.message}`).join(' · ')}
+        </div>
+      </div>
+      <button className="btn btn-outline btn-sm" onClick={() => reloadDb()}>Retry</button>
+      <button
+        className="btn btn-outline btn-sm"
+        onClick={() => setDismissed(true)}
+        aria-label="Dismiss"
+      >
+        ✕
+      </button>
+    </div>
+  );
+}
 
 export default function AppLayout() {
   const { db, activePage, currentUser, toasts, modalContent, closeModal } = useApp();
@@ -248,6 +297,7 @@ export default function AppLayout() {
       <Sidebar />
       <div className="main-area" style={{ display: 'flex', flexDirection: 'column', minWidth: 0 }}>
         <ImpersonationBanner />
+        <LoadFailureBanner />
         <div className="topbar">
           <div className="breadcrumb">
             <span>Boswa CIB</span>

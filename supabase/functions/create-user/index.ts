@@ -5,21 +5,17 @@ const corsHeaders = {
   "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
 };
 
-// auth.admin.listUsers() returns a single page (default 50 users). Walking every
-// page makes "find the existing user" reliable no matter how many accounts exist —
-// without this, re-adding an email belonging to an older account fails with a
-// false "User exists but could not be found".
-async function findUserByEmail(adminClient: any, email: string) {
-  const target = email.toLowerCase();
-  for (let page = 1; page <= 100; page++) {
-    const { data, error } = await adminClient.auth.admin.listUsers({ page, perPage: 200 });
-    if (error) return null;
-    const users = data?.users ?? [];
-    if (users.length === 0) return null;
-    const found = users.find((u: any) => (u.email || "").toLowerCase() === target);
-    if (found) return found;
-  }
-  return null;
+// The two standard passwords. There are exactly two — one for students, one for
+// staff — and every account created with either is flagged
+// must_change_password, so the holder replaces it at first sign-in.
+//
+// ⚠ Admin and super_admin passwords are NEVER changed in bulk.
+// force-password-change excludes them unconditionally, so an administrator
+// cannot be locked out by a mass reset.
+const STUDENT_PASSWORD = "BoswaStudent2026!";
+const STAFF_PASSWORD   = "BoswaStaff2026!";
+function defaultPasswordFor(role: string | null | undefined): string {
+  return role === "student" ? STUDENT_PASSWORD : STAFF_PASSWORD;
 }
 
 Deno.serve(async (req) => {
@@ -46,7 +42,12 @@ Deno.serve(async (req) => {
     });
     const { data: { user: caller } } = await callerClient.auth.getUser();
     if (!caller) {
-      return new Response(JSON.stringify({ error: "Unauthorized" }), {
+      // "Unauthorized" told the admin nothing. This branch means the JWT did
+      // not resolve to a user — almost always an expired session in a tab that
+      // has been open a long time, not a permissions problem.
+      return new Response(JSON.stringify({
+        error: "Your session is no longer valid — sign out and sign in again, then retry.",
+      }), {
         status: 401, headers: { ...corsHeaders, "Content-Type": "application/json" },
       });
     }
@@ -60,28 +61,47 @@ Deno.serve(async (req) => {
       .in("role", ["admin", "super_admin"]);
 
     if (!roleData || roleData.length === 0) {
-      return new Response(JSON.stringify({ error: "Only admins can create users" }), {
+      // Say what role the caller actually holds. "Only admins can create users"
+      // is unactionable when the person believes they ARE an admin — and this
+      // system has five roles that look administrative from the inside.
+      const { data: actual } = await adminClient
+        .from("user_roles").select("role").eq("user_id", caller.id);
+      const held = (actual ?? []).map((r: { role: string }) => r.role).join(", ") || "none";
+      return new Response(JSON.stringify({
+        error: `Your account holds the role: ${held}. Only admin and super_admin may create users. `
+             + `Ask a system administrator to perform this, or to grant you the role.`,
+      }), {
         status: 403, headers: { ...corsHeaders, "Content-Type": "application/json" },
       });
     }
 
-    const { email, password, name, role, dept, code, student_ref, student_id } = await req.json();
+    const {
+      email, password, name, role, dept, code, student_ref, student_id,
+      must_change_password = true,
+    } = await req.json();
 
-    if (!email || !password || !name || !role) {
-      return new Response(JSON.stringify({ error: "Missing required fields: email, password, name, role" }), {
+    if (!email || !name || !role) {
+      return new Response(JSON.stringify({ error: "Missing required fields: email, name, role" }), {
         status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" },
       });
     }
 
+    // `password` is optional. Without one, the standard password for the role is
+    // used — student or staff.
+    const tempPassword: string = password || defaultPasswordFor(role);
+
     // Try to create the user with service role
     const { data: newUser, error: createError } = await adminClient.auth.admin.createUser({
       email,
-      password,
+      password: tempPassword,
       email_confirm: true,
       user_metadata: { name },
     });
 
     let userId: string;
+    // Whether tempPassword is actually this account's password. False when the
+    // account already existed — we deliberately do NOT reset a working login.
+    let passwordApplied = true;
 
     if (createError) {
       // If user already exists, find them and update instead
@@ -93,6 +113,7 @@ Deno.serve(async (req) => {
           });
         }
         userId = existing.id;
+        passwordApplied = false;
       } else {
         return new Response(JSON.stringify({ error: createError.message }), {
           status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" },
@@ -103,10 +124,14 @@ Deno.serve(async (req) => {
     }
 
     // Upsert profile (in case trigger already created it)
+    // must_change_password drives the blocking first-login screen
+    // (ForcePasswordChange, mounted in AppLayout). It was never being set here,
+    // which is why LMS accounts were never asked to change their password.
     const { error: profileErr } = await adminClient.from("profiles").upsert({
       user_id: userId,
       name, dept: dept || null, code: code || null,
       email, student_ref: student_ref || null, student_id: student_id || null,
+      must_change_password: passwordApplied ? must_change_password : undefined,
     }, { onConflict: "user_id" });
     if (profileErr) throw profileErr;
 
@@ -120,7 +145,14 @@ Deno.serve(async (req) => {
     const { error: roleErr } = await adminClient.from("user_roles").insert({ user_id: userId, role });
     if (roleErr) throw roleErr;
 
-    return new Response(JSON.stringify({ user: { id: userId, email } }), {
+    return new Response(JSON.stringify({
+      user: { id: userId, email },
+      // The admin has to be able to hand this to the person. It is single-use:
+      // must_change_password forces a reset at first login.
+      temp_password: passwordApplied ? tempPassword : null,
+      password_applied: passwordApplied,
+      must_change_password: passwordApplied ? must_change_password : null,
+    }), {
       status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" },
     });
   } catch (error: unknown) {

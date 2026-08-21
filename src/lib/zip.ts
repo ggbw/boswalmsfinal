@@ -100,7 +100,7 @@ export function buildZip(entries: ZipEntry[]): Blob {
   ev.setUint32(16, centralOffset, true);
   ev.setUint16(20, 0, true); // comment length
 
-  return new Blob([...chunks, ...central, end], { type: "application/zip" });
+  return new Blob([...chunks, ...central, end] as unknown as BlobPart[], { type: "application/zip" });
 }
 
 // Ensure entry names are unique within the archive (append _2, _3, … on clash).

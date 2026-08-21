@@ -1,7 +1,10 @@
 import { useState, useEffect, useCallback } from "react";
 import { useApp } from "@/context/AppContext";
 import { supabase } from "@/integrations/supabase/client";
+import { invokeFn } from "@/lib/invokeFn";
+import { defaultPasswordFor } from "@/lib/passwords";
 import { getLecturerClasses, getLecturerModulesList } from "@/lib/lecturerHelpers";
+import { getScopedFacultyIds, isAdminRole } from '@/lib/scope';
 
 interface FacultyRow {
   user_id: string;
@@ -17,7 +20,7 @@ export default function LecturersPage() {
   const [faculty, setFaculty] = useState<FacultyRow[]>([]);
   const [loading, setLoading] = useState(true);
   const [selected, setSelected] = useState<FacultyRow | null>(null);
-  const isAdmin = currentUser?.role === "admin";
+  const isAdmin = isAdminRole(currentUser?.role);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -27,8 +30,12 @@ export default function LecturersPage() {
     (roles || []).forEach((r: any) => {
       roleMap[r.user_id] = r.role;
     });
+    // HOA and admins see all teaching staff; a HOD sees whoever teaches a module
+    // in their department.
+    const visibleIds = getScopedFacultyIds(db, currentUser);
     const mapped = (profiles || [])
-      .filter((p: any) => ["lecturer", "hod", "hoy"].includes(roleMap[p.user_id]))
+      .filter((p: any) => ["lecturer", "hod", "hoa"].includes(roleMap[p.user_id]))
+      .filter((p: any) => visibleIds === null || visibleIds.includes(p.user_id))
       .map((p: any) => ({
         user_id: p.user_id,
         name: p.name,
@@ -39,7 +46,7 @@ export default function LecturersPage() {
       }));
     setFaculty(mapped);
     setLoading(false);
-  }, []);
+  }, [db, currentUser]);
 
   useEffect(() => {
     load();
@@ -90,7 +97,9 @@ export default function LecturersPage() {
               <select className="form-select" defaultValue={role} onChange={(e) => (role = e.target.value)}>
                 <option value="lecturer">Lecturer</option>
                 <option value="hod">HOD</option>
-                <option value="hoy">HOA - Head of Academics</option>
+                <option value="hoa">HOA - Head of Academics</option>
+                <option value="principal">Principal</option>
+                <option value="deputy_principal">Deputy Principal</option>
               </select>
             </div>
             <div className="form-group">
@@ -175,19 +184,23 @@ export default function LecturersPage() {
       "Delete Lecturer",
       <div>
         <p style={{ marginBottom: 16 }}>
-          Are you sure you want to delete <strong>{f.name}</strong>? This cannot be undone.
+          Are you sure you want to delete <strong>{f.name}</strong>? This removes their profile,
+          their role <strong>and their login</strong>, so they can no longer sign in. It cannot be undone.
         </p>
         <div style={{ display: "flex", gap: 8 }}>
           <button
             className="btn btn-danger"
             style={{ flex: 1 }}
             onClick={async () => {
-              await supabase.from("user_roles").delete().eq("user_id", f.user_id);
-              await supabase.from("profiles").delete().eq("user_id", f.user_id);
-              toast(`${f.name} deleted`, "success");
+              // Same reason as User Management: deleting the profile and role
+              // alone leaves a working login with no profile behind it.
+              const { error } = await invokeFn("delete-user", { user_id: f.user_id });
+              if (error) { toast(error, "error"); return; }
+              toast(`${f.name} and their login deleted`, "success");
               closeModal();
               setFaculty((prev) => prev.filter((x) => x.user_id !== f.user_id));
               if (selected?.user_id === f.user_id) setSelected(null);
+              reloadDb();
             }}
           >
             Delete
@@ -221,7 +234,9 @@ export default function LecturersPage() {
             <select className="form-select" defaultValue="lecturer" onChange={(e) => (role = e.target.value)}>
               <option value="lecturer">Lecturer</option>
               <option value="hod">HOD</option>
-              <option value="hoy">HOA - Head of Academics</option>
+              <option value="hoa">HOA - Head of Academics</option>
+              <option value="principal">Principal</option>
+              <option value="deputy_principal">Deputy Principal</option>
             </select>
           </div>
           <div className="form-group">
@@ -246,22 +261,12 @@ export default function LecturersPage() {
               toast("Name and email are required", "error");
               return;
             }
-            const { data, error: fnErr } = await supabase.functions.invoke("create-user", {
-              body: { email: email.trim(), password: "Boswa@2024", name: name.trim(), role, dept, code },
-            });
-            // Surface the function's real error body (on fnErr.context) instead of
-            // supabase-js's generic "non-2xx status code" message.
-            let errMsg = "";
-            if (fnErr) {
-              errMsg = fnErr.message || "Failed to create account";
-              try { const b = await (fnErr as any).context?.json?.(); if (b?.error) errMsg = b.error; } catch { /* keep generic */ }
-            } else if (data?.error) {
-              errMsg = data.error;
-            }
-            if (errMsg) {
-              toast(errMsg, "error");
-              return;
-            }
+            // Was hardcoded to "Boswa@2024" — a third shared password, different from
+            // the two in use elsewhere and documented nowhere. Now the standard
+            // staff password, from one place.
+            const { error: fnErr } = await invokeFn("create-user",
+              { email: email.trim(), password: defaultPasswordFor(role), name: name.trim(), role, dept, code });
+            if (fnErr) { toast(fnErr, "error"); return; }
             toast("Lecturer created!", "success");
             closeModal();
             load();
@@ -274,8 +279,8 @@ export default function LecturersPage() {
   };
 
   const roleBadge = (r: string) => {
-    const colors: Record<string, string> = { hod: "badge-fail", hoy: "badge-pass", lecturer: "badge-active" };
-    const labels: Record<string, string> = { hod: "HOD", hoy: "HOA", lecturer: "LECTURER" };
+    const colors: Record<string, string> = { hod: "badge-fail", hoa: "badge-pass", lecturer: "badge-active" };
+    const labels: Record<string, string> = { hod: "HOD", hoa: "HOA", lecturer: "LECTURER", principal: "PRINCIPAL", deputy_principal: "DEPUTY PRINCIPAL" };
     return <span className={`badge ${colors[r] || "badge-pass"}`}>{labels[r] || r.toUpperCase()}</span>;
   };
 

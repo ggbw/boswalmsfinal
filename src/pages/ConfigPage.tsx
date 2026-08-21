@@ -298,7 +298,7 @@ export default function ConfigPage() {
       roleMap[r.user_id] = r.role;
     });
     return (profiles || [])
-      .filter((p: any) => ["lecturer", "hod", "hoy"].includes(roleMap[p.user_id]))
+      .filter((p: any) => ["lecturer", "hod", "hoa"].includes(roleMap[p.user_id]))
       .map((p: any) => ({ user_id: p.user_id, name: p.name }));
   };
 

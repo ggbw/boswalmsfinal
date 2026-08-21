@@ -1,15 +1,38 @@
 import { useApp } from "@/context/AppContext";
+import { isAdminRole, getScopedModuleIds, getScopedClassIds } from '@/lib/scope';
+import { getLecturersForModuleClass } from '@/lib/lecturerHelpers';
 import { supabase } from "@/integrations/supabase/client";
 
 export default function ModulesPage() {
   const { db, currentUser, toast, showModal, closeModal, reloadDb } = useApp();
   const role = currentUser?.role;
-  const isAdmin = role === "admin";
-  const isHod = role === "hod";
-  const hodDept = isHod ? db.departments.find((d) => d.hod === currentUser?.name) : null;
-  const visibleModules = isHod && hodDept
-    ? db.modules.filter((m) => m.dept === hodDept.id)
-    : db.modules;
+  const isAdmin = isAdminRole(role);
+
+  // Scope through the shared rule rather than a role check written here.
+  //
+  // This page previously filtered for HOD and NOBODY ELSE, so every other role
+  // reaching it saw all 50 modules. That mattered because the lecturer's
+  // "My Modules" menu item pointed at this page, not MyModulesPage.
+  //
+  // The old HOD lookup was `d.hod === currentUser?.name` — an exact match on a
+  // display name. Any difference in spelling, or a rename, silently matched
+  // nothing and fell through to showing the whole school.
+  // resolveDepartment() exists precisely to fix that: it tries the department's
+  // hod field, then falls back to the department on their profile, tolerating
+  // profiles.dept holding a NAME while modules.dept holds an ID.
+  //
+  // null means unrestricted; [] means nothing. Never collapse the two.
+  const scopedIds = getScopedModuleIds(db, currentUser);
+  const scopedClassIds = getScopedClassIds(db, currentUser);
+
+  // Teaching view: the extra columns are for someone who TEACHES these modules,
+  // not someone cataloguing them. An admin sees every class of every module, so
+  // co-teachers and student counts would be noise spanning the whole school;
+  // a lecturer's are about the two modules in front of them.
+  const isTeachingView = scopedClassIds !== null;
+  const visibleModules = scopedIds === null
+    ? db.modules
+    : db.modules.filter((m) => scopedIds.includes(m.id));
 
   const showEditModule = (modId: string) => {
     const mod = db.modules.find((m) => m.id === modId);
@@ -220,19 +243,56 @@ export default function ModulesPage() {
                 <th>Module Name</th>
                 <th>Department</th>
                 <th>Classes</th>
+                {isTeachingView && <><th>Co-teachers</th><th style={{ textAlign: 'center' }}>Practical</th></>}
                 {isAdmin && <th>Actions</th>}
               </tr>
             </thead>
             <tbody>
               {visibleModules.map((m) => {
                 const dept = db.departments.find((d) => d.id === m.dept);
-                const cls = m.classes.map((cid) => db.classes.find((c) => c.id === cid)?.name || cid).join(", ");
+                // Scope the classes shown, not just the modules listed. A
+                // module is linked to every class taking it, so an unscoped
+                // column tells a lecturer teaching ONE class the names of the
+                // five others — and reads as though they teach all six.
+                const visibleClassIds = scopedClassIds === null
+                  ? m.classes
+                  : m.classes.filter((cid) => scopedClassIds.includes(cid));
+                const cls = visibleClassIds.map((cid) => db.classes.find((c) => c.id === cid)?.name || cid).join(", ");
                 return (
                   <tr key={m.id}>
                     <td style={{ fontFamily: "'JetBrains Mono',monospace", fontSize: 11 }}>{m.code}</td>
                     <td className="td-name">{m.name}</td>
                     <td>{dept?.name}</td>
                     <td style={{ fontSize: 11 }}>{cls}</td>
+                    {isTeachingView && (() => {
+                      // Everyone else holding this module in the classes THIS
+                      // person teaches. Co-teaching is supported, and until now
+                      // nothing showed a lecturer they were sharing a module.
+                      const coNames = [...new Set(
+                        visibleClassIds.flatMap((cid) =>
+                          getLecturersForModuleClass(db.lecturerModules, m.id, cid)),
+                      )]
+                        .filter((lid) => lid !== currentUser?.id)
+                        .map((lid) => db.users.find((u) => u.id === lid)?.name)
+                        .filter(Boolean);
+                      // hasPractical decides the weighting — 40/20/40 with a
+                      // practical, 60/40 without — so it changes how this
+                      // module's marks are computed. Worth seeing.
+                      const practical = m.hasPractical !== false;
+                      return (
+                        <>
+                          <td style={{ fontSize: 11 }}>
+                            {coNames.length ? coNames.join(', ')
+                              : <span style={{ color: 'var(--text3)' }}>— you only</span>}
+                          </td>
+                          <td style={{ textAlign: 'center' }}>
+                            <span className={`badge ${practical ? 'badge-active' : 'badge-pass'}`}>
+                              {practical ? 'Yes' : 'No'}
+                            </span>
+                          </td>
+                        </>
+                      );
+                    })()}
                     {isAdmin && (
                       <td style={{ display: "flex", gap: 6 }}>
                         <button className="btn btn-outline btn-sm" onClick={() => showEditModule(m.id)}>

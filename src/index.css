@@ -77,6 +77,57 @@ body {
 .sidebar-footer:hover { background: var(--sidebar-hover); }
 .s-avatar { width: 28px; height: 28px; border-radius: 7px; display: flex; align-items: center; justify-content: center; color: #fff; font-size: 11px; font-weight: 700; flex-shrink: 0; }
 
+
+/* ── Collapsible sidebar ──────────────────────────────────────────────────
+   Collapses to an icon rail rather than disappearing, so navigation stays
+   reachable in one click. Labels are hidden with width/opacity rather than
+   display:none so the transition is smooth and screen readers still reach
+   them via the title attribute on each row. */
+.sidebar { transition: width .18s ease; }
+.sidebar.collapsed { width: 60px; }
+
+/* Hide the text, keep the icons centred. */
+.sidebar.collapsed .logo-text,
+.sidebar.collapsed .nav-item span:not(.ico):not(.nav-badge),
+.sidebar.collapsed .sidebar-footer > div:not(.s-avatar),
+.sidebar.collapsed .nav-caret { display: none; }
+
+.sidebar.collapsed .nav-section {
+  /* Section headings become a divider — the words would not fit. */
+  font-size: 0; padding: 8px 0 4px; margin: 0 14px;
+  border-top: 1px solid #21262d;
+}
+.sidebar.collapsed .nav-item { justify-content: center; padding: 10px 0; gap: 0; }
+.sidebar.collapsed .logo {
+  /* Stack the toggle UNDER the mark when collapsed — side by side in a 64px
+     rail would crowd both and clip the icon. */
+  flex-direction: column; justify-content: center; padding: 14px 0 10px; gap: 4px;
+}
+.sidebar.collapsed .sidebar-footer { justify-content: center; padding: 12px 0; }
+.sidebar.collapsed .nav-children { margin-left: 0; }
+
+/* A badge would overflow a 60px rail, so show it as a dot on the icon. */
+.sidebar.collapsed .nav-badge {
+  position: absolute; margin: 0; transform: translate(12px, -10px);
+  min-width: 6px; height: 6px; padding: 0; font-size: 0; border-radius: 50%;
+}
+.sidebar.collapsed .nav-item { position: relative; }
+
+/* Collapse control — an icon in the logo row, not a bar at the foot of the nav. */
+.sidebar-toggle {
+  display: flex; align-items: center; justify-content: center;
+  width: 26px; height: 26px; flex-shrink: 0; margin-left: auto;
+  padding: 0; cursor: pointer; user-select: none;
+  color: #6e7681; font-size: 12px; background: none;
+  border: 1px solid transparent; border-radius: 6px;
+  transition: background .15s, color .15s, border-color .15s;
+}
+.sidebar-toggle:hover { background: var(--sidebar-hover); color: #c9d1d9; border-color: #30363d; }
+.sidebar-toggle:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+/* Collapsed: the logo text is hidden, so centre the icon under the mark rather
+   than letting margin-left:auto push it against the edge. */
+.sidebar.collapsed .sidebar-toggle { margin: 6px auto 0; }
+
 /* MAIN */
 .main-area { flex: 1; display: flex; flex-direction: column; overflow: hidden; }
 .topbar { height: 52px; background: var(--surface); border-bottom: 1px solid var(--border); display: flex; align-items: center; padding: 0 20px; gap: 12px; flex-shrink: 0; }
@@ -223,3 +274,50 @@ tr:hover td { background: #fafbfc; }
 /* Module mapping */
 .map-cls-tab { background: var(--surface2); border: 1px solid var(--border); color: var(--text2); padding: 6px 14px; border-radius: 6px; font-size: 12px; cursor: pointer; transition: all .15s; white-space: nowrap; }
 .map-cls-tab:hover { color: var(--text); }
+
+/* ── Chart tokens ─────────────────────────────────────────────────────────────
+   Three categorical slots, validated in BOTH modes on the all-pairs pairlist
+   (pie slices and grouped bars put every pair on screen together):
+     CVD ΔE 9.2 light / 9.4 dark (≥8) · normal-vision ΔE 24.0 / 20.9 (≥15).
+   Light aqua is 2.82:1 on white — below 3:1 — so every chart carries visible
+   value labels (the relief rule). Dark steps are chosen for the dark surface,
+   not an automatic inversion of the light ones.
+   Status colours are separate and never reused as a data series. */
+:root {
+  --viz-1: #2a78d6;   /* blue   */
+  --viz-2: #eb6834;   /* orange */
+  --viz-3: #1baf7a;   /* aqua   */
+  --viz-other: #8b8b86;
+  --viz-good: #1a7f37;
+  --viz-bad:  #cf222e;
+  --viz-grid: #e8eaed;
+  --viz-axis: #6e7681;
+  --viz-surface: #ffffff;
+  --viz-hover: rgba(42,120,214,.07);
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --viz-1: #3987e5;
+    --viz-2: #d95926;
+    --viz-3: #199e70;
+    --viz-other: #7d7d78;
+    --viz-good: #3fb950;
+    --viz-bad:  #f85149;
+    --viz-grid: #263450;
+    --viz-axis: #8b949e;
+    --viz-surface: #121b2e;
+    --viz-hover: rgba(57,135,229,.12);
+  }
+}
+:root[data-theme="dark"] {
+  --viz-1: #3987e5;
+  --viz-2: #d95926;
+  --viz-3: #199e70;
+  --viz-other: #7d7d78;
+  --viz-good: #3fb950;
+  --viz-bad:  #f85149;
+  --viz-grid: #263450;
+  --viz-axis: #8b949e;
+  --viz-surface: #121b2e;
+  --viz-hover: rgba(57,135,229,.12);
+}

@@ -21,7 +21,7 @@ const queryClient = new QueryClient({
 });
 
 function AuthGate() {
-  const { user, profile, role, loading, signOut } = useAuth();
+  const { user, profile, role, loading, signOut, refreshProfile } = useAuth();
 
   if (loading) {
     return (
@@ -42,11 +42,14 @@ function AuthGate() {
 
   if (!user || !profile) return <LoginScreen />;
 
-  const staffRoles = ["admin", "super_admin", "hr", "manager", "employee", "hod", "hoy", "lecturer", "student"];
+  const staffRoles = ["admin", "super_admin", "hr", "manager", "employee", "hod", "hoa", "lecturer", "student", "principal", "deputy_principal"];
 
   // Applicants get their own portal — not the full SMS
   if (role === "applicant" || !role || !staffRoles.includes(role)) {
-    return <ApplicantPortal userId={user.id} onSignOut={signOut} />;
+    // onActivated re-reads role + profile. The role is now "student", so this
+    // same render falls through to the SMS below — and must_change_password,
+    // set during activation, puts ForcePasswordChange in front of it.
+    return <ApplicantPortal userId={user.id} onSignOut={signOut} onActivated={refreshProfile} />;
   }
 
   const authUser: User = {

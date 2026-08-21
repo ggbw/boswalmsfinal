@@ -1,6 +1,8 @@
 import { useState, useEffect, useRef } from "react";
 import { useApp } from "@/context/AppContext";
+import { isAdminRole } from '@/lib/scope';
 import { supabase } from "@/integrations/supabase/client";
+import { ACCEPT_DOCUMENTS, MAX_NOTE_BYTES, checkUpload } from "@/lib/uploads";
 import { getLecturerClassIds } from "@/lib/lecturerHelpers";
 
 /*
@@ -36,7 +38,7 @@ export default function NotesPage() {
   const { db, currentUser } = useApp();
   const role = currentUser?.role;
   const isStudent = role === "student";
-  const canUpload = role === "admin" || role === "lecturer" || role === "hod" || role === "hoy";
+  const canUpload = isAdminRole(role) || role === "lecturer" || role === "hod" || role === "hoa";
 
   // Determine which modules to show
   const visibleModules = (() => {
@@ -187,8 +189,14 @@ function UploadNote({
   uploadedBy: string;
   onUploaded: () => void;
 }) {
+  const { toast } = useApp();
   const [title, setTitle] = useState("");
   const [file, setFile] = useState<File | null>(null);
+  // A note is either an uploaded file or a link to one. Much teaching material
+  // is a URL — a video, a recipe site, a shared document — and uploading a
+  // placeholder to carry a link helps nobody.
+  const [mode, setMode] = useState<"file" | "link">("file");
+  const [linkUrl, setLinkUrl] = useState("");
   const [uploading, setUploading] = useState(false);
   const [error, setError] = useState("");
   const fileRef = useRef<HTMLInputElement>(null);
@@ -196,6 +204,37 @@ function UploadNote({
   const handleUpload = async () => {
     setError("");
     if (!title.trim()) { setError("Title is required."); return; }
+
+    // A note is EITHER a file or a link. Requiring one and only one keeps the
+    // list honest: every row has something to open.
+    if (mode === "link") {
+      const url = linkUrl.trim();
+      if (!url) { setError("Paste a link, or switch to File."); return; }
+      // Accept a bare domain and make it openable — a link that silently
+      // resolves relative to the app is worse than a rejected one.
+      const href = /^https?:\/\//i.test(url) ? url : `https://${url}`;
+      try { new URL(href); } catch { setError("That doesn't look like a valid link."); return; }
+
+      setUploading(true);
+      const { error: dbErr } = await supabase.from("module_notes" as any).insert({
+        id: "note_" + Date.now(),
+        module_id: moduleId,
+        title: title.trim(),
+        // file_name doubles as the display label; file_path stays empty because
+        // the column is NOT NULL and existing rows depend on that.
+        file_name: new URL(href).hostname.replace(/^www\./, ""),
+        file_path: "",
+        link_url: href,
+        uploaded_by: uploadedBy,
+        uploaded_at: new Date().toISOString(),
+      });
+      setUploading(false);
+      if (dbErr) { setError(dbErr.message); return; }
+      setTitle(""); setLinkUrl("");
+      onUploaded();
+      return;
+    }
+
     if (!file) { setError("Please select a file."); return; }
 
     setUploading(true);
@@ -272,24 +311,56 @@ function UploadNote({
             onChange={(e) => setTitle(e.target.value)}
           />
         </div>
-        <div className="form-group" style={{ marginBottom: 0, flex: "1 1 200px" }}>
-          <label style={{ fontSize: 11 }}>File *</label>
-          <div style={{ display: "flex", gap: 6, alignItems: "center" }}>
-            <button
-              type="button"
-              className="btn btn-outline btn-sm"
-              onClick={() => fileRef.current?.click()}
-            >
-              <i className="fa-solid fa-upload" style={{ marginRight: 5 }} />
-              {file ? file.name : "Choose File"}
-            </button>
-            <input
-              ref={fileRef}
-              type="file"
-              style={{ display: "none" }}
-              onChange={(e) => setFile(e.target.files?.[0] || null)}
-            />
-            {file && <span style={{ fontSize: 11, color: "#16a34a" }}>✓</span>}
+        <div className="form-group" style={{ marginBottom: 0, flex: "1 1 260px" }}>
+          <label style={{ fontSize: 11 }}>{mode === "file" ? "File *" : "Link *"}</label>
+          <div style={{ display: "flex", gap: 6, alignItems: "center", flexWrap: "wrap" }}>
+            {/* A note is EITHER an upload or a URL. Choosing first means the
+                field beside it is never ambiguous about what it wants. */}
+            {(["file", "link"] as const).map(m => (
+              <button
+                key={m}
+                type="button"
+                className={`btn btn-sm ${mode === m ? "btn-primary" : "btn-outline"}`}
+                onClick={() => { setMode(m); setError(""); }}
+                title={m === "file" ? "Upload a document" : "Link to something online"}
+                aria-pressed={mode === m}
+              >
+                <i className={`fa-solid ${m === "file" ? "fa-paperclip" : "fa-link"}`} />
+              </button>
+            ))}
+
+            {mode === "file" ? (
+              <>
+                <button type="button" className="btn btn-outline btn-sm" onClick={() => fileRef.current?.click()}>
+                  <i className="fa-solid fa-upload" style={{ marginRight: 5 }} />
+                  {file ? file.name : "Choose File"}
+                </button>
+                <input
+                  ref={fileRef}
+                  type="file"
+                  accept={ACCEPT_DOCUMENTS}
+                  style={{ display: "none" }}
+                  onChange={(e) => {
+                    // Nothing checked type or size here before — the bucket had
+                    // no limit either, so anything of any size could be uploaded.
+                    const f = e.target.files?.[0] || null;
+                    const err = f && checkUpload(f, MAX_NOTE_BYTES);
+                    if (err) { toast(err, "error"); e.target.value = ""; setFile(null); return; }
+                    setFile(f);
+                  }}
+                />
+                {file && <span style={{ fontSize: 11, color: "#16a34a" }}>✓</span>}
+              </>
+            ) : (
+              <input
+                className="form-input"
+                style={{ flex: "1 1 180px", minWidth: 150 }}
+                placeholder="https://…"
+                value={linkUrl}
+                onChange={(e) => setLinkUrl(e.target.value)}
+                onKeyDown={(e) => { if (e.key === "Enter") handleUpload(); }}
+              />
+            )}
           </div>
         </div>
         <button
@@ -318,7 +389,15 @@ function NoteRow({
   const [downloading, setDownloading] = useState(false);
   const [deleting, setDeleting] = useState(false);
 
+  // A link note has no stored file — opening it is the whole action.
+  const isLink = !!(note as any).link_url;
+
   const handleDownload = async () => {
+    if (isLink) {
+      // noopener/noreferrer: an external page must not get a handle on this tab.
+      window.open((note as any).link_url, "_blank", "noopener,noreferrer");
+      return;
+    }
     setDownloading(true);
     const { data } = await supabase.storage.from("module-notes").download(note.file_path);
     if (data) {
@@ -337,14 +416,19 @@ function NoteRow({
   const handleDelete = async () => {
     if (!confirm(`Delete "${note.title}"?`)) return;
     setDeleting(true);
-    await supabase.storage.from("module-notes").remove([note.file_path]);
+    // Only files live in storage; a link note has nothing to remove, and calling
+    // remove([""]) would be a pointless request that can also error.
+    if (!isLink && note.file_path) {
+      await supabase.storage.from("module-notes").remove([note.file_path]);
+    }
     await supabase.from("module_notes" as any).delete().eq("id", note.id);
     onDeleted();
     setDeleting(false);
   };
 
   const ext = note.file_name.split(".").pop()?.toLowerCase() || "";
-  const icon =
+  // A link has no extension worth reading — the chain icon says what it is.
+  const icon = isLink ? "fa-link" :
     ext === "pdf" ? "fa-file-pdf" :
     ["doc", "docx"].includes(ext) ? "fa-file-word" :
     ["ppt", "pptx"].includes(ext) ? "fa-file-powerpoint" :
@@ -352,7 +436,7 @@ function NoteRow({
     ["jpg", "jpeg", "png", "gif"].includes(ext) ? "fa-file-image" :
     "fa-file";
 
-  const iconColor =
+  const iconColor = isLink ? "#2a78d6" :
     ext === "pdf" ? "#dc2626" :
     ["doc", "docx"].includes(ext) ? "#1d4ed8" :
     ["ppt", "pptx"].includes(ext) ? "#ea580c" :
@@ -385,9 +469,9 @@ function NoteRow({
         </div>
       </div>
       <div style={{ display: "flex", gap: 6, flexShrink: 0 }}>
-        <button className="btn btn-primary btn-sm" onClick={handleDownload} disabled={downloading}>
-          <i className="fa-solid fa-download" style={{ marginRight: 5 }} />
-          {downloading ? "…" : "Download"}
+        <button className="btn btn-primary btn-sm" onClick={handleDownload} disabled={downloading && !isLink}>
+          <i className={`fa-solid ${isLink ? "fa-arrow-up-right-from-square" : "fa-download"}`} style={{ marginRight: 5 }} />
+          {isLink ? "Open" : downloading ? "…" : "Download"}
         </button>
         {canDelete && (
           <button className="btn btn-danger btn-sm" onClick={handleDelete} disabled={deleting}>

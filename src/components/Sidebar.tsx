@@ -196,6 +196,7 @@ function getNavConfig(role: string, db: any, hrPending: HrPendingCounts): NavSec
         { id: "admissions", label: "Admissions", icon: "fa-solid fa-door-open" },
         { id: "progression", label: "Progression", icon: "fa-solid fa-arrow-up-right-dots" },
         { id: "photogallery", label: "Photo Gallery", icon: "fa-solid fa-images" },
+        { id: "registrations", label: "Registrations", icon: "fa-solid fa-clipboard-list" },
         { id: "usermanagement", label: "User Management", icon: "fa-solid fa-users-gear" },
         { id: "config", label: "Configuration", icon: "fa-solid fa-gear" },
       ],
@@ -205,12 +206,52 @@ function getNavConfig(role: string, db: any, hrPending: HrPendingCounts): NavSec
   const configs: Record<string, NavSection[]> = {
     admin: adminLmsSections,
     super_admin: [...adminLmsSections, HR_MANAGEMENT_SECTION],
+    // Read-only oversight. The principal sees admissions and operational health;
+    // the deputy's remit is academic, so admissions is omitted there.
+    principal: [
+      { section: "Main", items: [
+        { id: "dashboard", label: "School Overview", icon: "fa-solid fa-gauge" },
+        { id: "notifications", label: "Notifications", icon: "fa-solid fa-bullhorn" },
+      ] },
+      { section: "Academic", items: [
+        { id: "students", label: "All Students", icon: "fa-solid fa-user-graduate" },
+        { id: "lecturers", label: "All Lecturers", icon: "fa-solid fa-chalkboard-user" },
+        { id: "grades", label: "Grades Overview", icon: "fa-solid fa-star-half-stroke" },
+        { id: "progression", label: "Progression", icon: "fa-solid fa-arrow-up-right-dots" },
+      ] },
+      { section: "Insight", items: [
+        { id: "reports", label: "Reports", icon: "fa-solid fa-file-lines" },
+        { id: "transcripts", label: "Transcripts", icon: "fa-solid fa-scroll" },
+        { id: "attendance", label: "Attendance", icon: "fa-solid fa-clipboard-check" },
+        { id: "timetable", label: "Timetable", icon: "fa-solid fa-calendar-days" },
+        { id: "admissions", label: "Admissions", icon: "fa-solid fa-door-open" },
+      ] },
+    ],
+    deputy_principal: [
+      { section: "Main", items: [
+        { id: "dashboard", label: "Academic Overview", icon: "fa-solid fa-gauge" },
+        { id: "notifications", label: "Notifications", icon: "fa-solid fa-bullhorn" },
+      ] },
+      { section: "Academic", items: [
+        { id: "students", label: "All Students", icon: "fa-solid fa-user-graduate" },
+        { id: "lecturers", label: "All Lecturers", icon: "fa-solid fa-chalkboard-user" },
+        { id: "grades", label: "Grades Overview", icon: "fa-solid fa-star-half-stroke" },
+        { id: "progression", label: "Progression", icon: "fa-solid fa-arrow-up-right-dots" },
+      ] },
+      { section: "Insight", items: [
+        { id: "reports", label: "Reports", icon: "fa-solid fa-file-lines" },
+        { id: "transcripts", label: "Transcripts", icon: "fa-solid fa-scroll" },
+        { id: "attendance", label: "Attendance", icon: "fa-solid fa-clipboard-check" },
+        { id: "timetable", label: "Timetable", icon: "fa-solid fa-calendar-days" },
+      ] },
+    ],
     hod: [
       { section: "Main", items: [{ id: "dashboard", label: "Dashboard", icon: "fa-solid fa-gauge" }] },
       {
         section: "Academic",
         items: [
           { id: "students", label: "Students", icon: "fa-solid fa-user-graduate" },
+          { id: "lecturers", label: "Lecturers", icon: "fa-solid fa-chalkboard-user" },
           { id: "mapping", label: "Module Mapping", icon: "fa-solid fa-diagram-project" },
         ],
       },
@@ -234,12 +275,13 @@ function getNavConfig(role: string, db: any, hrPending: HrPendingCounts): NavSec
       },
       SELF_SERVICE_SECTION,
     ],
-    hoy: [
+    hoa: [
       { section: "Main", items: [{ id: "dashboard", label: "Dashboard", icon: "fa-solid fa-gauge" }] },
       {
         section: "Students",
         items: [
           { id: "students", label: "All Students", icon: "fa-solid fa-user-graduate" },
+          { id: "lecturers", label: "All Lecturers", icon: "fa-solid fa-chalkboard-user" },
           { id: "grades", label: "Grades Overview", icon: "fa-solid fa-star-half-stroke" },
           { id: "progression", label: "Promotion", icon: "fa-solid fa-arrow-up-right-dots" },
         ],
@@ -270,6 +312,11 @@ function getNavConfig(role: string, db: any, hrPending: HrPendingCounts): NavSec
         section: "Teaching",
         items: [
           { id: "mystudents", label: "My Students", icon: "fa-solid fa-users" },
+          // "modules" is correct — ModulesPage, now scoped per role. NOT
+          // "mymodules": that is MyModulesPage, a STUDENT page showing their
+          // own marks per module, and ROLE_PAGES.mymodules is ['student'], so
+          // a lecturer sent there fails the allow-list and AppLayout silently
+          // falls back to Dashboard. The menu item appeared to do nothing.
           { id: "modules", label: "My Modules", icon: "fa-solid fa-book-open" },
           { id: "timetable", label: "Timetable", icon: "fa-solid fa-calendar-days" },
           { id: "attendance", label: "Mark Attendance", icon: "fa-solid fa-clipboard-check" },
@@ -347,7 +394,26 @@ function hasActiveDescendant(item: NavItem, activeId: string): boolean {
   return item.children.some((c) => c.id === activeId || hasActiveDescendant(c, activeId));
 }
 
+/**
+ * Remembered across sessions — someone who works collapsed does not want to
+ * re-collapse it every morning. Reading localStorage in the initialiser rather
+ * than an effect avoids a visible flash of the expanded rail on load.
+ */
+const COLLAPSE_KEY = "boswa.sidebar.collapsed";
+
 export default function Sidebar() {
+  const [collapsed, setCollapsed] = useState<boolean>(() => {
+    try { return localStorage.getItem(COLLAPSE_KEY) === "1"; } catch { return false; }
+  });
+
+  const toggleCollapsed = () => {
+    setCollapsed(prev => {
+      const next = !prev;
+      try { localStorage.setItem(COLLAPSE_KEY, next ? "1" : "0"); } catch { /* private mode */ }
+      return next;
+    });
+  };
+
   const { db, currentUser, activePage, navigate, setCurrentUser } = useApp();
   const { isHR } = useUserRole();
   const role = currentUser?.role || "admin";
@@ -386,13 +452,14 @@ export default function Sidebar() {
         <div key={item.id}>
           <div
             className={`nav-item nav-group ${activeInside ? "has-active" : ""}`}
+            title={item.label}
             style={indentStyle}
             onClick={() => toggleGroup(item.id)}
           >
             <span className="ico">
               <i className={item.icon} />
             </span>
-            {item.label}
+            <span>{item.label}</span>
             <i
               className={`nav-caret fa-solid ${open ? "fa-chevron-down" : "fa-chevron-right"}`}
             />
@@ -410,13 +477,14 @@ export default function Sidebar() {
       <div
         key={item.id}
         className={`nav-item ${activePage === item.id ? "active" : ""} ${depth > 0 ? "nav-child" : ""}`}
+        title={item.label}
         style={indentStyle}
         onClick={() => navigate(item.id)}
       >
         <span className="ico">
           <i className={item.icon} />
         </span>
-        {item.label}
+        <span>{item.label}</span>
         {item.badge !== undefined && (
           <span className={`nav-badge ${item.badge > 0 ? "new" : ""}`}>{item.badge}</span>
         )}
@@ -425,13 +493,26 @@ export default function Sidebar() {
   };
 
   return (
-    <div className="sidebar">
+    <div className={`sidebar${collapsed ? " collapsed" : ""}`}>
       <div className="logo">
         <div className="logo-img">B</div>
         <div className="logo-text">
           <div className="name">Boswa CIB SMS</div>
           <div className="sub">School Management</div>
         </div>
+        {/* Sits beside the brand so it is where the eye already is, and stays
+            reachable when collapsed — a toggle you cannot find to undo is worse
+            than no toggle. */}
+        <button
+          type="button"
+          className="sidebar-toggle"
+          onClick={toggleCollapsed}
+          title={collapsed ? "Expand sidebar" : "Collapse sidebar"}
+          aria-label={collapsed ? "Expand sidebar" : "Collapse sidebar"}
+          aria-expanded={!collapsed}
+        >
+          <i className={`fa-solid ${collapsed ? "fa-angles-right" : "fa-angles-left"}`} />
+        </button>
       </div>
       <div className="nav-menu">
         {navConfig.map((sec) => (
@@ -447,7 +528,7 @@ export default function Sidebar() {
         </div>
         <div>
           <div style={{ color: "#e6edf3", fontSize: 11, fontWeight: 600 }}>{currentUser?.name || "Admin"}</div>
-          <div style={{ color: "#484f58", fontSize: 9.5 }}>{role === "hoy" ? "HOA" : role.toUpperCase()}</div>
+          <div style={{ color: "#484f58", fontSize: 9.5 }}>{({ hoa: "HOA", principal: "PRINCIPAL", deputy_principal: "DEPUTY PRINCIPAL" } as Record<string,string>)[role] || role.toUpperCase()}</div>
         </div>
         <i
           className="fa-solid fa-right-from-bracket"

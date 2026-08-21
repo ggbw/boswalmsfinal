@@ -1,7 +1,62 @@
 import { useState } from 'react';
 import { useApp } from '@/context/AppContext';
 import { supabase } from '@/integrations/supabase/client';
-import { getLecturerClassIds, getLecturerModulesList } from '@/lib/lecturerHelpers';
+import { getScopedClassIds, getScopedModuleIds, isUnrestricted, canManageAcademics } from '@/lib/scope';
+import { assignmentsForStudent } from '@/lib/studentMarks';
+import { ACCEPT_DOCUMENTS, MAX_ASSIGNMENT_BYTES, checkUpload } from '@/lib/uploads';
+
+const BUCKET = 'assignment-files';
+
+/**
+ * Download a file that may live in either of two places.
+ *
+ * New uploads go to Storage and the row keeps a path. Rows created before that
+ * still hold the file as base64 in `attachment_data` / `file_data` — columns the
+ * bulk loader deliberately does not fetch, because doing so is what made the
+ * list query slow enough that they were dropped, which in turn broke every
+ * download link. So for those we fetch the one column for the one row, on click.
+ *
+ * Returns an error string, or null on success.
+ */
+async function downloadFile(opts: {
+  path?: string | null;
+  fileName: string;
+  legacy?: { table: 'assignments' | 'submissions'; column: string; id: string };
+}): Promise<string | null> {
+  const { path, fileName, legacy } = opts;
+
+  const save = (href: string, revoke?: boolean) => {
+    const a = document.createElement('a');
+    a.href = href;
+    a.download = fileName || 'download';
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    if (revoke) URL.revokeObjectURL(href);
+  };
+
+  if (path) {
+    const { data, error } = await supabase.storage.from(BUCKET).download(path);
+    if (error) return error.message;
+    save(URL.createObjectURL(data), true);
+    return null;
+  }
+
+  if (legacy) {
+    const { data, error } = await supabase
+      .from(legacy.table)
+      .select(legacy.column)
+      .eq('id', legacy.id)
+      .single();
+    if (error) return error.message;
+    const b64 = (data as unknown as Record<string, string> | null)?.[legacy.column];
+    if (!b64) return 'This file is no longer stored — it may have been uploaded before file storage was set up.';
+    save(b64); // already a data: URL
+    return null;
+  }
+
+  return 'No file is attached.';
+}
 
 // Stateful assignment create form. Re-renders the Class dropdown whenever the
 // selected Module changes (the previous version froze the class list to the
@@ -17,11 +72,28 @@ function AssignmentFormModal({
   onDone: () => void;
 }) {
   const classesForModule = (mid: string) => {
-    const lecClassIds = getLecturerClassIds(db.lecturerModules, currentUser?.id || '');
-    const availableClasses = isAdmin ? db.classes : db.classes.filter((c: any) => lecClassIds.includes(c.id));
     const mod = db.modules.find((m: any) => m.id === mid);
-    const linked = mod ? availableClasses.filter((c: any) => mod.classes.includes(c.id)) : [];
-    return linked.length > 0 ? linked : availableClasses;
+    const linkedIds: string[] = mod?.classes || [];
+
+    // A lecturer is assigned a module *per class*, so offer exactly the classes
+    // where they teach THIS module — not every class they teach anything in.
+    if (currentUser?.role === 'lecturer') {
+      const taughtHere = db.lecturerModules
+        .filter((lm: any) => lm.lecturerId === currentUser?.id && lm.moduleId === mid)
+        .map((lm: any) => lm.classId);
+      const classes = db.classes.filter((c: any) => taughtHere.includes(c.id));
+      if (classes.length > 0) return classes;
+    }
+
+    // Everyone else: their scoped classes, narrowed to those taking this module.
+    // Previously a HOD fell through to the lecturer branch and was offered only
+    // classes they personally teach, rather than their department's.
+    const scoped = getScopedClassIds(db, currentUser);
+    const available = scoped === null
+      ? db.classes
+      : db.classes.filter((c: any) => scoped.includes(c.id));
+    const linked = available.filter((c: any) => linkedIds.includes(c.id));
+    return linked.length > 0 ? linked : available;
   };
 
   const firstModuleId = availableModules[0]?.id || '';
@@ -45,31 +117,40 @@ function AssignmentFormModal({
 
   const handleSave = async () => {
     if (!title || !moduleId) { toast('Title and module are required', 'error'); return; }
-    if (attachmentFile && attachmentFile.size > 10 * 1024 * 1024) { toast('Attachment must be under 10MB', 'error'); return; }
+    if (attachmentFile && attachmentFile.size > MAX_ASSIGNMENT_BYTES) { toast('Attachment must be under 10MB', 'error'); return; }
     setSaving(true);
 
-    let attachmentData: string | null = null;
+    const id = 'asgn_' + Date.now();
+
+    // Upload to Storage BEFORE inserting the row. If the upload fails we stop
+    // here, rather than leaving an assignment that claims an attachment it
+    // hasn't got. The old code base64-encoded the file into the row itself,
+    // which is what eventually broke every download link.
     let attachmentName: string | null = null;
+    let attachmentPath: string | null = null;
     if (attachmentFile) {
       attachmentName = attachmentFile.name;
-      attachmentData = await new Promise<string>((resolve, reject) => {
-        const reader = new FileReader();
-        reader.onload = () => resolve(reader.result as string);
-        reader.onerror = () => reject(new Error('Failed to read file'));
-        reader.readAsDataURL(attachmentFile);
-      });
+      attachmentPath = `assignments/${id}/${attachmentFile.name}`;
+      const { error: upErr } = await supabase.storage
+        .from(BUCKET)
+        .upload(attachmentPath, attachmentFile, { upsert: true });
+      if (upErr) { setSaving(false); toast('Attachment upload failed: ' + upErr.message, 'error'); return; }
     }
 
-    const id = 'asgn_' + Date.now();
     const { error } = await supabase.from('assignments').insert({
       id, title, description, module_id: moduleId, class_id: classId || null,
       due_date: dueDate || null, marks, status: 'active',
       submission_type: submissionType, created_by: currentUser?.id || null,
       uploaded_by: currentUser?.name || null, uploaded_date: new Date().toISOString().split('T')[0],
-      attachment_name: attachmentName, attachment_data: attachmentData,
+      attachment_name: attachmentName, attachment_path: attachmentPath,
     });
     setSaving(false);
-    if (error) { toast(error.message, 'error'); return; }
+    if (error) {
+      // Don't leave the uploaded file orphaned in the bucket.
+      if (attachmentPath) await supabase.storage.from(BUCKET).remove([attachmentPath]);
+      toast(error.message, 'error');
+      return;
+    }
     toast('Assignment created!', 'success');
     onDone();
   };
@@ -103,7 +184,17 @@ function AssignmentFormModal({
       </div>
       <div className="form-group">
         <label>Attach File (optional)</label>
-        <input className="form-input" type="file" onChange={e => setAttachmentFile(e.target.files?.[0] || null)} />
+        <input
+          className="form-input"
+          type="file"
+          accept={ACCEPT_DOCUMENTS}
+          onChange={e => {
+            const f = e.target.files?.[0] || null;
+            const err = f && checkUpload(f, MAX_ASSIGNMENT_BYTES);
+            if (err) { toast(err, 'error'); e.target.value = ''; setAttachmentFile(null); return; }
+            setAttachmentFile(f);
+          }}
+        />
         <div style={{fontSize:11,color:'var(--text2)',marginTop:4}}>Attach a reference document, rubric, or instructions file (max 10MB)</div>
       </div>
       <button className="btn btn-primary" style={{ marginTop: 12 }} disabled={saving} onClick={handleSave}>Create Assignment</button>
@@ -117,34 +208,83 @@ export default function AssignmentsPage() {
   const [selectedAssignment, setSelectedAssignment] = useState<string | null>(null);
   const [search, setSearch] = useState('');
 
-  const isAdmin = role === 'admin';
-  const isTeacher = role === 'lecturer' || role === 'hod' || role === 'hoy';
+  // Who may CREATE and DELETE — not merely who may see everything. A principal
+  // sees the whole school but writes nothing, so they must not be offered
+  // buttons the database will refuse.
+  const isAdmin = canManageAcademics(role);
+  const isTeacher = role === 'lecturer' || role === 'hod' || role === 'hoa';
 
   let assignments = db.assignments;
 
   if (isTeacher) {
-    assignments = assignments.filter(a => a.createdBy === currentUser?.id);
+    // Scoped by what they TEACH, not by who created the record.
+    //
+    // This used to be `a.createdBy === currentUser?.id`, which meant an
+    // assignment set by an admin for a lecturer's own module was invisible to
+    // that lecturer; assignments predating the created_by column were invisible
+    // to everyone forever; and a recreated account lost sight of all its
+    // previous work. HODs and HOAs were caught by the same filter and so could
+    // not see their department's or the school's assignments at all.
+    const scopedModuleIds = getScopedModuleIds(db, currentUser);
+    if (scopedModuleIds !== null) {
+      const allowed = new Set(scopedModuleIds);
+      assignments = assignments.filter(
+        a => allowed.has(a.moduleId) || a.createdBy === currentUser?.id,
+      );
+    }
   }
 
   const currentStudent = role === 'student'
     ? db.students.find(s => s.studentId === currentUser?.studentId)
     : null;
 
-  if (role === 'student' && currentStudent) {
-    const myModuleIds = db.modules.filter(m => m.classes.includes(currentStudent.classId)).map(m => m.id);
-    const overrideModuleIds = db.studentModules.filter(sm => sm.studentId === currentStudent.id).map(sm => sm.moduleId);
-    const allModuleIds = [...new Set([...myModuleIds, ...overrideModuleIds])];
-    assignments = assignments.filter(a => allModuleIds.includes(a.moduleId));
+  // A student whose record cannot be found must see NOTHING, not everything.
+  // Previously the filter block below was simply skipped when currentStudent was
+  // null, so a broken profile link showed that student every assignment in the
+  // school — the opposite of the intended failure.
+  if (role === 'student' && !currentStudent) {
+    assignments = [];
   }
 
-  const getLecturerModules = () =>
-    getLecturerModulesList(db.lecturerModules, db.modules, currentUser?.id || '');
+  if (role === 'student' && currentStudent) {
+    assignments = assignmentsForStudent(db, currentStudent, assignments);
+  }
+
 
   const handleCreateAssignment = () => {
-    const lecModules = isAdmin ? db.modules : getLecturerModules();
+    // Scope the pickers to what this person may work with. `isAdmin` alone was
+    // too narrow: a super_admin or HOA fell through to the lecturer branch and
+    // got an empty module list, so they could not create an assignment at all.
+    const scopedModuleIds = getScopedModuleIds(db, currentUser);
+    const lecModules = scopedModuleIds === null
+      ? db.modules
+      : db.modules.filter(m => scopedModuleIds.includes(m.id));
+    const unrestricted = isUnrestricted(currentUser?.role);
+
+    // A teacher with no modules assigned gets an empty picker and a form that
+    // can never be submitted ("Title and module are required" with no module to
+    // choose). Say what's actually wrong instead. 6 of 12 teaching staff have no
+    // rows in lecturer_modules today, which is the real reason "lecturers can't
+    // create assignments" — not a permissions problem.
+    if (lecModules.length === 0) {
+      showModal('Create Assignment', (
+        <div>
+          <div style={{ background: 'var(--bg2)', borderLeft: '3px solid var(--accent)', borderRadius: 6, padding: '12px 14px', fontSize: 13, color: 'var(--text2)', lineHeight: 1.6 }}>
+            You don't have any modules assigned yet, so there is nothing to create an assignment against.
+            <br /><br />
+            {currentUser?.role === 'hod'
+              ? 'No modules are linked to your department. An administrator can set this up under Configuration → programme mapping.'
+              : 'An administrator can assign your modules under Classes → Assign lecturers.'}
+          </div>
+          <button className="btn btn-primary" style={{ marginTop: 14, width: '100%' }} onClick={closeModal}>Close</button>
+        </div>
+      ));
+      return;
+    }
+
     showModal('Create Assignment', (
       <AssignmentFormModal
-        db={db} currentUser={currentUser} isAdmin={isAdmin}
+        db={db} currentUser={currentUser} isAdmin={unrestricted}
         availableModules={lecModules} toast={toast}
         onDone={() => { closeModal(); reloadDb(); }}
       />
@@ -153,6 +293,15 @@ export default function AssignmentsPage() {
 
   const handleDeleteAssignment = async (assignmentId: string) => {
     if (!confirm('Are you sure you want to delete this assignment? This will also remove all submissions.')) return;
+
+    // Remove the stored files too, or the bucket accumulates orphans nobody can
+    // reach. Collected before the rows are deleted, since the paths live on them.
+    const paths = [
+      db.assignments.find(a => a.id === assignmentId)?.attachmentPath,
+      ...db.submissions.filter(s => s.assignmentId === assignmentId).map(s => s.filePath),
+    ].filter(Boolean) as string[];
+    if (paths.length) await supabase.storage.from(BUCKET).remove(paths);
+
     // Delete submissions first
     await supabase.from('submissions').delete().eq('assignment_id', assignmentId);
     const { error } = await supabase.from('assignments').delete().eq('id', assignmentId);
@@ -213,6 +362,23 @@ export default function AssignmentsPage() {
           // insert over an existing row when the initial lookup came back stale.
           const existingById: Record<string, string> = {};
           (existing || []).forEach((x: any) => { existingById[x.student_id] = x.id; });
+          // min/max on a number input are HINTS, not enforcement — they block
+          // the spinner arrows and nothing else. Typing 500 or -20 goes
+          // straight through Number() into the database, which is how
+          // impossible marks were being stored.
+          const bad = students
+            .map(s => ({ name: s.name, v: marksMap[s.studentId] ?? 0 }))
+            .filter(x => !Number.isFinite(x.v) || x.v < 0 || x.v > a.marks);
+          if (bad.length > 0) {
+            toast(
+              `${bad.length} mark(s) are outside 0–${a.marks}: ` +
+              bad.slice(0, 3).map(b => `${b.name} (${b.v})`).join(', ') +
+              (bad.length > 3 ? `, and ${bad.length - 3} more` : ''),
+              'error',
+            );
+            return;
+          }
+
           const rows = students.map(s => {
             const score = marksMap[s.studentId] ?? 0;
             // Normalise to 0-100
@@ -261,12 +427,50 @@ export default function AssignmentsPage() {
           <textarea className="form-input" rows={3} defaultValue={feedback} placeholder="Provide feedback to the student..." onChange={e => feedback = e.target.value} />
         </div>
         <button className="btn btn-primary" style={{ marginTop: 12 }} onClick={async () => {
-          const { error } = await supabase.from('submissions').update({
-            grade: Number(grade), feedback, status: 'graded'
-          }).eq('id', submission.id);
-          if (error) { toast(error.message, 'error'); } else {
-            toast('Submission graded!', 'success'); closeModal(); reloadDb();
+          const raw = Number(grade);
+          if (!Number.isFinite(raw) || raw < 0 || raw > assignment.marks) {
+            toast(`Grade must be between 0 and ${assignment.marks}.`, 'error');
+            return;
           }
+
+          const { error } = await supabase.from('submissions').update({
+            grade: raw, feedback, status: 'graded'
+          }).eq('id', submission.id).select('id');
+          if (error) { toast(error.message, 'error'); return; }
+
+          // Grading a submission has to reach assessment_marks as well, or the
+          // mark exists only on the submission: it never appears in Marks,
+          // Reports, the module mark or progression. That is why soft-copy
+          // results "don't appear at marks" — they were being saved to one
+          // table and read from another.
+          //
+          // Two conversions matter here:
+          //   • the score is stored as a PERCENTAGE (score >= 50 passes), so a
+          //     grade out of assignment.marks must be normalised. 25 out of 30
+          //     is 83, not 25.
+          //   • assessment_marks keys on the student NUMBER, while
+          //     submissions.student_id holds students.id. Writing the wrong one
+          //     detaches the mark from the student.
+          const stu = db.students.find((st: any) => st.id === submission.studentId);
+          if (!stu) {
+            toast('Grade saved, but the student record could not be matched — it will not appear in Marks.', 'error');
+            closeModal(); reloadDb(); return;
+          }
+          const normalised = assignment.marks > 0 ? Math.round((raw / assignment.marks) * 100) : raw;
+
+          const { error: amErr } = await supabase.from('assessment_marks').upsert({
+            id: 'am_' + Date.now() + '_' + stu.studentId,
+            student_id: stu.studentId, assessment_id: assignment.id,
+            assessment_type: 'assignment', class_id: assignment.classId,
+            module_id: assignment.moduleId, score: normalised,
+          }, { onConflict: 'student_id,assessment_id' });
+
+          if (amErr) {
+            toast('Grade saved on the submission, but it could not be recorded in Marks: ' + amErr.message, 'error');
+          } else {
+            toast(`Graded — ${raw}/${assignment.marks} (${normalised}%) recorded in Marks.`, 'success');
+          }
+          closeModal(); reloadDb();
         }}>Save Grade</button>
       </div>
     ));
@@ -290,7 +494,17 @@ export default function AssignmentsPage() {
       <div>
         <div className="form-group">
           <label>Upload File *</label>
-          <input className="form-input" type="file" onChange={e => { selectedFile = e.target.files?.[0] || null; }} />
+          <input
+            className="form-input"
+            type="file"
+            accept={ACCEPT_DOCUMENTS}
+            onChange={e => {
+              const f = e.target.files?.[0] || null;
+              const err = f && checkUpload(f, MAX_ASSIGNMENT_BYTES);
+              if (err) { toast(err, 'error'); e.target.value = ''; selectedFile = null; return; }
+              selectedFile = f;
+            }}
+          />
           <div style={{fontSize:11,color:'var(--text2)',marginTop:4}}>Max file size: 10MB</div>
         </div>
         <div className="form-group">
@@ -299,30 +513,37 @@ export default function AssignmentsPage() {
         </div>
         <button className="btn btn-primary" style={{ marginTop: 12 }} onClick={async () => {
           if (!selectedFile) { toast('Please select a file to upload', 'error'); return; }
-          if (selectedFile.size > 10 * 1024 * 1024) { toast('File size must be under 10MB', 'error'); return; }
+          if (selectedFile.size > MAX_ASSIGNMENT_BYTES) { toast('File size must be under 10MB', 'error'); return; }
 
-          const reader = new FileReader();
-          reader.onload = async () => {
-            const base64 = reader.result as string;
-            const now = new Date();
-            const id = 'sub_' + Date.now();
-            const { error } = await supabase.from('submissions').insert({
-              id,
-              assignment_id: assignment.id,
-              student_id: currentStudent.id,
-              submitted_date: now.toISOString().split('T')[0],
-              submitted_time: now.toTimeString().split(' ')[0],
-              file_name: selectedFile!.name,
-              file_data: base64,
-              file_size: `${(selectedFile!.size / 1024).toFixed(1)} KB`,
-              notes,
-              status: 'submitted',
-            });
-            if (error) { toast(error.message, 'error'); } else {
-              toast('Assignment submitted successfully!', 'success'); closeModal(); reloadDb();
-            }
-          };
-          reader.readAsDataURL(selectedFile);
+          const now = new Date();
+          const id = 'sub_' + Date.now();
+          // Folder is the student's record id, which the storage policy checks
+          // against their profile — a student can only write into their own.
+          const filePath = `submissions/${assignment.id}/${currentStudent.id}/${selectedFile.name}`;
+
+          const { error: upErr } = await supabase.storage
+            .from(BUCKET)
+            .upload(filePath, selectedFile, { upsert: true });
+          if (upErr) { toast('Upload failed: ' + upErr.message, 'error'); return; }
+
+          const { error } = await supabase.from('submissions').insert({
+            id,
+            assignment_id: assignment.id,
+            student_id: currentStudent.id,
+            submitted_date: now.toISOString().split('T')[0],
+            submitted_time: now.toTimeString().split(' ')[0],
+            file_name: selectedFile.name,
+            file_path: filePath,
+            file_size: `${(selectedFile.size / 1024).toFixed(1)} KB`,
+            notes,
+            status: 'submitted',
+          });
+          if (error) {
+            await supabase.storage.from(BUCKET).remove([filePath]);
+            toast(error.message, 'error');
+          } else {
+            toast('Assignment submitted successfully!', 'success'); closeModal(); reloadDb();
+          }
         }}>Submit Assignment</button>
       </div>
     ));
@@ -465,12 +686,26 @@ export default function AssignmentsPage() {
               <div style={{fontSize:13,color:'var(--text1)',lineHeight:1.6,whiteSpace:'pre-wrap'}}>{a.instructions}</div>
             </div>
           )}
-          {a.attachmentName && a.attachmentData && (
+          {/* Gated on the NAME only. This used to also require attachmentData,
+              which the loader never fetches — so the link never rendered and no
+              attachment was ever downloadable. */}
+          {a.attachmentName && (
             <div style={{marginTop:12}}>
               <div style={{fontSize:12,fontWeight:600,color:'var(--text2)',marginBottom:4}}>Attachment</div>
-              <a href={a.attachmentData} download={a.attachmentName} className="btn btn-outline btn-sm" style={{display:'inline-flex',alignItems:'center',gap:6}}>
+              <button
+                className="btn btn-outline btn-sm"
+                style={{display:'inline-flex',alignItems:'center',gap:6}}
+                onClick={async () => {
+                  const err = await downloadFile({
+                    path: a.attachmentPath,
+                    fileName: a.attachmentName!,
+                    legacy: { table: 'assignments', column: 'attachment_data', id: a.id },
+                  });
+                  if (err) toast(err, 'error');
+                }}
+              >
                 <i className="fa-solid fa-paperclip" /> {a.attachmentName}
-              </a>
+              </button>
             </div>
           )}
 
@@ -479,7 +714,25 @@ export default function AssignmentsPage() {
             <div style={{marginTop:16,padding:12,background:'var(--bg2)',borderRadius:8}}>
               <div style={{fontSize:12,fontWeight:600,color:'var(--accent)',marginBottom:8}}>Your Submission</div>
               <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:8}}>
-                <div className="info-row"><span className="info-label">File</span><span className="info-val">{mySubmission.fileName}</span></div>
+                <div className="info-row">
+                  <span className="info-label">File</span>
+                  <span className="info-val">
+                    <button
+                      className="btn btn-outline btn-sm"
+                      style={{ fontSize: 11 }}
+                      onClick={async () => {
+                        const err = await downloadFile({
+                          path: mySubmission.filePath,
+                          fileName: mySubmission.fileName,
+                          legacy: { table: 'submissions', column: 'file_data', id: mySubmission.id },
+                        });
+                        if (err) toast(err, 'error');
+                      }}
+                    >
+                      <i className="fa-solid fa-download" style={{ marginRight: 5 }} />{mySubmission.fileName}
+                    </button>
+                  </span>
+                </div>
                 <div className="info-row"><span className="info-label">Size</span><span className="info-val">{mySubmission.fileSize}</span></div>
                 <div className="info-row"><span className="info-label">Submitted</span><span className="info-val">{mySubmission.submittedDate} {mySubmission.submittedTime}</span></div>
                 <div className="info-row"><span className="info-label">Status</span><span className="info-val"><span className="badge badge-credit">{mySubmission.status}</span></span></div>
@@ -517,12 +770,27 @@ export default function AssignmentsPage() {
                           <td className="td-name">{student?.name || 'Unknown'}</td>
                           <td style={{fontSize:11,fontFamily:"'JetBrains Mono',monospace"}}>{student?.studentId || '—'}</td>
                           <td>
-                            {sub.fileData ? (
-                              <a href={sub.fileData} download={sub.fileName} className="btn btn-outline btn-sm" style={{fontSize:11}} onClick={e => e.stopPropagation()}>
+                            {/* Was gated on sub.fileData, which the loader never
+                                fetches — so lecturers saw a filename as plain
+                                text and could not open any submitted work. */}
+                            {sub.fileName ? (
+                              <button
+                                className="btn btn-outline btn-sm"
+                                style={{fontSize:11}}
+                                onClick={async e => {
+                                  e.stopPropagation();
+                                  const err = await downloadFile({
+                                    path: sub.filePath,
+                                    fileName: sub.fileName,
+                                    legacy: { table: 'submissions', column: 'file_data', id: sub.id },
+                                  });
+                                  if (err) toast(err, 'error');
+                                }}
+                              >
                                 <i className="fa-solid fa-download" /> {sub.fileName}
-                              </a>
+                              </button>
                             ) : (
-                              <span style={{fontSize:11,color:'var(--text2)'}}>{sub.fileName || '—'}</span>
+                              <span style={{fontSize:11,color:'var(--text2)'}}>—</span>
                             )}
                           </td>
                           <td style={{fontSize:11}}>{sub.submittedDate} {sub.submittedTime}</td>

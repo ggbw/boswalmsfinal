@@ -92,6 +92,14 @@ export interface Assignment {
   description?: string;
   instructions?: string;
   attachmentName?: string | null;
+  /**
+   * Storage path in the `assignment-files` bucket, e.g.
+   * `assignments/<id>/<filename>`. NULL on rows created before the move to
+   * Storage — those still hold the file as base64 in `attachment_data`, which
+   * the detail view fetches on demand. Never bulk-loaded: base64 in the list
+   * query is what made downloads break in the first place.
+   */
+  attachmentPath?: string | null;
   attachmentData?: string | null;
   uploadedBy?: string;
   uploadedDate?: string;
@@ -105,6 +113,13 @@ export interface Submission {
   submittedDate: string;
   submittedTime: string;
   fileName: string;
+  /**
+   * Storage path in the `assignment-files` bucket, e.g.
+   * `submissions/<assignmentId>/<studentId>/<filename>`. NULL on rows created
+   * before the move to Storage — those still hold the file as base64 in
+   * `file_data`, fetched on demand.
+   */
+  filePath?: string | null;
   fileData?: string;
   fileSize?: string;
   notes: string;
@@ -121,6 +136,11 @@ export interface Notification {
   author: string;
 }
 export interface AttendanceRecord {
+  /**
+   * `students.id` — the record key, NOT the human student number
+   * (`students.studentId`). This is what `attendance_student_id_fkey` requires.
+   * Compare against `student.id`, never `student.studentId`.
+   */
   studentId: string;
   classId: string;
   date: string;
@@ -201,6 +221,12 @@ export interface Room {
 export interface StudentModuleOverride {
   studentId: string;
   moduleId: string;
+  /**
+   * Class whose offering of this module the student attends. Empty means their
+   * own class. Set for retakes, where the student stays in their cohort but
+   * sits the module with a different one.
+   */
+  classId?: string;
   addedBy: string;
   addedAt: string;
 }
@@ -306,7 +332,7 @@ export function createInitialDB(): DB {
         id: "u002",
         username: "malcom",
         password: "password",
-        role: "hoy",
+        role: "hoa",
         name: "Malcom",
         changed: false,
         email: "malcom@boswa.ac.bw",
@@ -1625,7 +1651,7 @@ export function createInitialDB(): DB {
     db.students.slice(0, 10).forEach((s) => {
       const r = Math.random();
       db.attendance.push({
-        studentId: s.studentId,
+        studentId: s.id,   // record key — see AttendanceRecord
         classId: s.classId,
         date,
         status: r < 0.85 ? "present" : r < 0.93 ? "absent" : "late",
@@ -1670,7 +1696,7 @@ export function gradeColor(g: string): string {
 export const roleCredentials: Record<string, { username: string; password: string }> = {
   admin: { username: "admin", password: "password" },
   hod: { username: "bonang", password: "password" },
-  hoy: { username: "malcom", password: "password" },
+  hoa: { username: "malcom", password: "password" },
   lecturer: { username: "poneso", password: "password" },
   student: { username: "abigail", password: "password" },
 };

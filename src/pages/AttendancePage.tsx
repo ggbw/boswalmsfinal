@@ -1,7 +1,9 @@
 import { useState, useEffect, useMemo } from 'react';
 import { useApp } from '@/context/AppContext';
 import { supabase } from '@/integrations/supabase/client';
-import { getLecturerClasses } from '@/lib/lecturerHelpers';
+import { getScopedClasses, isReadOnlyOversight } from '@/lib/scope';
+import { downloadCsv, slug } from '@/lib/csv';
+import { useRowSelection } from '@/lib/useRowSelection';
 
 type Session = 'start' | 'end';
 type Tab = 'mark' | 'summary';
@@ -10,12 +12,17 @@ export default function AttendancePage() {
   const { db, setDb, toast, currentUser } = useApp();
   const role = currentUser?.role;
 
-  // Admin sees all classes; HOD/HOA/Lecturer see only classes they teach
-  const availableClasses = role === 'admin'
-    ? db.classes
-    : getLecturerClasses(db.lecturerModules, db.classes, currentUser?.id || '');
+  // admin / super_admin / HOA: all classes. HOD: their department's.
+  // Lecturer: the classes they teach. Previously only the literal 'admin' role
+  // got the full list, so a super_admin or HOA with no teaching assignments saw
+  // no classes and could not take a register at all.
+  const availableClasses = getScopedClasses(db, currentUser);
 
-  const [tab, setTab] = useState<Tab>('mark');
+  // Principal and Deputy Principal have whole-school READ and no write. Saving a
+  // register would be refused by the database, so the Mark tab is not offered —
+  // they land on the Summary Report, which is what oversight actually needs.
+  const readOnly = isReadOnlyOversight(currentUser?.role);
+  const [tab, setTab] = useState<Tab>(readOnly ? 'summary' : 'mark');
   const [attClass, setAttClass] = useState(availableClasses[0]?.id || '');
   const [attDate, setAttDate] = useState(new Date().toISOString().split('T')[0]);
   const [attModule, setAttModule] = useState('');
@@ -32,7 +39,9 @@ export default function AttendancePage() {
     const next: Record<string, string> = {};
     students.forEach(s => {
       const rec = db.attendance.find(a =>
-        a.studentId === s.studentId &&
+        // attendance.student_id holds students.id (the record key), not the
+        // human student number — that's what attendance_student_id_fkey requires.
+        a.studentId === s.id &&
         a.classId === attClass &&
         (a.moduleId || '') === (attModule || '') &&
         a.date === attDate &&
@@ -51,12 +60,30 @@ export default function AttendancePage() {
   const setAtt = (id: string, status: string) =>
     setAttState(prev => ({ ...prev, [id]: status }));
 
+  // Tick-box selection over the register. "All Present" was the only bulk
+  // action, so marking six absentees meant six individual clicks — and because
+  // "all present" is all-or-nothing it gets used as a starting point rather
+  // than an answer, which is how a wrong register gets saved by accident.
+  const sel = useRowSelection(students.map(s => s.id));
+
+  const setSelectedTo = (status: string) => {
+    setAttState(prev => {
+      const next = { ...prev };
+      sel.selected.forEach(id => { next[id] = status; });
+      return next;
+    });
+    sel.clear();
+  };
+
   const saveAttendance = async () => {
     if (!attClass) { toast('Please select a class', 'error'); return; }
     if (!attDate)  { toast('Please select a date', 'error'); return; }
 
     const records = students.map(s => ({
-      student_id: s.studentId,
+      // students.id, NOT s.studentId. attendance_student_id_fkey references
+      // students(id); writing the human number failed the constraint on every
+      // save, which is why this table was completely empty.
+      student_id: s.id,
       class_id: attClass,
       module_id: attModule || '',
       date: attDate,
@@ -73,7 +100,7 @@ export default function AttendancePage() {
     // Mirror into local state so UI stays in sync — replace only rows for this
     // same class/date/module/session register, leaving the other register intact.
     const localRecords = students.map(s => ({
-      studentId: s.studentId, classId: attClass,
+      studentId: s.id, classId: attClass,
       moduleId: attModule || '', date: attDate,
       status: attState[s.id] || 'present', session: attSession as Session,
     }));
@@ -112,12 +139,12 @@ export default function AttendancePage() {
     <div className="page-header" style={{ display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap' }}>
       <div className="page-title">Attendance</div>
       <div style={{ display: 'inline-flex', border: '1px solid var(--border)', borderRadius: 8, overflow: 'hidden' }}>
-        {tabBtn('mark', 'Mark', 'fa-user-check')}
+        {!readOnly && tabBtn('mark', 'Mark', 'fa-user-check')}
         {tabBtn('summary', 'Summary Report', 'fa-chart-column')}
       </div>
     </div>
 
-    {tab === 'summary' ? <AttendanceSummary availableClasses={availableClasses} /> : (
+    {tab === 'summary' || readOnly ? <AttendanceSummary availableClasses={availableClasses} /> : (
     <div className="card" style={{ marginBottom: 14 }}>
       <div className="form-row cols3" style={{ marginBottom: 14 }}>
         <div className="form-group">
@@ -182,9 +209,42 @@ export default function AttendancePage() {
         <div style={{ background: '#ddf4ff', border: '1px solid #addcff', borderRadius: 8, padding: '12px 14px' }}><div style={{ fontSize: 24, fontWeight: 700, color: '#0969da', fontFamily: "'JetBrains Mono',monospace" }}>{students.length}</div><div style={{ fontSize: 11, color: '#0969da', fontWeight: 600 }}>Total</div></div>
       </div>
 
+      {/* Selection toolbar. Appears only once something is ticked, so the
+          register looks exactly as before until it is needed. */}
+      <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap',
+                    padding: '8px 10px', marginBottom: 10, borderRadius: 8,
+                    background: sel.count ? 'var(--bg2)' : 'transparent',
+                    border: sel.count ? '1px solid var(--border)' : '1px solid transparent' }}>
+        <label style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 12, cursor: 'pointer' }}>
+          <input type="checkbox" checked={sel.allSelected}
+                 ref={el => { if (el) el.indeterminate = sel.someSelected; }}
+                 onChange={sel.toggleAll} />
+          Select all
+        </label>
+        {sel.count > 0 && (<>
+          <span style={{ fontSize: 12, fontWeight: 700 }}>{sel.count} selected</span>
+          <span style={{ fontSize: 12, color: 'var(--text2)' }}>Mark as:</span>
+          <button className="att-btn present" onClick={() => setSelectedTo('present')}>P</button>
+          <button className="att-btn absent"  onClick={() => setSelectedTo('absent')}>A</button>
+          {!isEnd && <button className="att-btn late" onClick={() => setSelectedTo('late')}>L</button>}
+          <button className="btn btn-outline btn-sm" onClick={sel.clear}>Clear</button>
+        </>)}
+        {sel.count === 0 && (
+          <span style={{ fontSize: 11, color: 'var(--text3)' }}>
+            Tick students to mark several at once · shift-click for a range
+          </span>
+        )}
+      </div>
+
       <div className="att-grid">{students.map(s => (
-        <div key={s.id} className="att-card">
-          <div className="att-name">{s.name.split(' ').slice(0, 2).join(' ')}</div>
+        <div key={s.id} className="att-card"
+             style={sel.isSelected(s.id) ? { outline: '2px solid var(--accent)', outlineOffset: 1 } : undefined}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+            <input type="checkbox" checked={sel.isSelected(s.id)}
+                   onClick={(e) => { e.stopPropagation(); sel.toggle(s.id, (e as unknown as MouseEvent).shiftKey); }}
+                   onChange={() => { /* handled in onClick so shiftKey is available */ }} />
+            <div className="att-name">{s.name.split(' ').slice(0, 2).join(' ')}</div>
+          </div>
           <div className="att-toggle">
             <button className={`att-btn present ${attState[s.id] === 'present' ? 'active' : ''}`} onClick={() => setAtt(s.id, 'present')}>P</button>
             <button className={`att-btn absent ${attState[s.id] === 'absent' ? 'active' : ''}`} onClick={() => setAtt(s.id, 'absent')}>A</button>
@@ -263,7 +323,7 @@ function AttendanceSummary({ availableClasses }: { availableClasses: ClassRow[] 
   );
 
   const rows = students.map(s => {
-    const sr = recs.filter(a => a.studentId === s.studentId);
+    const sr = recs.filter(a => a.studentId === s.id);
     const present = sr.filter(a => a.status === 'present').length;
     const absent = sr.filter(a => a.status === 'absent').length;
     const late = sr.filter(a => a.status === 'late').length;
@@ -280,6 +340,35 @@ function AttendanceSummary({ availableClasses }: { availableClasses: ClassRow[] 
   const overallRate = tot.total ? Math.round(((tot.present + tot.late) / tot.total) * 100) : null;
 
   const rateColor = (r: number | null) => r == null ? 'var(--text2)' : r >= 75 ? '#1a7f37' : r >= 50 ? '#9a6700' : '#cf222e';
+
+  // Export exactly what is on screen — same class, module, period and search
+  // filter — so the file always matches what the person was looking at.
+  const className = availableClasses.find(c => c.id === cls)?.name || 'Class';
+  const moduleName = moduleId ? (db.modules.find(m => m.id === moduleId)?.name || 'Module') : 'All modules';
+
+  const handleExport = () => {
+    if (rows.length === 0) return;
+    downloadCsv(
+      `attendance-${slug(className)}-${slug(moduleName)}-${range.from}-to-${range.to}.csv`,
+      [
+        ['Boswa CIB — Attendance Summary'],
+        ['Class', className],
+        ['Module', moduleName],
+        ['Period', `${range.label} (${range.from} to ${range.to})`],
+        ['Generated', new Date().toLocaleString('en-GB')],
+        [],
+        ['#', 'Student', 'Student ID', 'Present', 'Absent', 'Late', 'Registers', 'Attendance %'],
+        ...rows.map((r, i) => [
+          i + 1, r.s.name, r.s.studentId,
+          r.present, r.absent, r.late, r.total,
+          r.rate == null ? '' : r.rate,
+        ]),
+        [],
+        ['TOTAL', `${rows.length} student(s)`, '', tot.present, tot.absent, tot.late, tot.total,
+         overallRate == null ? '' : overallRate],
+      ],
+    );
+  };
 
   const periodBtn = (p: 'day' | 'week' | 'month', label: string) => (
     <button
@@ -334,6 +423,14 @@ function AttendanceSummary({ availableClasses }: { availableClasses: ClassRow[] 
           onChange={e => setSearch(e.target.value)}
           style={{ marginLeft: 'auto', maxWidth: 240 }}
         />
+        <button
+          className="btn btn-outline btn-sm"
+          onClick={handleExport}
+          disabled={rows.length === 0}
+          title={rows.length === 0 ? 'Nothing to export' : `Download ${rows.length} row(s) as CSV`}
+        >
+          <i className="fa-solid fa-download" style={{ marginRight: 6 }} /> Export CSV
+        </button>
       </div>
 
       {/* Overall tiles */}

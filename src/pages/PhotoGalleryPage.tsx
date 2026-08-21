@@ -1,6 +1,7 @@
 import { useState, useEffect, useMemo, useRef } from "react";
 import { useApp } from "@/context/AppContext";
 import { supabase } from "@/integrations/supabase/client";
+import { signedUrls } from "@/lib/storage";
 import { compressImage, createThumbnail } from "@/lib/imageCompression";
 import { getLecturerClassIds } from "@/lib/lecturerHelpers";
 import { buildZip, uniqueName } from "@/lib/zip";
@@ -21,7 +22,7 @@ export default function PhotoGalleryPage() {
   const role = currentUser?.role;
   const isStudent = role === "student";
   const canManage = role === "admin" || role === "super_admin" || role === "lecturer"; // upload + delete
-  const canView = canManage || role === "hod" || role === "hoy"; // view folders
+  const canView = canManage || role === "hod" || role === "hoa"; // view folders
   const canUploadToOthers = canManage; // keep alias for existing JSX
 
   // For students: their own student record ID (from studentRef on profile)
@@ -96,10 +97,9 @@ export default function PhotoGalleryPage() {
         const profileFile = inner.find((f) => f.name.startsWith("profile_"));
 
         // Photos sitting directly in the student folder (not in a named subfolder).
-        const rootUrls = photoFiles.map((f) => {
-          const { data } = supabase.storage.from("student-photos").getPublicUrl(`${folder.name}/${f.name}`);
-          return data.publicUrl;
-        });
+        // Collect PATHS here; every path is exchanged for a signed URL in one
+        // batch after the walk. Signing per file would be a round trip each.
+        const rootUrls = photoFiles.map((f) => `${folder.name}/${f.name}`);
         rootPhotos[folder.name] = rootUrls;
 
         // Named subfolders: each is addressed by the path key "studentId/subName"
@@ -114,12 +114,7 @@ export default function PhotoGalleryPage() {
             subNames.push(sub.name);
             const subUrls = (subFiles || [])
               .filter((f) => f.name.endsWith(".webp") && !f.name.startsWith("thumb_") && !f.name.startsWith("profile_"))
-              .map((f) => {
-                const { data } = supabase.storage
-                  .from("student-photos")
-                  .getPublicUrl(`${folder.name}/${sub.name}/${f.name}`);
-                return data.publicUrl;
-              });
+              .map((f) => `${folder.name}/${sub.name}/${f.name}`);
             const pathKey = `${folder.name}/${sub.name}`;
             allPhotos[pathKey] = subUrls;
             if (subUrls.length > 0) thumbs[pathKey] = subUrls[0];
@@ -132,16 +127,26 @@ export default function PhotoGalleryPage() {
 
         // Thumbnail priority: profile photo > thumb_ > first gallery photo
         if (profileFile) {
-          const { data } = supabase.storage.from("student-photos").getPublicUrl(`${folder.name}/${profileFile.name}`);
-          thumbs[folder.name] = data.publicUrl;
+          thumbs[folder.name] = `${folder.name}/${profileFile.name}`;
         } else if (thumbFiles.length > 0) {
-          const { data } = supabase.storage.from("student-photos").getPublicUrl(`${folder.name}/${thumbFiles[0].name}`);
-          thumbs[folder.name] = data.publicUrl;
+          thumbs[folder.name] = `${folder.name}/${thumbFiles[0].name}`;
         } else if (galleryUrls.length > 0) {
           thumbs[folder.name] = galleryUrls[0];
         }
       }),
     );
+
+    // The bucket is private, so nothing collected above is renderable yet —
+    // exchange each path for a signed URL in a single batched call.
+    const urls = await signedUrls("student-photos", [
+      ...Object.values(allPhotos).flat(),
+      ...Object.values(rootPhotos).flat(),
+      ...Object.values(thumbs),
+    ]);
+    const sign = (path: string) => urls[path] || "";
+    for (const k of Object.keys(allPhotos)) allPhotos[k] = allPhotos[k].map(sign);
+    for (const k of Object.keys(rootPhotos)) rootPhotos[k] = rootPhotos[k].map(sign);
+    for (const k of Object.keys(thumbs)) thumbs[k] = sign(thumbs[k]);
 
     setPhotoMap(allPhotos);
     setThumbMap(thumbs);
@@ -162,7 +167,7 @@ export default function PhotoGalleryPage() {
     }
   }, [isStudent, myStudentId, loading]);
 
-  // Scope: lecturers see only their own classes; admin/hod/hoy see all
+  // Scope: lecturers see only their own classes; admin/hod/hoa see all
   const allowedClassIds = useMemo(() => {
     if (role !== "lecturer") return null;
     return getLecturerClassIds(db.lecturerModules, currentUser?.id || '');

@@ -27,7 +27,9 @@ const STATUS_META: Record<string, { label:string; color:string; bg:string; icon:
   enrolled:          { label:'Enrolled',       color:'#15803d', bg:'#f0fdf4', icon:'🎓', desc:'You have been enrolled. Welcome to Boswa!' },
 };
 
-export default function ApplicantPortal({ userId, onSignOut }: { userId:string; onSignOut:()=>void }) {
+export default function ApplicantPortal({ userId, onSignOut, onActivated }: {
+  userId:string; onSignOut:()=>void; onActivated:()=>void;
+}) {
   const [application, setApplication] = useState<ApplicationData|null>(null);
   const [loading, setLoading]         = useState(true);
   const [view, setView]               = useState<'status'|'sponsorship'>('status');
@@ -78,7 +80,10 @@ export default function ApplicantPortal({ userId, onSignOut }: { userId:string; 
   );
 
   return (
-    <Shell onSignOut={onSignOut}>
+    <Shell onSignOut={onSignOut}
+           action={application.status === 'enrolled'
+             ? <ActivateStudentBtn onActivated={onActivated} variant="header" />
+             : undefined}>
       <div style={{ maxWidth:720, margin:'0 auto', padding:'32px 16px' }}>
 
         {/* Status Banner */}
@@ -172,9 +177,15 @@ export default function ApplicantPortal({ userId, onSignOut }: { userId:string; 
           <div style={{ background:'#f0fdf4', border:'1px solid #86efac', borderRadius:10, padding:'20px 24px' }}>
             <div style={{ fontWeight:700, fontSize:14, color:'#15803d', marginBottom:8 }}>🎓 You are enrolled!</div>
             <p style={{ fontSize:13, color:'#374151', lineHeight:1.6 }}>
-              Welcome to Boswa Culinary Institute of Botswana. Your student account is now active. Please log in using your student credentials.
+              Welcome to Boswa Culinary Institute of Botswana. Download your welcome
+              letter below, then open your student account — you will be asked to set
+              a new password, and after that you sign in as a student rather than an
+              applicant.
             </p>
-            <div style={{ marginTop:12 }}>
+            <div style={{ marginTop:14 }}>
+              <ActivateStudentBtn onActivated={onActivated} />
+            </div>
+            <div style={{ marginTop:12, paddingTop:12, borderTop:'1px solid #bbf7d0' }}>
               <DownloadLetterBtn applicationId={application.id} type="welcome" />
             </div>
           </div>
@@ -182,6 +193,69 @@ export default function ApplicantPortal({ userId, onSignOut }: { userId:string; 
 
       </div>
     </Shell>
+  );
+}
+
+/**
+ * Turns an enrolled applicant into a student, in place.
+ *
+ * The applicant portal is shown whenever the role is not a staff/student one,
+ * so an enrolled student whose role was never actually flipped comes back here
+ * every single time they sign in — welcome letter and all. Enrolment tried to
+ * flip it with a bare UPDATE from the browser, which is silent both when RLS
+ * refuses it and when there is no row to update.
+ *
+ * activate_student_account() does the conversion server-side and RETURNS what
+ * happened, so a failure is something we can show them rather than a portal
+ * that quietly reappears. It also sets must_change_password, which is why the
+ * next thing they see is the change-password screen: they have been signing in
+ * with the password they chose as an applicant.
+ *
+ * No sign-out in between — refreshing the role re-renders AuthGate straight
+ * into the student app.
+ */
+function ActivateStudentBtn({ onActivated, variant = 'primary' }: {
+  onActivated: () => void; variant?: 'primary' | 'header';
+}) {
+  const [busy, setBusy]   = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  const go = async () => {
+    setBusy(true); setError(null);
+    const { data, error: rpcErr } = await supabase.rpc('activate_student_account' as never, {} as never);
+    const res = data as { ok?: boolean; reason?: string } | null;
+
+    if (rpcErr) {
+      // The function is missing until its migration is applied. Say that,
+      // rather than showing a raw 404 to a student.
+      setError(/function .* does not exist|schema cache/i.test(rpcErr.message)
+        ? 'Student sign-in is not switched on yet. Please contact the school office.'
+        : rpcErr.message);
+      setBusy(false); return;
+    }
+    if (!res?.ok) { setError(res?.reason || 'Could not open your student account.'); setBusy(false); return; }
+
+    onActivated();   // re-reads role + profile; AuthGate then renders the student app
+  };
+
+  const style: React.CSSProperties = variant === 'header'
+    ? { background:'#C9A227', border:'none', color:'#002060', padding:'7px 16px', borderRadius:6,
+        cursor: busy ? 'wait' : 'pointer', fontSize:12, fontWeight:800 }
+    : { background:'#15803d', border:'none', color:'#fff', padding:'12px 22px', borderRadius:8,
+        cursor: busy ? 'wait' : 'pointer', fontSize:14, fontWeight:700, width:'100%' };
+
+  return (
+    <>
+      <button onClick={go} disabled={busy} style={style}>
+        {busy ? 'Opening your account…' : 'Sign in to my student account →'}
+      </button>
+      {error && (
+        <div style={{ marginTop:10, background:'#fef2f2', border:'1px solid #fecaca', color:'#991b1b',
+                      borderRadius:8, padding:'10px 12px', fontSize:12, lineHeight:1.5 }}>
+          {error}
+        </div>
+      )}
+    </>
   );
 }
 
@@ -322,7 +396,7 @@ function DownloadLetterBtn({ applicationId, type, progName }: { applicationId:st
       // The applicant chose their intake (Jan/July) at apply time; the offer
       // letter should reflect that rather than the programme's default.
       if (appl?.intake_month) prog.intake_month = appl.intake_month;
-      const cfg = configRes.data;
+      const cfg = configRes.data as unknown as Record<string, string | null> | null;
 
       const fmt = (iso: string) => new Date(iso).toLocaleDateString('en-GB',{day:'numeric',month:'long',year:'numeric'});
       const today = new Date().toLocaleDateString('en-GB',{day:'numeric',month:'long',year:'numeric'});
@@ -572,7 +646,9 @@ function buildWelcomeHtml(applicant:any, date:string, logoUrl:string, d:{uniform
 // ─────────────────────────────────────────────────────────────────────────────
 // SHELL
 // ─────────────────────────────────────────────────────────────────────────────
-function Shell({ children, onSignOut }: { children:React.ReactNode; onSignOut:()=>void }) {
+function Shell({ children, onSignOut, action }: {
+  children:React.ReactNode; onSignOut:()=>void; action?:React.ReactNode;
+}) {
   return (
     <div style={{ minHeight:'100vh', background:'#f0f4f8' }}>
       <div style={{ background:'#002060', padding:'14px 32px', display:'flex', alignItems:'center', gap:16 }}>
@@ -581,8 +657,14 @@ function Shell({ children, onSignOut }: { children:React.ReactNode; onSignOut:()
           <div style={{ color:'#fff', fontWeight:800, fontSize:15 }}>Boswa Culinary Institute of Botswana</div>
           <div style={{ color:'#C9A227', fontSize:11 }}>Applicant Portal</div>
         </div>
-        <div style={{ marginLeft:'auto' }}>
-          <button onClick={onSignOut} style={{ background:'none', border:'1px solid rgba(255,255,255,0.3)', color:'#fff', padding:'6px 14px', borderRadius:6, cursor:'pointer', fontSize:12 }}>
+        <div style={{ marginLeft:'auto', display:'flex', alignItems:'center', gap:14 }}>
+          {action}
+          {/* Once enrolled, entering the student account is the primary action
+              and sign-out becomes the quiet one — but it stays. Removing it
+              would strand anyone whose activation cannot complete. */}
+          <button onClick={onSignOut} style={ action
+            ? { background:'none', border:'none', color:'rgba(255,255,255,0.75)', padding:'6px 4px', cursor:'pointer', fontSize:12, textDecoration:'underline' }
+            : { background:'none', border:'1px solid rgba(255,255,255,0.3)', color:'#fff', padding:'6px 14px', borderRadius:6, cursor:'pointer', fontSize:12 }}>
             Sign Out
           </button>
         </div>

@@ -1,7 +1,8 @@
 import { useApp } from '@/context/AppContext';
+import { isAdminRole } from '@/lib/scope';
 export default function MappingPage() {
   const { currentUser } = useApp();
-  if (currentUser?.role !== 'admin' && currentUser?.role !== 'hod') {
+  if (!isAdminRole(currentUser?.role) && currentUser?.role !== 'hod') {
     return <div className="card" style={{textAlign:'center',padding:40}}><i className="fa-solid fa-lock" style={{fontSize:32,color:'var(--text3)',marginBottom:12,display:'block'}}/><div style={{color:'var(--text2)'}}>Only Admin and HOD can manage module mappings.</div></div>;
   }
   return <MappingGrid />;

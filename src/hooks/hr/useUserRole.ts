@@ -42,14 +42,14 @@ export function useUserRole() {
   // intentionally LMS-only and must not grant HR write/admin permissions.
   const isAdmin = isSuperAdmin;
   const isHR = isAdmin || role === 'hr';
-  const isManager = role === 'manager' || role === 'hod' || role === 'hoy';
+  const isManager = role === 'manager' || role === 'hod' || role === 'hoa';
   // Anyone with a staff or HR role is considered an "employee" for self-service
   const isEmployee =
     role === 'employee' ||
     role === 'lecturer' ||
     role === 'manager' ||
     role === 'hod' ||
-    role === 'hoy' ||
+    role === 'hoa' ||
     isHR;
 
   const can = (key: string, action: PermAction = 'read'): boolean => {

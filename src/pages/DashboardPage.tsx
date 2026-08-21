@@ -1,5 +1,74 @@
 import { useApp } from '@/context/AppContext';
-import { calcModuleMark, grade, gradeColor } from '@/data/db';
+import { grade, gradeColor, type DB, type Student } from '@/data/db';
+import { useAssessmentMarks } from '@/hooks/useAssessmentMarks';
+import { studentModuleResults, assignmentsForStudent } from '@/lib/studentMarks';
+import { PrincipalDashboard, HodDashboard, LecturerDashboard } from '@/pages/RoleDashboards';
+import StudentRegistrationPanel from '@/components/StudentRegistrationPanel';
+import { ModuleMarksChart } from '@/components/charts/DashboardCharts';
+
+/**
+ * Student dashboard. Marks come from assessment_marks; this previously read
+ * db.marks and matched nothing, so "Modules" always showed 0 and the marks
+ * panel always said "No marks recorded yet". Split out so the hook is not
+ * called behind the role check.
+ */
+function StudentDashboard({ stu, db }: { stu: Student; db: DB }) {
+  const { scoreOf, loading } = useAssessmentMarks({ studentNumbers: [stu.studentId] });
+  const results = loading ? [] : studentModuleResults(db, stu, scoreOf);
+  const marked = results.filter(r => !r.unmarked);
+
+  const cls = db.classes.find(c => c.id === stu.classId);
+  const prog = db.config.programmes.find(p => p.id === stu.programme);
+  // attendance.student_id holds students.id (the record key), not the number.
+  const stuAtt = db.attendance.filter(a => a.studentId === stu.id);
+  const attPct2 = stuAtt.length ? Math.round(stuAtt.filter(a => a.status === 'present').length / stuAtt.length * 100) : 0;
+  // Same rule as the Assignments page — matching classId alone missed work
+  // set for the module rather than a named class.
+  const stuAssign = assignmentsForStudent(db, stu, db.assignments);
+
+  return (
+    <>
+      <div className="page-header"><div><div className="page-title">Welcome, {stu.name.split(' ')[0]}</div><div className="page-sub">{cls?.name} · {prog?.name} · Year {stu.year} Semester {stu.semester}</div></div></div>
+      <div className="stat-grid">
+        <div className="stat-card"><div className="stat-icon" style={{ background: '#fff3cc' }}><i className="fa-solid fa-book-open-reader" style={{ color: '#d4920a' }} /></div><div><div className="stat-val">{results.length}</div><div className="stat-label">Modules</div></div></div>
+        <div className="stat-card"><div className="stat-icon" style={{ background: '#dafbe1' }}><i className="fa-solid fa-circle-check" style={{ color: '#1a7f37' }} /></div><div><div className="stat-val">{attPct2}%</div><div className="stat-label">My Attendance</div></div></div>
+        <div className="stat-card"><div className="stat-icon" style={{ background: '#ddf4ff' }}><i className="fa-solid fa-list-check" style={{ color: '#0550ae' }} /></div><div><div className="stat-val">{stuAssign.length}</div><div className="stat-label">Assignments</div></div></div>
+        <div className="stat-card"><div className="stat-icon" style={{ background: '#f0e6ff' }}><i className="fa-solid fa-school" style={{ color: '#6639ba' }} /></div><div><div className="stat-val">{cls?.name || '—'}</div><div className="stat-label">My Class</div></div></div>
+      </div>
+      <div className="two-col">
+        <StudentRegistrationPanel student={stu} />
+        <div className="card"><div className="card-title"><span><i className="fa-solid fa-book-open" /> My Modules &amp; Marks</span></div>
+          {loading
+            ? <div style={{ color: 'var(--text2)', fontSize: 12, padding: '10px 0' }}>Loading marks…</div>
+            : marked.length
+              ? (
+                <>
+                  {/* Bars against the pass line: which modules are safe and which
+                      need work reads instantly, where a column of numbers does
+                      not. Pass/fail is STATUS colour, never a data series. */}
+                  <ModuleMarksChart
+                    data={marked.map(({ module, mark }) => ({
+                      name: module.name.length > 22 ? module.name.slice(0, 21) + '…' : module.name,
+                      mark: mark.moduleMark,
+                    }))}
+                  />
+                  <div style={{ marginTop: 10 }}>
+                    {marked.map(({ module, mark }) => {
+                      const g = grade(mark.moduleMark);
+                      return <div key={module.id} className="info-row"><span className="info-label">{module.name}</span><div style={{ display: 'flex', gap: 6, alignItems: 'center' }}><span style={{ fontWeight: 700, fontFamily: "'JetBrains Mono', monospace" }}>{mark.moduleMark}%</span><span className={`badge ${gradeColor(g)}`}>{g}</span></div></div>;
+                    })}
+                  </div>
+                </>
+              )
+              : <div style={{ color: 'var(--text2)', fontSize: 12, padding: '10px 0' }}>No marks recorded yet</div>}
+        </div>
+        <div className="card"><div className="card-title"><span><i className="fa-solid fa-calendar-check" /> Upcoming Assignments</span></div>
+          {stuAssign.length ? stuAssign.map(a => <div key={a.id} className="info-row"><span className="info-label">{a.title}</span><span className="info-val">{a.dueDate}</span></div>) : <div style={{ color: 'var(--text2)', fontSize: 12, padding: '10px 0' }}>No assignments yet</div>}
+        </div>
+      </div>
+    </>
+  );
+}
 
 export default function DashboardPage() {
   const { db, currentUser, navigate } = useApp();
@@ -12,37 +81,26 @@ export default function DashboardPage() {
   const presentAtt = db.attendance.filter(a => a.status === 'present').length;
   const attPct = totalAtt ? Math.round(presentAtt / totalAtt * 100) : 92;
 
+  // Each role gets the dashboard built for the question it opens the system to
+  // ask, rather than one page showing everyone the same admin counters.
+  if (role === 'principal')        return <PrincipalDashboard academicOnly={false} />;
+  if (role === 'deputy_principal') return <PrincipalDashboard academicOnly />;
+  // Head of Academics has whole-school academic oversight — the same remit as
+  // the deputy. It was falling through to the generic admin counters, which
+  // answer a different question entirely.
+  if (role === 'hoa')              return <PrincipalDashboard academicOnly />;
+  if (role === 'hod')              return <HodDashboard />;
+  if (role === 'lecturer')         return <LecturerDashboard />;
+
   if (role === 'student') {
     const stu = db.students.find(s => s.studentId === currentUser?.studentId);
     if (!stu) return <div className="card" style={{ textAlign: 'center', padding: 40, color: 'var(--text2)' }}>Student record not found.</div>;
-    const cls = db.classes.find(c => c.id === stu.classId);
-    const prog = db.config.programmes.find(p => p.id === stu.programme);
-    const stuMarks = db.marks.filter(m => m.studentId === stu.studentId);
-    const stuAtt = db.attendance.filter(a => a.studentId === stu.studentId);
-    const attPct2 = stuAtt.length ? Math.round(stuAtt.filter(a => a.status === 'present').length / stuAtt.length * 100) : 0;
-    const stuAssign = db.assignments.filter(a => a.classId === stu.classId);
-    return (
-      <>
-        <div className="page-header"><div><div className="page-title">Welcome, {stu.name.split(' ')[0]}</div><div className="page-sub">{cls?.name} · {prog?.name} · Year {stu.year} Semester {stu.semester}</div></div></div>
-        <div className="stat-grid">
-          <div className="stat-card"><div className="stat-icon" style={{ background: '#fff3cc' }}><i className="fa-solid fa-book-open-reader" style={{ color: '#d4920a' }} /></div><div><div className="stat-val">{stuMarks.length}</div><div className="stat-label">Modules</div></div></div>
-          <div className="stat-card"><div className="stat-icon" style={{ background: '#dafbe1' }}><i className="fa-solid fa-circle-check" style={{ color: '#1a7f37' }} /></div><div><div className="stat-val">{attPct2}%</div><div className="stat-label">My Attendance</div></div></div>
-          <div className="stat-card"><div className="stat-icon" style={{ background: '#ddf4ff' }}><i className="fa-solid fa-list-check" style={{ color: '#0550ae' }} /></div><div><div className="stat-val">{stuAssign.length}</div><div className="stat-label">Assignments</div></div></div>
-          <div className="stat-card"><div className="stat-icon" style={{ background: '#f0e6ff' }}><i className="fa-solid fa-school" style={{ color: '#6639ba' }} /></div><div><div className="stat-val">{cls?.name || '—'}</div><div className="stat-label">My Class</div></div></div>
-        </div>
-        <div className="two-col">
-          <div className="card"><div className="card-title"><span><i className="fa-solid fa-book-open" /> My Modules & Marks</span></div>
-            {stuMarks.length ? stuMarks.map(m => { const mod = db.modules.find(mo => mo.id === m.moduleId); const mm = calcModuleMark(m, mod?.hasPractical !== false); const g = grade(mm); return <div key={m.moduleId} className="info-row"><span className="info-label">{mod?.name}</span><div style={{ display: 'flex', gap: 6, alignItems: 'center' }}><span style={{ fontWeight: 700, fontFamily: "'JetBrains Mono', monospace" }}>{mm}%</span><span className={`badge ${gradeColor(g)}`}>{g}</span></div></div>; }) : <div style={{ color: 'var(--text2)', fontSize: 12, padding: '10px 0' }}>No marks recorded yet</div>}
-          </div>
-          <div className="card"><div className="card-title"><span><i className="fa-solid fa-calendar-check" /> Upcoming Assignments</span></div>
-            {stuAssign.length ? stuAssign.map(a => <div key={a.id} className="info-row"><span className="info-label">{a.title}</span><span className="info-val">{a.dueDate}</span></div>) : <div style={{ color: 'var(--text2)', fontSize: 12, padding: '10px 0' }}>No assignments yet</div>}
-          </div>
-        </div>
-      </>
-    );
+    return <StudentDashboard stu={stu} db={db} />;
   }
 
-  const isStaff = role === 'admin' || role === 'hod' || role === 'hoy';
+  // super_admin falls through to this generic dashboard and was missing from
+  // the check, so the highest role saw the page with no statistics on it.
+  const isStaff = role === 'admin' || role === 'super_admin' || role === 'hod' || role === 'hoa';
   return (
     <>
       {db.notifications.map(n => (
