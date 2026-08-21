@@ -65,10 +65,10 @@ NOT the long `DS-K1T...` model string on the Device page. A serial mismatch show
 | Item | Value |
 |---|---|
 | Dashboard | Boswa LMS → HR → Attendance (Live Dashboard / Raw Punches / Report) |
-| Supabase project ref | `flplvvybmzqapklcftbq` |
-| Supabase URL | `https://flplvvybmzqapklcftbq.supabase.co` |
+| Supabase project ref | `gmdbrgjxdeztgzvqsaaj` |
+| Supabase URL | `https://gmdbrgjxdeztgzvqsaaj.supabase.co` |
 | Edge Function (ingest) | `ingest-attendance` |
-| Ingest function URL | `https://flplvvybmzqapklcftbq.supabase.co/functions/v1/ingest-attendance` |
+| Ingest function URL | `https://gmdbrgjxdeztgzvqsaaj.supabase.co/functions/v1/ingest-attendance` |
 | Hik-Connect OpenAPI base | `https://ieu.hikcentralconnect.com` |
 | VPS | `176.126.87.102` (Contabo, host `vmi2982250`) — shared with Dunlop |
 | VPS sync folder | `/opt/hik-sync-boswa/` (Dunlop is `/opt/hik-sync`) |
@@ -225,7 +225,7 @@ This API path writes **second** precision with `data_source='hik-openapi'`.
 4. **`Server misconfiguration` (HTTP 500) from ingest** → `HIK_SYNC_SECRET` not set on the
    Supabase function. **`Unauthorized` (HTTP 401)** → the secret is set but doesn't match the
    VPS `.env`. Fix so both sides are identical.
-5. **HTTP 404 from ingest** → `ingest-attendance` not deployed to `flplvvybmzqapklcftbq`.
+5. **HTTP 404 from ingest** → `ingest-attendance` not deployed to `gmdbrgjxdeztgzvqsaaj`.
 6. **Hik-Connect portal → Attendance/Transaction tab** → is Hik-Connect itself receiving
    punches?
 7. **Supabase SQL:**
