@@ -61,6 +61,10 @@ import MyLoansPage from '@/pages/hr/self-service/MyLoansPage';
 import MyPayslipsPage from '@/pages/hr/self-service/MyPayslipsPage';
 import MyEmployeeFilePage from '@/pages/hr/self-service/MyEmployeeFilePage';
 import ForcePasswordChange from '@/components/hr/ForcePasswordChange';
+import type { Database } from '@/integrations/supabase/types';
+
+/** The role names the database actually recognises. */
+type AppRole = Database['public']['Enums']['app_role'];
 import NotificationBell from '@/components/hr/NotificationBell';
 import ImpersonationBanner from '@/components/hr/ImpersonationBanner';
 import { useAuth } from '@/hooks/useAuth';
@@ -156,7 +160,20 @@ const pageComponents: Record<string, React.ComponentType> = {
   'my-advance-salary': MyLoansPage,
 };
 
-const ROLE_PAGES: Record<string, string[]> = {
+/**
+ * Which roles may open which page.
+ *
+ * Typed as AppRole[] rather than string[] deliberately. This table was written
+ * with 'hoy' in it — a role renamed to 'hoa' on 12 August and gone ever since.
+ * Because the values were plain strings, TypeScript had nothing to check them
+ * against, the build passed, and the only symptom was a menu item that
+ * silently rendered the Dashboard: a role missing from the allow-list falls
+ * back rather than erroring.
+ *
+ * With AppRole[] the compiler rejects any name that is not in the database
+ * enum, so this cannot recur.
+ */
+const ROLE_PAGES: Record<string, AppRole[]> = {
   dashboard:      ['admin','super_admin','hr','manager','employee','hod','hoa','lecturer','student','principal','deputy_principal'],
   profile:        ['admin','super_admin','hr','manager','employee','hod','hoa','lecturer','student','principal','deputy_principal'],
   notifications:  ['admin','super_admin','hr','manager','employee','hod','hoa','lecturer','student','principal','deputy_principal'],
@@ -213,7 +230,7 @@ const ROLE_PAGES: Record<string, string[]> = {
   'hr-document-settings':    ['super_admin','hr'],
   // Also reachable by individual staff via Self Service → My Attendance,
   // where HRAttendanceReportPage self-filters to just their own punches.
-  'hr-attendance-report':    ['super_admin','hr','manager','employee','lecturer','hod','hoy'],
+  'hr-attendance-report':    ['super_admin','hr','manager','employee','lecturer','hod','hoa'],
   'hr-attendance-live':      ['super_admin','hr','manager'],
   'hr-attendance-records':   ['super_admin','hr','manager'],
   'hr-attendance-settings':  ['super_admin','hr'],

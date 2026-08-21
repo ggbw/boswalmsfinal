@@ -675,7 +675,14 @@ export default function HRAttendanceReportPage() {
   // `isEmployee` flag (it's meant for self-service *menu* access), so gating
   // this report's self-filter on that flag would wrongly hide the org-wide
   // view from HR/managers too — scope it to `role` instead.
-  const isSelfServiceOnly = role === 'employee' || role === 'lecturer' || role === 'hod' || role === 'hoy';
+  // 'hoa', not 'hoy'. The role was renamed in 20260812120000 and 'hoy' has not
+  // existed since — so this test never matched, and the matching ROLE_PAGES
+  // entry did not either. The two typos hid each other: HOA could not reach
+  // the page at all, so nobody noticed the page would have rendered it in
+  // all-staff mode. RLS would still have returned only their own punches, so
+  // this was a broken menu item rather than a data leak — but fixing only one
+  // of the two would have produced a page claiming to show the whole school.
+  const isSelfServiceOnly = role === 'employee' || role === 'lecturer' || role === 'hod' || role === 'hoa';
 
   const [view, setView]             = useState<ViewMode>('daily');
   const [dailyDate, setDailyDate]   = useState(todayStr);
