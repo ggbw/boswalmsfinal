@@ -205,7 +205,9 @@ const ROLE_PAGES: Record<string, string[]> = {
   'hr-documents':            ['super_admin','hr'],
   'hr-document-expiry':      ['super_admin','hr','manager'],
   'hr-document-settings':    ['super_admin','hr'],
-  'hr-attendance-report':    ['super_admin','hr','manager'],
+  // Also reachable by individual staff via Self Service → My Attendance,
+  // where HRAttendanceReportPage self-filters to just their own punches.
+  'hr-attendance-report':    ['super_admin','hr','manager','employee','lecturer','hod','hoy'],
   'hr-attendance-live':      ['super_admin','hr','manager'],
   'hr-attendance-records':   ['super_admin','hr','manager'],
   'hr-attendance-settings':  ['super_admin','hr'],

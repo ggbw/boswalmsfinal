@@ -7,7 +7,7 @@ import { useUserRole } from '@/hooks/hr/useUserRole';
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 
-interface RawPunch {
+export interface RawPunch {
   employee_id: string;
   full_name: string | null;
   first_name: string | null;
@@ -23,7 +23,7 @@ interface AttendanceDevice {
   device_name: string | null;
 }
 
-interface AttendanceSettings {
+export interface AttendanceSettings {
   work_start_time: string;
   grace_period_minutes: number;
   saturday_enabled?: boolean | null;
@@ -172,7 +172,7 @@ function fmtDateLabel(dateStr: string): string {
   });
 }
 
-function getWeekRange(weekStr: string): { start: string; end: string } {
+export function getWeekRange(weekStr: string): { start: string; end: string } {
   const [yearStr, wStr] = weekStr.split('-W');
   const year = parseInt(yearStr, 10);
   const week = parseInt(wStr, 10);
@@ -187,7 +187,7 @@ function getWeekRange(weekStr: string): { start: string; end: string } {
   };
 }
 
-function getDaysInMonth(year: number, month: number): string[] {
+export function getDaysInMonth(year: number, month: number): string[] {
   const days: string[] = [];
   const d = new Date(year, month - 1, 1);
   while (d.getMonth() === month - 1) {
@@ -241,9 +241,9 @@ function buildEmployeeDays(
 
 // ─── Weekly helpers ───────────────────────────────────────────────────────────
 
-const WEEKDAY_LABELS = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
+export const WEEKDAY_LABELS = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
 
-function getWeekdayIndex(dateStr: string): number {
+export function getWeekdayIndex(dateStr: string): number {
   const d = new Date(dateStr + 'T12:00:00');
   return (d.getDay() + 6) % 7;
 }
@@ -321,6 +321,76 @@ function DailyTable({ rows }: { rows: EmployeeDay[] }) {
   );
 }
 
+// ─── Weekly grid builder (also used by the Excel export, so the two always
+// mirror each other) ───────────────────────────────────────────────────────
+
+export interface WeeklyGridRow {
+  employeeId: string; name: string; dept: string | null; deviceSerial: string;
+  days: (EmployeeDay | null)[];
+}
+
+export function buildWeeklyGrid(
+  allPunches: RawPunch[],
+  start: string,
+  deptFilter: string,
+  deviceFilter: string,
+  search: string,
+  settings: AttendanceSettings,
+): { rows: WeeklyGridRow[]; days: string[] } {
+  const byEmpDay = new Map<string, RawPunch[]>();
+  for (const p of allPunches) {
+    const key = `${p.employee_id}|${p.punch_date}`;
+    if (!byEmpDay.has(key)) byEmpDay.set(key, []);
+    byEmpDay.get(key)!.push(p);
+  }
+
+  const empMeta = new Map<string, { name: string; dept: string | null; deviceSerial: string }>();
+  for (const p of allPunches) {
+    if (!empMeta.has(p.employee_id)) {
+      empMeta.set(p.employee_id, {
+        name: p.full_name || `${p.first_name ?? ''} ${p.last_name ?? ''}`.trim() || `Employee ${p.employee_id}`,
+        dept: p.department,
+        deviceSerial: p.device_serial,
+      });
+    }
+  }
+
+  const days: string[] = [];
+  const cur = new Date(start + 'T12:00:00');
+  for (let i = 0; i < 7; i++) {
+    days.push(cur.toISOString().split('T')[0]);
+    cur.setDate(cur.getDate() + 1);
+  }
+
+  const result: WeeklyGridRow[] = [];
+
+  for (const [empId, meta] of empMeta) {
+    if (deptFilter !== 'all' && meta.dept !== deptFilter) continue;
+    if (deviceFilter !== 'all' && meta.deviceSerial !== deviceFilter) continue;
+    if (search) {
+      const q = search.toLowerCase();
+      if (!meta.name.toLowerCase().includes(q) && !empId.toLowerCase().includes(q)) continue;
+    }
+
+    const dayRows: (EmployeeDay | null)[] = days.map(day => {
+      const punches = byEmpDay.get(`${empId}|${day}`) ?? [];
+      if (punches.length === 0) return null;
+      const pList = punches.map(p => ({ time: new Date(p.punch_at), deviceSerial: p.device_serial }));
+      pList.sort((a, b) => a.time.getTime() - b.time.getTime());
+      const slots  = mapPunchesToSlots(pList);
+      const late   = computeLateMinutes(slots.morningIn, settings.work_start_time, settings.grace_period_minutes, { enabled: Boolean(settings.saturday_enabled), startTime: settings.saturday_work_start_time ?? null, graceMinutes: settings.saturday_grace_minutes ?? null });
+      const worked = computeWorkedMinutes(slots);
+      const status = determineStatus(slots, pList.length);
+      return { employeeId: empId, name: meta.name, department: meta.dept, slots, punchCount: pList.length, lateMinutes: late, workedMinutes: worked, status, rawPunches: pList.map(p => p.time) };
+    });
+
+    result.push({ employeeId: empId, name: meta.name, dept: meta.dept, deviceSerial: meta.deviceSerial, days: dayRows });
+  }
+
+  result.sort((a, b) => a.name.localeCompare(b.name));
+  return { rows: result, days };
+}
+
 // ─── Weekly view ──────────────────────────────────────────────────────────────
 
 function WeeklyView({
@@ -353,63 +423,10 @@ function WeeklyView({
       .then(({ data }: any) => setAllPunches((data ?? []) as RawPunch[]));
   }, [start, end, employeeFilterIds]);
 
-  const grid = useMemo(() => {
-    const byEmpDay = new Map<string, RawPunch[]>();
-    for (const p of allPunches) {
-      const key = `${p.employee_id}|${p.punch_date}`;
-      if (!byEmpDay.has(key)) byEmpDay.set(key, []);
-      byEmpDay.get(key)!.push(p);
-    }
-
-    const empMeta = new Map<string, { name: string; dept: string | null; deviceSerial: string }>();
-    for (const p of allPunches) {
-      if (!empMeta.has(p.employee_id)) {
-        empMeta.set(p.employee_id, {
-          name: p.full_name || `${p.first_name ?? ''} ${p.last_name ?? ''}`.trim() || `Employee ${p.employee_id}`,
-          dept: p.department,
-          deviceSerial: p.device_serial,
-        });
-      }
-    }
-
-    const days: string[] = [];
-    const cur = new Date(start + 'T12:00:00');
-    for (let i = 0; i < 7; i++) {
-      days.push(cur.toISOString().split('T')[0]);
-      cur.setDate(cur.getDate() + 1);
-    }
-
-    const result: {
-      employeeId: string; name: string; dept: string | null; deviceSerial: string;
-      days: (EmployeeDay | null)[];
-    }[] = [];
-
-    for (const [empId, meta] of empMeta) {
-      if (deptFilter !== 'all' && meta.dept !== deptFilter) continue;
-      if (deviceFilter !== 'all' && meta.deviceSerial !== deviceFilter) continue;
-      if (search) {
-        const q = search.toLowerCase();
-        if (!meta.name.toLowerCase().includes(q) && !empId.toLowerCase().includes(q)) continue;
-      }
-
-      const dayRows: (EmployeeDay | null)[] = days.map(day => {
-        const punches = byEmpDay.get(`${empId}|${day}`) ?? [];
-        if (punches.length === 0) return null;
-        const pList = punches.map(p => ({ time: new Date(p.punch_at), deviceSerial: p.device_serial }));
-        pList.sort((a, b) => a.time.getTime() - b.time.getTime());
-        const slots  = mapPunchesToSlots(pList);
-        const late   = computeLateMinutes(slots.morningIn, settings.work_start_time, settings.grace_period_minutes, { enabled: Boolean(settings.saturday_enabled), startTime: settings.saturday_work_start_time ?? null, graceMinutes: settings.saturday_grace_minutes ?? null });
-        const worked = computeWorkedMinutes(slots);
-        const status = determineStatus(slots, pList.length);
-        return { employeeId: empId, name: meta.name, department: meta.dept, slots, punchCount: pList.length, lateMinutes: late, workedMinutes: worked, status, rawPunches: pList.map(p => p.time) };
-      });
-
-      result.push({ employeeId: empId, name: meta.name, dept: meta.dept, deviceSerial: meta.deviceSerial, days: dayRows });
-    }
-
-    result.sort((a, b) => a.name.localeCompare(b.name));
-    return { rows: result, days };
-  }, [allPunches, start, deptFilter, deviceFilter, search, settings]);
+  const grid = useMemo(
+    () => buildWeeklyGrid(allPunches, start, deptFilter, deviceFilter, search, settings),
+    [allPunches, start, deptFilter, deviceFilter, search, settings],
+  );
 
   if (grid.rows.length === 0) {
     return <div style={{ padding: 32, textAlign: 'center', color: 'var(--text2)' }}>No records found for this week.</div>;
@@ -468,6 +485,78 @@ function WeeklyView({
   );
 }
 
+// ─── Monthly grid builder (also used by the Excel export, so the two always
+// mirror each other) ───────────────────────────────────────────────────────
+
+export interface MonthlyGridRow {
+  employeeId: string; name: string; dept: string | null;
+  days: (EmployeeDay | null)[];
+}
+
+export function buildMonthlyGrid(
+  allPunches: RawPunch[],
+  days: string[],
+  deptFilter: string,
+  deviceFilter: string,
+  search: string,
+  settings: AttendanceSettings,
+): MonthlyGridRow[] {
+  const byEmpDay = new Map<string, RawPunch[]>();
+  for (const p of allPunches) {
+    const key = `${p.employee_id}|${p.punch_date}`;
+    if (!byEmpDay.has(key)) byEmpDay.set(key, []);
+    byEmpDay.get(key)!.push(p);
+  }
+
+  const empMeta = new Map<string, { name: string; dept: string | null; deviceSerial: string }>();
+  for (const p of allPunches) {
+    if (!empMeta.has(p.employee_id)) {
+      empMeta.set(p.employee_id, {
+        name: p.full_name || `${p.first_name ?? ''} ${p.last_name ?? ''}`.trim() || `Employee ${p.employee_id}`,
+        dept: p.department,
+        deviceSerial: p.device_serial,
+      });
+    }
+  }
+
+  const result: MonthlyGridRow[] = [];
+
+  for (const [empId, meta] of empMeta) {
+    if (deptFilter !== 'all' && meta.dept !== deptFilter) continue;
+    if (deviceFilter !== 'all' && meta.deviceSerial !== deviceFilter) continue;
+    if (search) {
+      const q = search.toLowerCase();
+      if (!meta.name.toLowerCase().includes(q) && !empId.toLowerCase().includes(q)) continue;
+    }
+
+    const dayRows: (EmployeeDay | null)[] = days.map(day => {
+      const punches = byEmpDay.get(`${empId}|${day}`) ?? [];
+      if (punches.length === 0) return null;
+      const pList = punches.map(p => ({ time: new Date(p.punch_at), deviceSerial: p.device_serial }));
+      pList.sort((a, b) => a.time.getTime() - b.time.getTime());
+      const slots  = mapPunchesToSlots(pList);
+      const late   = computeLateMinutes(slots.morningIn, settings.work_start_time, settings.grace_period_minutes, { enabled: Boolean(settings.saturday_enabled), startTime: settings.saturday_work_start_time ?? null, graceMinutes: settings.saturday_grace_minutes ?? null });
+      const worked = computeWorkedMinutes(slots);
+      const status = determineStatus(slots, pList.length);
+      return { employeeId: empId, name: meta.name, department: meta.dept, slots, punchCount: pList.length, lateMinutes: late, workedMinutes: worked, status, rawPunches: pList.map(p => p.time) };
+    });
+
+    result.push({ employeeId: empId, name: meta.name, dept: meta.dept, days: dayRows });
+  }
+
+  result.sort((a, b) => a.name.localeCompare(b.name));
+  return result;
+}
+
+export function monthlyCellColor(day: EmployeeDay | null): string {
+  if (!day) return '';
+  if (day.status.tone === 'gray') return '#e5e7eb';
+  if (day.status.label === 'Pending Final Punch' || day.status.label === 'Still In') return '#fed7aa';
+  if (day.lateMinutes > 0) return '#fecaca';
+  if (day.workedMinutes > 0 && day.workedMinutes < 7 * 60) return '#fef9c3';
+  return '#bbf7d0';
+}
+
 // ─── Monthly view ─────────────────────────────────────────────────────────────
 
 function MonthlyView({
@@ -504,65 +593,12 @@ function MonthlyView({
       .then(({ data }: any) => setAllPunches((data ?? []) as RawPunch[]));
   }, [firstDay, lastDay, employeeFilterIds]);
 
-  const grid = useMemo(() => {
-    const byEmpDay = new Map<string, RawPunch[]>();
-    for (const p of allPunches) {
-      const key = `${p.employee_id}|${p.punch_date}`;
-      if (!byEmpDay.has(key)) byEmpDay.set(key, []);
-      byEmpDay.get(key)!.push(p);
-    }
+  const grid = useMemo(
+    () => buildMonthlyGrid(allPunches, days, deptFilter, deviceFilter, search, settings),
+    [allPunches, days, deptFilter, deviceFilter, search, settings],
+  );
 
-    const empMeta = new Map<string, { name: string; dept: string | null; deviceSerial: string }>();
-    for (const p of allPunches) {
-      if (!empMeta.has(p.employee_id)) {
-        empMeta.set(p.employee_id, {
-          name: p.full_name || `${p.first_name ?? ''} ${p.last_name ?? ''}`.trim() || `Employee ${p.employee_id}`,
-          dept: p.department,
-          deviceSerial: p.device_serial,
-        });
-      }
-    }
-
-    const result: {
-      employeeId: string; name: string; dept: string | null;
-      days: (EmployeeDay | null)[];
-    }[] = [];
-
-    for (const [empId, meta] of empMeta) {
-      if (deptFilter !== 'all' && meta.dept !== deptFilter) continue;
-      if (deviceFilter !== 'all' && meta.deviceSerial !== deviceFilter) continue;
-      if (search) {
-        const q = search.toLowerCase();
-        if (!meta.name.toLowerCase().includes(q) && !empId.toLowerCase().includes(q)) continue;
-      }
-
-      const dayRows: (EmployeeDay | null)[] = days.map(day => {
-        const punches = byEmpDay.get(`${empId}|${day}`) ?? [];
-        if (punches.length === 0) return null;
-        const pList = punches.map(p => ({ time: new Date(p.punch_at), deviceSerial: p.device_serial }));
-        pList.sort((a, b) => a.time.getTime() - b.time.getTime());
-        const slots  = mapPunchesToSlots(pList);
-        const late   = computeLateMinutes(slots.morningIn, settings.work_start_time, settings.grace_period_minutes, { enabled: Boolean(settings.saturday_enabled), startTime: settings.saturday_work_start_time ?? null, graceMinutes: settings.saturday_grace_minutes ?? null });
-        const worked = computeWorkedMinutes(slots);
-        const status = determineStatus(slots, pList.length);
-        return { employeeId: empId, name: meta.name, department: meta.dept, slots, punchCount: pList.length, lateMinutes: late, workedMinutes: worked, status, rawPunches: pList.map(p => p.time) };
-      });
-
-      result.push({ employeeId: empId, name: meta.name, dept: meta.dept, days: dayRows });
-    }
-
-    result.sort((a, b) => a.name.localeCompare(b.name));
-    return result;
-  }, [allPunches, days, deptFilter, deviceFilter, search, settings]);
-
-  function cellColor(day: EmployeeDay | null): string {
-    if (!day) return '';
-    if (day.status.tone === 'gray') return '#e5e7eb';
-    if (day.status.label === 'Pending Final Punch' || day.status.label === 'Still In') return '#fed7aa';
-    if (day.lateMinutes > 0) return '#fecaca';
-    if (day.workedMinutes > 0 && day.workedMinutes < 7 * 60) return '#fef9c3';
-    return '#bbf7d0';
-  }
+  const cellColor = monthlyCellColor;
 
   if (grid.length === 0) {
     return <div style={{ padding: 32, textAlign: 'center', color: 'var(--text2)' }}>No records found for this month.</div>;
@@ -633,7 +669,13 @@ export default function HRAttendanceReportPage() {
   };
 
   const { toast } = useApp();
-  const { isEmployee, profile } = useUserRole();
+  const { role, user } = useUserRole();
+  // Only true individual-contributor roles are limited to their own punches.
+  // HR/manager/super_admin can also satisfy useUserRole()'s broader
+  // `isEmployee` flag (it's meant for self-service *menu* access), so gating
+  // this report's self-filter on that flag would wrongly hide the org-wide
+  // view from HR/managers too — scope it to `role` instead.
+  const isSelfServiceOnly = role === 'employee' || role === 'lecturer' || role === 'hod' || role === 'hoy';
 
   const [view, setView]             = useState<ViewMode>('daily');
   const [dailyDate, setDailyDate]   = useState(todayStr);
@@ -648,24 +690,27 @@ export default function HRAttendanceReportPage() {
   const [departments, setDepartments] = useState<string[]>([]);
   const [settings, setSettings]       = useState<AttendanceSettings>({ work_start_time: '08:00:00', grace_period_minutes: 0 });
   const [loading, setLoading]         = useState(false);
+  const [exporting, setExporting]     = useState(false);
 
   const [employeeFilterIds, setEmployeeFilterIds] = useState<string[] | null>(null);
 
-  // Resolve self-view filter for employee role
+  // Resolve self-view filter for employee role. Employees aren't linked to
+  // their attendance punches via `profiles` (it has no employee_id column) —
+  // look the employee record up by the same auth_user_id the other
+  // self-service pages (My Leaves, My Payslips, ...) already use.
   useEffect(() => {
-    if (!isEmployee) {
+    if (!isSelfServiceOnly) {
       setEmployeeFilterIds(null);
       return;
     }
-    const empId = (profile as { employee_id?: string } | null)?.employee_id;
-    if (!empId) {
+    if (!user) {
       setEmployeeFilterIds([]);
       return;
     }
     (supabase as any)
       .from('employees')
       .select('biometric_id, employee_code')
-      .eq('id', empId)
+      .eq('auth_user_id', user.id)
       .maybeSingle()
       .then(({ data }: any) => {
         const ids = data
@@ -673,7 +718,7 @@ export default function HRAttendanceReportPage() {
           : [];
         setEmployeeFilterIds(ids);
       });
-  }, [isEmployee, profile]);
+  }, [isSelfServiceOnly, user]);
 
   // Load devices + settings once
   useEffect(() => {
@@ -694,8 +739,8 @@ export default function HRAttendanceReportPage() {
   // Load daily punches
   useEffect(() => {
     if (view !== 'daily') return;
-    if (isEmployee && employeeFilterIds === null) return;
-    if (isEmployee && employeeFilterIds && employeeFilterIds.length === 0) {
+    if (isSelfServiceOnly && employeeFilterIds === null) return;
+    if (isSelfServiceOnly && employeeFilterIds && employeeFilterIds.length === 0) {
       setRawPunches([]);
       setDepartments([]);
       setLoading(false);
@@ -707,7 +752,7 @@ export default function HRAttendanceReportPage() {
       .from('attendance_records')
       .select('employee_id,full_name,first_name,last_name,department,punch_at,punch_date,device_serial')
       .eq('punch_date', dailyDate);
-    if (isEmployee && employeeFilterIds && employeeFilterIds.length > 0) {
+    if (isSelfServiceOnly && employeeFilterIds && employeeFilterIds.length > 0) {
       q = q.in('employee_id', employeeFilterIds);
     }
     q.order('punch_at', { ascending: true })
@@ -718,7 +763,7 @@ export default function HRAttendanceReportPage() {
         setDepartments(depts);
         setLoading(false);
       });
-  }, [dailyDate, view, isEmployee, employeeFilterIds]);
+  }, [dailyDate, view, isSelfServiceOnly, employeeFilterIds]);
 
   const rows: EmployeeDay[] = useMemo(() => {
     if (view !== 'daily') return [];
@@ -745,11 +790,20 @@ export default function HRAttendanceReportPage() {
     return { totalPresent, late, avgHours, pending };
   }, [rows]);
 
-  const handleExport = () => {
+  const handleExport = async () => {
+    setExporting(true);
     try {
-      exportAttendanceExcel({ view, dailyDate, weekStr, monthStr, rows, devices, settings });
+      // Pass the exact same filters currently on screen so the workbook
+      // always mirrors what's displayed, for every view.
+      await exportAttendanceExcel({
+        view, dailyDate, weekStr, monthStr, rows, devices, settings,
+        deptFilter, deviceFilter, search,
+        employeeFilterIds: isSelfServiceOnly ? employeeFilterIds : null,
+      });
     } catch (e) {
       toast('Export failed: ' + String(e), 'error');
+    } finally {
+      setExporting(false);
     }
   };
 
@@ -767,8 +821,8 @@ export default function HRAttendanceReportPage() {
           <div className="page-title">Attendance Report</div>
           <div className="page-sub">HR Management · {periodLabel}</div>
         </div>
-        <button className="btn btn-primary btn-sm" onClick={handleExport}>
-          <Download size={15} /> Export
+        <button className="btn btn-primary btn-sm" onClick={() => void handleExport()} disabled={exporting}>
+          <Download size={15} /> {exporting ? 'Exporting…' : 'Export'}
         </button>
       </div>
 
@@ -807,7 +861,7 @@ export default function HRAttendanceReportPage() {
       </div>
 
       {/* Filters — admin/HR/manager only */}
-      {!isEmployee && (
+      {!isSelfServiceOnly && (
         <div className="card" style={{ padding: '12px 16px', marginBottom: 12 }}>
           <div className="form-row cols3">
             <div className="form-group">
@@ -881,7 +935,7 @@ export default function HRAttendanceReportPage() {
             deptFilter={deptFilter}
             search={search}
             settings={settings}
-            employeeFilterIds={isEmployee ? employeeFilterIds : null}
+            employeeFilterIds={isSelfServiceOnly ? employeeFilterIds : null}
           />
         ) : (
           <MonthlyView
@@ -890,7 +944,7 @@ export default function HRAttendanceReportPage() {
             deptFilter={deptFilter}
             search={search}
             settings={settings}
-            employeeFilterIds={isEmployee ? employeeFilterIds : null}
+            employeeFilterIds={isSelfServiceOnly ? employeeFilterIds : null}
           />
         )}
       </div>

@@ -153,6 +153,7 @@ const SELF_SERVICE_SECTION: NavSection = {
   section: "Self Service",
   items: [
     { id: "my-employee-file", label: "My File", icon: "fa-solid fa-id-card" },
+    { id: "hr-attendance-report", label: "My Attendance", icon: "fa-solid fa-clipboard-user" },
     { id: "my-payslips", label: "My Payslips", icon: "fa-solid fa-receipt" },
     { id: "my-leaves", label: "My Leaves", icon: "fa-solid fa-calendar-check" },
     { id: "my-loans", label: "My Loans", icon: "fa-solid fa-hand-holding-dollar" },
@@ -231,6 +232,7 @@ function getNavConfig(role: string, db: any, hrPending: HrPendingCounts): NavSec
           { id: "transcripts", label: "Transcripts", icon: "fa-solid fa-scroll" },
         ],
       },
+      SELF_SERVICE_SECTION,
     ],
     hoy: [
       { section: "Main", items: [{ id: "dashboard", label: "Dashboard", icon: "fa-solid fa-gauge" }] },
@@ -260,6 +262,7 @@ function getNavConfig(role: string, db: any, hrPending: HrPendingCounts): NavSec
           { id: "transcripts", label: "Transcripts", icon: "fa-solid fa-scroll" },
         ],
       },
+      SELF_SERVICE_SECTION,
     ],
     lecturer: [
       { section: "Main", items: [{ id: "dashboard", label: "Dashboard", icon: "fa-solid fa-gauge" }] },
@@ -281,6 +284,7 @@ function getNavConfig(role: string, db: any, hrPending: HrPendingCounts): NavSec
           { id: "photogallery", label: "Photo Gallery", icon: "fa-solid fa-images" },
         ],
       },
+      SELF_SERVICE_SECTION,
     ],
     student: [
       {

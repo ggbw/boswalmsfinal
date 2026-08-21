@@ -1,15 +1,26 @@
 import * as XLSX from 'xlsx-js-style';
-import type { EmployeeDay } from '@/pages/hr/HRAttendanceReportPage';
-import { formatHM } from '@/pages/hr/HRAttendanceReportPage';
+import { supabase } from '@/integrations/supabase/client';
+import type {
+  EmployeeDay,
+  RawPunch,
+  AttendanceSettings,
+  WeeklyGridRow,
+  MonthlyGridRow,
+} from '@/pages/hr/HRAttendanceReportPage';
+import {
+  formatHM,
+  getWeekRange,
+  getDaysInMonth,
+  getWeekdayIndex,
+  WEEKDAY_LABELS,
+  buildWeeklyGrid,
+  buildMonthlyGrid,
+  monthlyCellColor,
+} from '@/pages/hr/HRAttendanceReportPage';
 
 interface AttendanceDevice {
   device_serial: string;
   device_name: string | null;
-}
-
-interface AttendanceSettings {
-  work_start_time: string;
-  grace_period_minutes: number;
 }
 
 interface ExportOptions {
@@ -20,6 +31,13 @@ interface ExportOptions {
   rows: EmployeeDay[];
   devices: AttendanceDevice[];
   settings: AttendanceSettings;
+  // Same filters currently applied on screen — passed through so the
+  // exported workbook always matches what's displayed, not just the daily
+  // view's already-computed rows.
+  deptFilter: string;
+  deviceFilter: string;
+  search: string;
+  employeeFilterIds: string[] | null;
 }
 
 // ─── Cell style helpers ───────────────────────────────────────────────────────
@@ -61,6 +79,28 @@ function cell(v: string | number, s?: XLSX.CellStyle): XLSX.CellObject {
 function fmtTime(d: Date | undefined): string {
   if (!d) return '—';
   return d.toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' });
+}
+
+// ─── Fetch punches for a date range, honoring the same self-service filter
+// used on screen ────────────────────────────────────────────────────────────
+
+async function fetchPunchesInRange(
+  from: string,
+  to: string,
+  employeeFilterIds: string[] | null,
+): Promise<RawPunch[]> {
+  if (employeeFilterIds && employeeFilterIds.length === 0) return [];
+  let q = (supabase as any)
+    .from('attendance_records')
+    .select('employee_id,full_name,first_name,last_name,department,punch_at,punch_date,device_serial')
+    .gte('punch_date', from)
+    .lte('punch_date', to);
+  if (employeeFilterIds && employeeFilterIds.length > 0) {
+    q = q.in('employee_id', employeeFilterIds);
+  }
+  const { data, error } = await q.order('punch_at', { ascending: true });
+  if (error) throw error;
+  return (data ?? []) as RawPunch[];
 }
 
 // ─── Daily sheet builder ──────────────────────────────────────────────────────
@@ -138,14 +178,141 @@ function buildDailySheet(rows: EmployeeDay[], date: string, settings: Attendance
   return ws;
 }
 
+// ─── Weekly sheet builder — built from the same buildWeeklyGrid() the on-
+// screen Weekly view renders from, so the export always mirrors the page ────
+
+function weeklyCellStyle(day: EmployeeDay | null): XLSX.CellStyle {
+  if (!day || day.status.tone === 'gray') return S.absentRow;
+  if (day.status.label === 'Pending Final Punch' || day.status.label === 'Still In') return S.pendingRow;
+  if (day.lateMinutes > 0) return S.lateRow;
+  return S.normal;
+}
+
+function weeklyCellText(day: EmployeeDay | null): string {
+  if (!day) return '—';
+  if (day.workedMinutes > 0) {
+    return formatHM(day.workedMinutes) + (day.lateMinutes > 0 ? ` (late ${day.lateMinutes}m)` : '');
+  }
+  return day.status.label;
+}
+
+function buildWeeklySheet(gridRows: WeeklyGridRow[], days: string[], weekStr: string): XLSX.WorkSheet {
+  const now = new Date().toLocaleString('en-GB');
+
+  const aoa: XLSX.CellObject[][] = [
+    [cell('Boswa LMS — Attendance Report', S.title)],
+    [cell(`View: Weekly | Period: ${weekStr} | Generated: ${now}`)],
+    [cell('')],
+    [
+      cell('Employee', S.headerCell),
+      cell('Employee ID', S.headerCell),
+      cell('Department', S.headerCell),
+      ...days.map(d => cell(
+        `${WEEKDAY_LABELS[getWeekdayIndex(d)]} ${new Date(d + 'T12:00:00').getDate()}`,
+        S.headerCell,
+      )),
+    ],
+  ];
+
+  let totalWorked = 0;
+  let presentDays = 0;
+  let lateCount = 0;
+
+  for (const row of gridRows) {
+    const rowCells: XLSX.CellObject[] = [
+      cell(row.name, S.normal),
+      cell(row.employeeId, S.normal),
+      cell(row.dept ?? '', S.normal),
+    ];
+    for (const day of row.days) {
+      rowCells.push(cell(weeklyCellText(day), weeklyCellStyle(day)));
+      if (day) {
+        presentDays++;
+        totalWorked += day.workedMinutes;
+        if (day.lateMinutes > 0) lateCount++;
+      }
+    }
+    aoa.push(rowCells);
+  }
+
+  aoa.push([
+    cell(
+      `Employees: ${gridRows.length} | Present Days: ${presentDays} | Late Instances: ${lateCount} | Total Hours: ${formatHM(totalWorked)}`,
+      S.footer,
+    ),
+  ]);
+
+  const ws = XLSX.utils.aoa_to_sheet(aoa as any);
+  ws['!freeze'] = { xSplit: 0, ySplit: 4 };
+  ws['!cols'] = [{ wch: 28 }, { wch: 13 }, { wch: 18 }, ...days.map(() => ({ wch: 16 }))];
+  return ws;
+}
+
+// ─── Monthly sheet builder — built from buildMonthlyGrid(), colored with the
+// exact same monthlyCellColor() the on-screen heatmap uses ─────────────────
+
+function buildMonthlySheet(gridRows: MonthlyGridRow[], days: string[], monthStr: string): XLSX.WorkSheet {
+  const now = new Date().toLocaleString('en-GB');
+
+  const aoa: XLSX.CellObject[][] = [
+    [cell('Boswa LMS — Attendance Report', S.title)],
+    [cell(`View: Monthly | Period: ${monthStr} | Generated: ${now}`)],
+    [cell('')],
+    [
+      cell('Employee', S.headerCell),
+      cell('Department', S.headerCell),
+      ...days.map(d => cell(String(new Date(d + 'T12:00:00').getDate()), S.headerCell)),
+    ],
+  ];
+
+  let totalWorked = 0;
+  let presentDays = 0;
+  let lateCount = 0;
+
+  for (const row of gridRows) {
+    const rowCells: XLSX.CellObject[] = [
+      cell(row.name, S.normal),
+      cell(row.dept ?? '', S.normal),
+    ];
+    for (const day of row.days) {
+      const bg = monthlyCellColor(day).replace('#', '').toUpperCase();
+      const text = day ? (day.workedMinutes > 0 ? formatHM(day.workedMinutes) : day.status.label) : '—';
+      rowCells.push(cell(text, style({ bg: bg || undefined })));
+      if (day) {
+        presentDays++;
+        totalWorked += day.workedMinutes;
+        if (day.lateMinutes > 0) lateCount++;
+      }
+    }
+    aoa.push(rowCells);
+  }
+
+  aoa.push([
+    cell(
+      `Employees: ${gridRows.length} | Present Days: ${presentDays} | Late Instances: ${lateCount} | Total Hours: ${formatHM(totalWorked)}`,
+      S.footer,
+    ),
+  ]);
+
+  const ws = XLSX.utils.aoa_to_sheet(aoa as any);
+  ws['!freeze'] = { xSplit: 0, ySplit: 4 };
+  ws['!cols'] = [{ wch: 24 }, { wch: 16 }, ...days.map(() => ({ wch: 9 }))];
+  return ws;
+}
+
 // ─── Main export function ─────────────────────────────────────────────────────
 
-export function exportAttendanceExcel(opts: ExportOptions): void {
-  const { view, dailyDate, weekStr, monthStr, rows, settings } = opts;
+export async function exportAttendanceExcel(opts: ExportOptions): Promise<void> {
+  const {
+    view, dailyDate, weekStr, monthStr, rows, settings,
+    deptFilter, deviceFilter, search, employeeFilterIds,
+  } = opts;
 
   const wb = XLSX.utils.book_new();
 
   if (view === 'daily') {
+    // The daily view's rows are already computed on screen — reuse them
+    // directly so the sheet is guaranteed to match what's displayed.
     const ws = buildDailySheet(rows, dailyDate, settings);
     XLSX.utils.book_append_sheet(wb, ws, 'Attendance');
     XLSX.writeFile(wb, `Attendance_Report_Daily_${dailyDate}.xlsx`);
@@ -153,26 +320,21 @@ export function exportAttendanceExcel(opts: ExportOptions): void {
   }
 
   if (view === 'weekly') {
-    const summaryAoa: XLSX.CellObject[][] = [
-      [cell('Boswa LMS — Attendance Report', S.title)],
-      [cell(`View: Weekly | Period: ${weekStr} | Generated: ${new Date().toLocaleString('en-GB')}`)],
-      [cell('')],
-      [cell('Week summary not available — see per-day sheets', S.normal)],
-    ];
-    const wsSummary = XLSX.utils.aoa_to_sheet(summaryAoa as any);
-    XLSX.utils.book_append_sheet(wb, wsSummary, 'Summary');
+    const { start, end } = getWeekRange(weekStr);
+    const punches = await fetchPunchesInRange(start, end, employeeFilterIds);
+    const { rows: gridRows, days } = buildWeeklyGrid(punches, start, deptFilter, deviceFilter, search, settings);
+    const ws = buildWeeklySheet(gridRows, days, weekStr);
+    XLSX.utils.book_append_sheet(wb, ws, 'Attendance');
     XLSX.writeFile(wb, `Attendance_Report_Weekly_${weekStr}.xlsx`);
     return;
   }
 
   // Monthly
-  const summaryAoa: XLSX.CellObject[][] = [
-    [cell('Boswa LMS — Attendance Report', S.title)],
-    [cell(`View: Monthly | Period: ${monthStr} | Generated: ${new Date().toLocaleString('en-GB')}`)],
-    [cell('')],
-    [cell('Monthly summary — see individual sheets for punch detail', S.normal)],
-  ];
-  const wsSummary = XLSX.utils.aoa_to_sheet(summaryAoa as any);
-  XLSX.utils.book_append_sheet(wb, wsSummary, 'Summary');
+  const [year, month] = monthStr.split('-').map(Number);
+  const days = getDaysInMonth(year, month);
+  const punches = await fetchPunchesInRange(days[0], days[days.length - 1], employeeFilterIds);
+  const gridRows = buildMonthlyGrid(punches, days, deptFilter, deviceFilter, search, settings);
+  const ws = buildMonthlySheet(gridRows, days, monthStr);
+  XLSX.utils.book_append_sheet(wb, ws, 'Attendance');
   XLSX.writeFile(wb, `Attendance_Report_Monthly_${monthStr}.xlsx`);
 }
