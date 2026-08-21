@@ -304,7 +304,7 @@ export default function AppLayout() {
   // cannot accidentally land on an admin-gated page.
   const role = currentUser?.role || 'student';
   const allowed = ROLE_PAGES[activePage] ?? [];
-  const PageComponent = allowed.includes(role)
+  const PageComponent = (allowed as readonly string[]).includes(role)
     ? (pageComponents[activePage] || Dashboard)
     : Dashboard;
   // Removed term reference - semester only
