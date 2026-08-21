@@ -3,6 +3,7 @@ import { createClient } from '@supabase/supabase-js';
 import { useApp } from '@/context/AppContext';
 import { useUserRole } from '@/hooks/hr/useUserRole';
 import { supabase } from '@/integrations/supabase/client';
+import { SUPABASE_URL, SUPABASE_PUBLISHABLE_KEY } from '@/integrations/supabase/env';
 
 interface HRUserRow {
   user_id: string;
@@ -209,9 +210,7 @@ export default function HRUserManagementPage() {
 
               // Use an isolated Supabase client so signUp doesn't replace
               // the current admin's session in localStorage.
-              const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL as string;
-              const SUPABASE_KEY = import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY as string;
-              const isolated = createClient(SUPABASE_URL, SUPABASE_KEY, {
+              const isolated = createClient(SUPABASE_URL, SUPABASE_PUBLISHABLE_KEY, {
                 auth: { persistSession: false, autoRefreshToken: false, detectSessionInUrl: false },
               });
 

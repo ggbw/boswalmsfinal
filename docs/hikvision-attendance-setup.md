@@ -18,8 +18,8 @@ Boswa shares the same Contabo box as Dunlop but runs in its **own folder**
 
 | Item | Value |
 |---|---|
-| Supabase project ref | `flplvvybmzqapklcftbq` |
-| Ingest function URL | `https://flplvvybmzqapklcftbq.supabase.co/functions/v1/ingest-attendance` |
+| Supabase project ref | `gmdbrgjxdeztgzvqsaaj` |
+| Ingest function URL | `https://gmdbrgjxdeztgzvqsaaj.supabase.co/functions/v1/ingest-attendance` |
 | Hik-Connect OpenAPI base | `https://ieu.hikcentralconnect.com` |
 | Hik-Connect account | `boswabwcloud@gmail.com` (single account) |
 | VPS | Contabo `176.126.87.102` (shared with Dunlop) |
@@ -38,7 +38,7 @@ Remaining work is standing up the Boswa VPS folder + its secret.
 ## Setup steps
 
 ### 1. Set the edge-function secret
-Supabase → project `flplvvybmzqapklcftbq` → Edge Functions → Secrets:
+Supabase → project `gmdbrgjxdeztgzvqsaaj` → Edge Functions → Secrets:
 add `HIK_SYNC_SECRET` (use the value generated during setup — same string goes in the
 VPS `.env`). Confirm `ingest-attendance` is deployed.
 (`SUPABASE_URL` / `SUPABASE_SERVICE_ROLE_KEY` are auto-injected.)

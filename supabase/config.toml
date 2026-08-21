@@ -1,4 +1,12 @@
-project_id = "flplvvybmzqapklcftbq"
+# Active project: the self-managed Supabase project. Its schema and data were
+# created outside this CLI, so `supabase_migrations.schema_migrations` does not
+# know about the 71 files in ./migrations.
+#
+# DO NOT run `supabase db push`, `supabase db reset`, or `supabase migration
+# repair` against this project. Push would try to replay every migration
+# against an already-populated database. `functions deploy` and `gen types`
+# are safe -- neither touches data.
+project_id = "gmdbrgjxdeztgzvqsaaj"
 
 [functions.hikvision-attendance]
 verify_jwt = false
