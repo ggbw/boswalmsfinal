@@ -1,6 +1,7 @@
 import { useCallback, useReducer, useState, type ReactNode } from 'react';
 import type { User } from '@/data/db';
 import { useDbData } from '@/hooks/useDbData';
+import { logPageView } from '@/lib/audit';
 import { AppContext, type AppProviderProps } from '@/context/AppContext';
 
 interface ToastItem {
@@ -36,7 +37,13 @@ export function AppProvider({ children, authUser, onSignOut, initialPage }: AppP
   };
 
   const navigate = useCallback(
-    (page: string, params?: Record<string, unknown>) => dispatchPage({ type: 'navigate', page, params }),
+    (page: string, params?: Record<string, unknown>) => {
+      dispatchPage({ type: 'navigate', page, params });
+      // Fire and forget, and inert unless an admin has switched page-view
+      // logging on — logPageView checks that setting itself. Navigation has to
+      // stay instant, so nothing here is awaited.
+      void logPageView(page, params);
+    },
     [],
   );
 

@@ -23,6 +23,7 @@
 import { useEffect, useState } from 'react';
 import { useAuth } from '@/hooks/useAuth';
 import { supabase } from '@/integrations/supabase/client';
+import { logAudit } from '@/lib/audit';
 
 interface SessionRow {
   id: string;
@@ -96,6 +97,19 @@ export default function ImpersonationBanner() {
     } catch {
       // Continue with sign-out even if the row write failed.
     }
+    // Closes the pair in the audit trail. Without an end event, an
+    // impersonation reads as open-ended and there is no way to tell which of
+    // the target's later actions were really theirs.
+    await logAudit({
+      action: 'impersonate_end',
+      category: 'security',
+      entityType: 'user',
+      entityId: active.admin_user_id,
+      entityLabel: active.admin_name,
+      summary: 'Impersonation session exited',
+      severity: 'warning',
+      metadata: { impersonation_session_id: active.id },
+    });
     await signOut();
     // signOut clears session; AppLayout unmounts and LoginScreen renders.
   };

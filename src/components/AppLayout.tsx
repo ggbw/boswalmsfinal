@@ -23,6 +23,7 @@ import MyStudentsPage from '@/pages/MyStudentsPage';
 import MyModulesPage from '@/pages/MyModulesPage';
 import MappingPage from '@/pages/MappingPage';
 import UserManagementPage from '@/pages/UserManagementPage';
+import AuditTrailPage from '@/pages/AuditTrailPage';
 import RegistrationsPage from '@/pages/RegistrationsPage';
 import PhotoGalleryPage from '@/pages/PhotoGalleryPage';
 import NotesPage from '@/pages/NotesPage';
@@ -68,6 +69,7 @@ type AppRole = Database['public']['Enums']['app_role'];
 import NotificationBell from '@/components/hr/NotificationBell';
 import ImpersonationBanner from '@/components/hr/ImpersonationBanner';
 import { useAuth } from '@/hooks/useAuth';
+import { useAuditHeartbeat } from '@/hooks/useAuditHeartbeat';
 
 const HR_PAGE_IDS = [
   'hr-dashboard',
@@ -120,6 +122,7 @@ const pageComponents: Record<string, React.ComponentType> = {
   mystudents: MyStudentsPage, mytimetable: MyStudentsPage,
   mymodules: MyModulesPage, mapping: MappingPage,
   usermanagement: UserManagementPage, registrations: RegistrationsPage, photogallery: PhotoGalleryPage, notes: NotesPage,
+  audit: AuditTrailPage,
   ...hrPlaceholders,
   // Real HR pages override the placeholders
   'hr-dashboard': HRDashboardPage,
@@ -201,6 +204,11 @@ const ROLE_PAGES: Record<string, AppRole[]> = {
   mymodules:      ['student'],
   mapping:        ['admin','super_admin','hod','principal','deputy_principal'],
   usermanagement: ['admin','super_admin'],
+  // The audit trail names every user, their address and what they changed, so
+  // it is limited to the two roles that already administer accounts. Everyone
+  // else can still see their own entries — that is an RLS policy on
+  // audit_logs, not a page.
+  audit:          ['admin','super_admin'],
   photogallery:   ['admin','super_admin','hod','hoa','lecturer','student','principal','deputy_principal'],
   notes:          ['admin','super_admin','hod','hoa','lecturer','student','principal','deputy_principal'],
 
@@ -295,6 +303,9 @@ function LoadFailureBanner() {
 export default function AppLayout() {
   const { db, activePage, currentUser, toasts, modalContent, closeModal } = useApp();
   const { user, profile } = useAuth();
+  // Marks the audit session alive while this layout is mounted, which is
+  // exactly the period the user is inside the application.
+  useAuditHeartbeat(Boolean(user?.id));
   // First-login password reset. Inert when the profile column is absent
   // (older schemas) because the read coerces to false.
   const mustChangePassword = Boolean(

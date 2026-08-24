@@ -8,6 +8,8 @@
  * A UTF-8 BOM is prepended so Excel reads accented names correctly instead of
  * showing mojibake — without it, Excel guesses the local codepage.
  */
+import { logExport } from '@/lib/audit';
+
 export function downloadCsv(filename: string, rows: (string | number | null | undefined)[][]) {
   const esc = (v: string | number | null | undefined) =>
     `"${String(v ?? '').replace(/"/g, '""')}"`;
@@ -21,6 +23,17 @@ export function downloadCsv(filename: string, rows: (string | number | null | un
   a.click();
   document.body.removeChild(a);
   URL.revokeObjectURL(url);
+
+  // Audit the download.
+  //
+  // An export is the one way school data leaves the building without changing
+  // anything, so a change-only audit shows the day someone took every student
+  // record as a quiet day. Hooking it here rather than at each call site means
+  // any future export gets recorded without anyone remembering to add it.
+  //
+  // The row count subtracts one for the header row every caller passes first.
+  // logExport never throws and never awaits anything the download needs.
+  void logExport(filename, Math.max(0, rows.length - 1));
 }
 
 /** Filesystem-safe fragment for a filename, e.g. "Escoffiers Yr1" → "escoffiers-yr1". */

@@ -1,5 +1,6 @@
 import { useState, useEffect, createContext, useContext, ReactNode } from 'react';
 import { supabase } from '@/integrations/supabase/client';
+import { startAuditSession, endAuditSession, logAuthFailure } from '@/lib/audit';
 import type { User, Session } from '@supabase/supabase-js';
 
 interface Profile {
@@ -51,6 +52,13 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       setRole(applicant ? 'applicant' : null);
     }
     setLoading(false);
+
+    // Open the audit session here rather than in signIn(), because this runs
+    // for every route into the app — password sign-in, the magic link used by
+    // impersonation, and a restored session on reload. Doing it in signIn()
+    // would miss two of the three. startAuditSession is idempotent per user,
+    // so the token refreshes that also land here do not add a second row.
+    void startAuditSession(userId);
   };
 
   useEffect(() => {
@@ -82,10 +90,18 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   const signIn = async (email: string, password: string) => {
     const { error } = await supabase.auth.signInWithPassword({ email, password });
+    // A refused sign-in leaves no other trace anywhere in the system. Recorded
+    // with the attempted username and the caller's IP, twenty of these in a
+    // minute are recognisable as what they are.
+    if (error) void logAuthFailure(email, error.message);
     return { error: error?.message || null };
   };
 
   const signOut = async () => {
+    // Before signOut, not after: end_user_session checks auth.uid(), so once
+    // the token is gone the row can no longer be closed by its owner and the
+    // duration would have to be guessed by the idle sweep instead of measured.
+    await endAuditSession('signout');
     await supabase.auth.signOut();
     setUser(null);
     setSession(null);

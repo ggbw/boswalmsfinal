@@ -82,6 +82,46 @@ Deno.serve(async (req: Request) => {
       // Table missing — banner will not appear, but impersonation still works.
     }
 
+    // Audit the impersonation.
+    //
+    // Recorded here, in the function, rather than from the browser: this is the
+    // single most sensitive action in the system — one account acting as
+    // another — and a client-side call could simply be skipped. Severity is
+    // 'critical' so it surfaces at the top of any filtered review.
+    //
+    // Written directly rather than through log_audit_event() because this runs
+    // under the service role, where auth.uid() is null and the function would
+    // have no actor to attribute it to.
+    try {
+      const { data: callerProfile } = await supabaseAdmin
+        .from("profiles")
+        .select("username, name")
+        .eq("user_id", caller.id)
+        .maybeSingle();
+
+      const forwarded = (req.headers.get("x-forwarded-for") ?? "").split(",")[0].trim();
+
+      await supabaseAdmin.from("audit_logs").insert({
+        actor_id: caller.id,
+        actor_username: callerProfile?.username ?? caller.email ?? null,
+        actor_name: callerProfile?.name ?? null,
+        actor_role: callerIsSuper ? "super_admin" : "admin",
+        action: "impersonate_start",
+        category: "security",
+        entity_type: "user",
+        entity_id: target_user_id,
+        entity_label: targetProfile?.name ?? targetUser.email,
+        summary: `Started impersonating ${targetProfile?.name ?? targetUser.email}`,
+        severity: "critical",
+        ip_address: forwarded || null,
+        user_agent: req.headers.get("user-agent"),
+        metadata: { impersonation_session_id: sessionId, target_email: targetUser.email },
+      });
+    } catch {
+      // Audit table not present yet, or a malformed forwarded address. Never
+      // block the impersonation on a failure to record it.
+    }
+
     return new Response(
       JSON.stringify({
         success: true,
