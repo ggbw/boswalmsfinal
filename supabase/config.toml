@@ -16,3 +16,9 @@ verify_jwt = false
 
 [functions.hik-attendance]
 verify_jwt = false
+
+# Called by cron on the VPS, which has no user session to present. The
+# x-backup-secret header is what authorises it — see the function's header
+# comment and docs/BACKUP_AND_RESTORE.md §6.
+[functions.backup-report]
+verify_jwt = false

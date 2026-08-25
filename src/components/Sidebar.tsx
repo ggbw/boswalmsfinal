@@ -199,6 +199,7 @@ function getNavConfig(role: string, db: any, hrPending: HrPendingCounts): NavSec
         { id: "registrations", label: "Registrations", icon: "fa-solid fa-clipboard-list" },
         { id: "usermanagement", label: "User Management", icon: "fa-solid fa-users-gear" },
         { id: "audit", label: "Audit Trail", icon: "fa-solid fa-shield-halved" },
+        { id: "backup", label: "Backup & Restore", icon: "fa-solid fa-database" },
         { id: "config", label: "Configuration", icon: "fa-solid fa-gear" },
       ],
     },

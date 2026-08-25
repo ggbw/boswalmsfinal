@@ -24,6 +24,7 @@ import MyModulesPage from '@/pages/MyModulesPage';
 import MappingPage from '@/pages/MappingPage';
 import UserManagementPage from '@/pages/UserManagementPage';
 import AuditTrailPage from '@/pages/AuditTrailPage';
+import BackupPage from '@/pages/BackupPage';
 import RegistrationsPage from '@/pages/RegistrationsPage';
 import PhotoGalleryPage from '@/pages/PhotoGalleryPage';
 import NotesPage from '@/pages/NotesPage';
@@ -123,6 +124,7 @@ const pageComponents: Record<string, React.ComponentType> = {
   mymodules: MyModulesPage, mapping: MappingPage,
   usermanagement: UserManagementPage, registrations: RegistrationsPage, photogallery: PhotoGalleryPage, notes: NotesPage,
   audit: AuditTrailPage,
+  backup: BackupPage,
   ...hrPlaceholders,
   // Real HR pages override the placeholders
   'hr-dashboard': HRDashboardPage,
@@ -209,6 +211,11 @@ const ROLE_PAGES: Record<string, AppRole[]> = {
   // else can still see their own entries — that is an RLS policy on
   // audit_logs, not a page.
   audit:          ['admin','super_admin'],
+  // Same two roles as the audit trail, for the same reason: this page can put
+  // a complete copy of every student, employee and payslip record onto a USB
+  // stick. The restore tab inside it is narrower still — the edge function
+  // refuses anyone who is not super_admin, whatever this table says.
+  backup:         ['admin','super_admin'],
   photogallery:   ['admin','super_admin','hod','hoa','lecturer','student','principal','deputy_principal'],
   notes:          ['admin','super_admin','hod','hoa','lecturer','student','principal','deputy_principal'],
 
