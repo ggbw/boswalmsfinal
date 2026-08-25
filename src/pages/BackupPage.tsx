@@ -22,6 +22,7 @@
 
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { useApp } from '@/context/AppContext';
+import { useAuth } from '@/hooks/useAuth';
 import {
   ago,
   backupFilename,
@@ -59,7 +60,19 @@ const CLOUD_STALE_HOURS = 36;
 
 export default function BackupPage() {
   const { toast } = useApp();
+  const { role } = useAuth();
   const [tab, setTab] = useState<Tab>('backup');
+
+  // AppLayout's ROLE_PAGES already gates this page, and every function behind
+  // it re-checks the role in SQL or in the edge function. This is the second
+  // lock in the browser, mirroring AuditTrailPage: a direct navigate() from
+  // anywhere else — a stale menu, a future deep link, a hand-edited state —
+  // cannot open it either.
+  const isAdmin = role === 'admin' || role === 'super_admin';
+  // Restore is narrower still. The db-restore edge function refuses anyone who
+  // is not super_admin, so showing an admin a form that always fails at the
+  // last step is worse than not showing it: the page now says why.
+  const canRestore = role === 'super_admin';
 
   const [health, setHealth] = useState<BackupHealth | null>(null);
   const [runs, setRuns] = useState<BackupRunRow[]>([]);
@@ -69,6 +82,10 @@ export default function BackupPage() {
   const [installed, setInstalled] = useState<boolean | null>(null);
 
   const refresh = useCallback(async () => {
+    // Nothing behind this page would answer a non-admin anyway — backup_health()
+    // returns {} and RLS empties backup_runs — but firing three requests that
+    // are certain to come back empty would light up the audit trail with noise.
+    if (!isAdmin) { setLoading(false); return; }
     setLoading(true);
     try {
       const probe = await checkBackupInstalled();
@@ -86,9 +103,22 @@ export default function BackupPage() {
     } finally {
       setLoading(false);
     }
-  }, [toast]);
+  }, [toast, isAdmin]);
 
   useEffect(() => { void refresh(); }, [refresh]);
+
+  // After the hooks, never before: an early return above them would change the
+  // hook order between renders the moment the role resolves.
+  if (!isAdmin) {
+    return (
+      <div className="card">
+        <div className="card-title">Backup &amp; Restore</div>
+        <p style={{ fontSize: 12, color: 'var(--text2)' }}>
+          You do not have permission to back up or restore the database.
+        </p>
+      </div>
+    );
+  }
 
   return (
     <>
@@ -128,7 +158,7 @@ export default function BackupPage() {
 
       {tab === 'backup' && <BackupTab onDone={refresh} />}
       {tab === 'nightly' && <NightlyTab />}
-      {tab === 'restore' && <RestoreTab onDone={refresh} />}
+      {tab === 'restore' && (canRestore ? <RestoreTab onDone={refresh} /> : <RestoreNotPermitted />)}
       {tab === 'history' && <HistoryTab runs={runs} loading={loading} />}
     </>
   );
@@ -555,6 +585,29 @@ function NightlyTab() {
 }
 
 // ─── Tab 3: restore ───────────────────────────────────────────────────────────
+
+/**
+ * What an `admin` sees on the Restore tab.
+ *
+ * Backing up and restoring are not the same privilege. A backup copies data
+ * out; a restore overwrites live records with an older set, and there is no
+ * undo. The db-restore edge function has always refused anyone who is not
+ * super_admin — this only stops an admin filling in the whole form and typing
+ * the confirmation phrase before finding that out.
+ */
+function RestoreNotPermitted() {
+  return (
+    <div className="card">
+      <div className="card-title">Restore</div>
+      <p style={{ fontSize: 12.5, color: 'var(--text2)', lineHeight: 1.6, marginTop: 8 }}>
+        Restoring overwrites live records with an older copy and cannot be undone, so it is
+        limited to a <strong>super administrator</strong>. Taking a backup, checking the nightly
+        cloud copies and reading the history are all available to you here.
+      </p>
+    </div>
+  );
+}
+
 
 function RestoreTab({ onDone }: { onDone: () => void }) {
   const { toast } = useApp();

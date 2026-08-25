@@ -388,7 +388,23 @@ function getNavConfig(role: string, db: any, hrPending: HrPendingCounts): NavSec
       SELF_SERVICE_SECTION,
     ],
   };
-  return configs[role] || configs.admin;
+  // A role with no entry above falls back to the smallest possible menu, not
+  // to the admin one. The previous fallback was `configs.admin`, which handed
+  // an unrecognised role the full Management section — Audit Trail, Backup &
+  // Restore, User Management, Configuration. ROLE_PAGES in AppLayout still
+  // refused to render those pages, so the items silently did nothing, but a
+  // menu that offers the audit trail to someone who may not open it is a
+  // disclosure in itself and reads as a bug. Any future role added to the
+  // app_role enum now lands here safely until it is given a menu of its own.
+  return configs[role] || [
+    {
+      section: "Main",
+      items: [
+        { id: "dashboard", label: "Dashboard", icon: "fa-solid fa-gauge" },
+        { id: "profile", label: "My Profile", icon: "fa-solid fa-circle-user" },
+      ],
+    },
+  ];
 }
 
 function hasActiveDescendant(item: NavItem, activeId: string): boolean {

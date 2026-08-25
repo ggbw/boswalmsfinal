@@ -22,3 +22,13 @@ dist-ssr
 *.njsproj
 *.sln
 *.sw?
+
+# Supabase CLI scratch (version cache, linked-project state)
+supabase/.temp/
+
+# Local secret overrides — service role key, Supabase access token.
+# Also covered by the *.local rule above; spelled out so it is not lost
+# if that rule is ever narrowed. The tracked .env holds only the
+# publishable key and URLs, which ship in the browser bundle anyway.
+.env.local
+.env.*.local

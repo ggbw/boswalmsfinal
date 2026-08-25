@@ -8,13 +8,29 @@
 # are safe -- neither touches data.
 project_id = "gmdbrgjxdeztgzvqsaaj"
 
+# hikvision-attendance and hik-attendance are called ONLY from the browser, by
+# src/lib/hr/hikvisionService.ts, through supabase.functions.invoke() — which
+# always sends the signed-in user's JWT. They therefore do not need verify_jwt
+# off, and having it off made them callable by anyone on the internet: they
+# read attendance records and use the stored Hik-Connect credentials.
+#
+# The setting was almost certainly copied from ingest-attendance below, which
+# genuinely needs it because the VPS agent has no user session and authenticates
+# with the x-sync-key shared secret instead.
+#
+# NOTE: requiring a JWT blocks unauthenticated callers, but the publishable key
+# is itself a valid JWT and is public. The complete fix is a role check inside
+# those two functions, as db-backup does. Tracked in docs/BACKUP_AND_RESTORE.md
+# §12 as outstanding work.
 [functions.hikvision-attendance]
-verify_jwt = false
-
-[functions.ingest-attendance]
-verify_jwt = false
+verify_jwt = true
 
 [functions.hik-attendance]
+verify_jwt = true
+
+# The VPS calls this one from cron, with no session. Its own x-sync-key check
+# is what authorises it, and it fails closed when HIK_SYNC_SECRET is unset.
+[functions.ingest-attendance]
 verify_jwt = false
 
 # Called by cron on the VPS, which has no user session to present. The
