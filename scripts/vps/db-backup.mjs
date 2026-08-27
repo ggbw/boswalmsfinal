@@ -60,17 +60,34 @@ const fail = (...a) => console.error(`[${new Date().toISOString()}] ERROR`, ...a
 
 // ─── Config ───────────────────────────────────────────────────────────────────
 
+/**
+ * Config comes from `${BASE_DIR}/.env` on a VPS, or straight from the
+ * environment in CI.
+ *
+ * The file being optional is the ONLY difference between the two places this
+ * script runs. On a VPS the values live in a chmod-600 .env beside the script;
+ * in GitHub Actions they arrive as secrets already in the environment and
+ * there is no file to read. Everything below this function is identical, so
+ * the nightly backup is the same code producing the same artifact wherever it
+ * runs — which is what makes the two deployment options interchangeable
+ * rather than two half-tested paths.
+ *
+ * A file that IS present wins over the ambient environment, so a VPS operator
+ * editing .env never has to wonder whether a stale shell export is overriding
+ * them.
+ */
 function loadEnv() {
   const file = path.join(BASE_DIR, '.env');
-  if (!fs.existsSync(file)) {
-    throw new Error(`No .env at ${file} — copy .env.example and fill it in.`);
-  }
-  for (const line of fs.readFileSync(file, 'utf8').split('\n')) {
-    const m = /^\s*([A-Z0-9_]+)\s*=\s*(.*)$/.exec(line);
-    if (!m) continue;
-    // Strip one layer of surrounding quotes; a Postgres password full of
-    // punctuation is the usual reason someone quotes a value here.
-    process.env[m[1]] = m[2].trim().replace(/^(['"])(.*)\1$/, '$2');
+  const fromFile = fs.existsSync(file);
+
+  if (fromFile) {
+    for (const line of fs.readFileSync(file, 'utf8').split('\n')) {
+      const m = /^\s*([A-Z0-9_]+)\s*=\s*(.*)$/.exec(line);
+      if (!m) continue;
+      // Strip one layer of surrounding quotes; a Postgres password full of
+      // punctuation is the usual reason someone quotes a value here.
+      process.env[m[1]] = m[2].trim().replace(/^(['"])(.*)\1$/, '$2');
+    }
   }
 
   const cfg = {
@@ -83,10 +100,17 @@ function loadEnv() {
     mirrorMaxMb: Number(process.env.MIRROR_MAX_MB || 45),
     schemas: (process.env.DUMP_SCHEMAS || 'public').split(',').map((s) => s.trim()).filter(Boolean),
     label: process.env.BACKUP_LABEL || 'boswa',
+    // Optional, and deliberately not in the required list below. An rclone
+    // remote has no web address of its own, so the Backup page can only offer a
+    // link to the Drive folder if someone pastes one in — or if rclone happens
+    // to report the folder's Drive id, which is tried first. Absent both, the
+    // page shows the remote as plain text rather than inventing a URL.
+    driveFolderUrl: process.env.DRIVE_FOLDER_URL || '',
   };
 
+  const where = fromFile ? file : 'the environment (no .env file found)';
   for (const k of ['pgUri', 'supabaseUrl', 'reportSecret', 'rcloneRemote']) {
-    if (!cfg[k]) throw new Error(`Missing ${k.toUpperCase()} in ${file}`);
+    if (!cfg[k]) throw new Error(`Missing ${k.toUpperCase()} in ${where}`);
   }
   return cfg;
 }
@@ -243,6 +267,108 @@ function uploadToDrive(cfg, files, stamp) {
   return pruned;
 }
 
+// ─── What is actually in Drive ────────────────────────────────────────────────
+//
+// The Backup page used to describe Google Drive without ever showing it: the
+// only thing it could list was the seven-day Supabase mirror, so a dump too
+// large to mirror made the page report no backups at all while Drive was
+// filling up correctly. Recording the real folder contents alongside the run
+// closes that gap.
+//
+// Everything here is best-effort. The upload has already happened by the time
+// these run, and a listing that fails says nothing about whether the backup
+// arrived — so a failure here is recorded as a note, never raised.
+
+/** How many files to name per folder. The whole metadata object is stored in a
+ *  jsonb column on every run, so it must not grow with the retention period. */
+const LIST_CAP = { daily: 40, monthly: 12 };
+
+function lsjson(remotePath, extraArgs = []) {
+  const out = execFileSync('rclone', ['lsjson', remotePath, ...extraArgs], {
+    encoding: 'utf8',
+    stdio: ['ignore', 'pipe', 'pipe'],
+  });
+  const parsed = JSON.parse(out);
+  return Array.isArray(parsed) ? parsed : [];
+}
+
+/** One folder's worth of files, newest first, capped. */
+function listFolder(remotePath, cap) {
+  const all = lsjson(remotePath)
+    .filter((e) => !e.IsDir)
+    .sort((a, b) => String(b.ModTime).localeCompare(String(a.ModTime)));
+
+  return {
+    files: all.slice(0, cap).map((e) => ({
+      name: e.Path ?? e.Name,
+      size: Number(e.Size ?? 0),
+      mod: e.ModTime ?? '',
+      ...(e.ID ? { id: e.ID } : {}),
+    })),
+    // Counted from the FULL listing, not the capped one, so the page can say
+    // "showing the newest 40" instead of quietly implying there are only 40.
+    count: all.length,
+    bytes: all.reduce((s, e) => s + Number(e.Size ?? 0), 0),
+    truncated: all.length > cap,
+  };
+}
+
+/**
+ * A snapshot of the Drive folder, for the Backup page to render.
+ *
+ * `monthly/` does not exist until the first of a month, and rclone treats a
+ * missing directory as an error, so each folder is listed independently — one
+ * absent folder must not lose the other.
+ */
+function driveState(cfg) {
+  const state = {
+    remote: `${cfg.rcloneRemote}/daily`,
+    folder_url: cfg.driveFolderUrl || null,
+    folder_id: null,
+    listed_at: new Date().toISOString(),
+    daily: null,
+    monthly: null,
+  };
+
+  // The folder's own Drive id, if the backend reports one. This is the only way
+  // to offer a real link without being told the URL; a guessed Drive URL that
+  // opens the wrong thing is worse than no link.
+  try {
+    const dirs = lsjson(cfg.rcloneRemote, ['--dirs-only']);
+    const daily = dirs.find((d) => (d.Path ?? d.Name) === 'daily');
+    if (daily?.ID) {
+      state.folder_id = daily.ID;
+      if (!state.folder_url) state.folder_url = `https://drive.google.com/drive/folders/${daily.ID}`;
+    }
+  } catch { /* no id available; the optional DRIVE_FOLDER_URL may still be set */ }
+
+  for (const [name, cap] of [['daily', LIST_CAP.daily], ['monthly', LIST_CAP.monthly]]) {
+    try {
+      state[name] = listFolder(`${cfg.rcloneRemote}/${name}`, cap);
+    } catch {
+      // monthly/ legitimately does not exist for most of the month.
+      state[name] = { files: [], count: 0, bytes: 0, truncated: false };
+    }
+  }
+  return state;
+}
+
+/** jsonb on every row, forever. Halve the file lists rather than let one night
+ *  write an unbounded blob into the history table. */
+function capMetadata(metadata) {
+  let out = metadata;
+  for (let i = 0; i < 4 && JSON.stringify(out).length > 30_000; i++) {
+    for (const folder of ['daily', 'monthly']) {
+      const f = out.drive?.[folder];
+      if (f?.files?.length) {
+        f.files = f.files.slice(0, Math.max(1, Math.floor(f.files.length / 2)));
+        f.truncated = true;
+      }
+    }
+  }
+  return out;
+}
+
 /**
  * Mirror the dump into Supabase Storage so the Backup page can offer it.
  *
@@ -252,14 +378,21 @@ function uploadToDrive(cfg, files, stamp) {
  */
 async function mirrorToStorage(cfg, file) {
   const sizeMb = fs.statSync(file).size / 1048576;
+  // Returned rather than merely logged. When the mirror is skipped the Backup
+  // page has nothing to list, and it used to conclude from that that no backup
+  // existed — while the dump sat safely in Drive. The page can now say which of
+  // the three reasons applies, in the run's own numbers.
+  const skipped = (reason) => ({ path: null, mirrored: false, max_mb: cfg.mirrorMaxMb, size_mb: Number(sizeMb.toFixed(1)), reason });
+
   if (sizeMb > cfg.mirrorMaxMb) {
-    log(`Skipping the Storage mirror: ${sizeMb.toFixed(1)} MB exceeds the ${cfg.mirrorMaxMb} MB limit`);
-    return null;
+    const reason = `${sizeMb.toFixed(1)} MB exceeds this project's ${cfg.mirrorMaxMb} MB upload limit.`;
+    log(`Skipping the Storage mirror: ${reason}`);
+    return skipped(reason);
   }
 
   const name = path.basename(file);
   const presigned = await report(cfg, { action: 'presign', filename: name });
-  if (!presigned?.signedUrl) return null;
+  if (!presigned?.signedUrl) return skipped('Supabase would not issue an upload URL for the mirror.');
 
   // createSignedUploadUrl returns a path relative to the storage API.
   const url = presigned.signedUrl.startsWith('http')
@@ -273,10 +406,10 @@ async function mirrorToStorage(cfg, file) {
   });
   if (!res.ok) {
     log(`Storage mirror failed (${res.status}) — the Drive copy is unaffected`);
-    return null;
+    return skipped(`The upload to Supabase Storage failed (HTTP ${res.status}).`);
   }
   log(`Mirrored ${name} into Supabase Storage`);
-  return name;
+  return { path: name, mirrored: true, max_mb: cfg.mirrorMaxMb, size_mb: Number(sizeMb.toFixed(1)), reason: null };
 }
 
 // ─── Main ─────────────────────────────────────────────────────────────────────
@@ -336,7 +469,20 @@ async function main() {
     log(`Uploading to ${cfg.rcloneRemote}/daily…`);
     uploadToDrive(cfg, [artifact, countsFile], stamp);
 
-    const storagePath = await mirrorToStorage(cfg, artifact);
+    const mirror = await mirrorToStorage(cfg, artifact);
+
+    // Read Drive back, so the Backup page can show what is really there rather
+    // than only asserting that something was uploaded. Never allowed to throw:
+    // the dump is already in Drive at this point, and a failed `rclone lsjson`
+    // must not turn a good backup into a reported failure.
+    let drive;
+    try {
+      drive = driveState(cfg);
+      log(`Drive now holds ${drive.daily?.count ?? 0} daily and ${drive.monthly?.count ?? 0} monthly file(s)`);
+    } catch (e) {
+      drive = { remote: `${cfg.rcloneRemote}/daily`, error: String(e.message).slice(0, 300) };
+      log(`Could not list Drive afterwards: ${e.message} — the upload itself succeeded`);
+    }
 
     await report(cfg, {
       action: 'finish',
@@ -345,14 +491,22 @@ async function main() {
       status: 'success',
       artifact: path.basename(artifact),
       destination: `Google Drive ${cfg.rcloneRemote}/daily`,
-      storage_path: storagePath,
+      storage_path: mirror?.path ?? null,
       size_bytes: size,
       table_count: Object.keys(counts).length,
       row_count: totalRows,
       checksum,
       actor: `vps:${os.hostname()}`,
       message: cfg.gpgPassphrase ? 'Encrypted (AES-256)' : null,
-      metadata: { schemas: cfg.schemas, encrypted: !!cfg.gpgPassphrase, keep_days: cfg.keepDays },
+      metadata: capMetadata({
+        schemas: cfg.schemas,
+        encrypted: !!cfg.gpgPassphrase,
+        keep_days: cfg.keepDays,
+        mirror: mirror
+          ? { mirrored: mirror.mirrored, max_mb: mirror.max_mb, size_mb: mirror.size_mb, reason: mirror.reason }
+          : null,
+        drive,
+      }),
     });
 
     // Local copies are working files, not the backup. Keeping them would fill

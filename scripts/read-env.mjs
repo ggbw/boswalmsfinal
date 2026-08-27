@@ -28,7 +28,12 @@ import path from 'node:path';
 function parse(file) {
   if (!fs.existsSync(file)) return {};
   const out = {};
-  for (const line of fs.readFileSync(file, 'utf8').split('\n')) {
+  // Split on \r?\n, not \n. A CRLF file — which is what `.env` becomes after a
+  // checkout on Windows — otherwise leaves \r at the end of every line, and
+  // JavaScript's `.` does not match \r, so `(.*)$` fails on all of them. The
+  // parser then reports every variable as missing, and the scripts that call
+  // it insist a token is absent while the user is looking straight at it.
+  for (const line of fs.readFileSync(file, 'utf8').split(/\r?\n/)) {
     const m = /^\s*([A-Za-z0-9_]+)\s*=\s*(.*)$/.exec(line);
     if (!m) continue;
     out[m[1]] = m[2].trim().replace(/^(['"])(.*)\1$/, '$2');

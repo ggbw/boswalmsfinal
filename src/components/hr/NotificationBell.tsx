@@ -33,6 +33,10 @@ function timeAgo(dateStr: string | null): string {
 }
 
 function borderColor(type: string | null): string {
+  // Written by the backup-report edge function, not by HR. Without this case it
+  // falls through to the neutral border, and a grey stripe on "the nightly
+  // backup failed" is the wrong claim about how much it matters.
+  if (type === 'backup_failed')   return '#cf222e';
   if (type === 'expired')         return '#cf222e';
   if (type === '7_day_warning')   return '#d4920a';
   if (type === '30_day_warning')  return '#f0b429';

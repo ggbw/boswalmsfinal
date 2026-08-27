@@ -1,0 +1,111 @@
+# Weekly proof that the nightly backup can actually be restored.
+#
+# This is the half of a backup system that people skip, and it is the half that
+# decides whether the other half was worth running. The nightly job proves a
+# file was produced and uploaded. Only this proves the file contains a working
+# database.
+#
+# It downloads the newest dump BACK OUT OF GOOGLE DRIVE — not from a local
+# cache — restores it into a throwaway PostgreSQL 17, and compares the row
+# count of every table against the counts captured inside the same connection
+# as the dump. A broken upload is caught here; so is a dump that succeeded and
+# was empty.
+#
+# pg_restore exiting 0 proves nothing: it exits 0 for a dump of an empty
+# database. Matching all 66 counts is a real assertion.
+#
+# The service container below is why this workflow is, if anything, tidier than
+# the VPS equivalent: a clean PostgreSQL 17 appears for the job and vanishes
+# afterwards, so the test can never be contaminated by a previous run.
+
+name: Weekly restore drill
+
+on:
+  schedule:
+    # Sunday 03:30 UTC, after Saturday night's dump has landed.
+    - cron: '30 3 * * 0'
+  workflow_dispatch:
+
+concurrency:
+  group: db-restore-test
+  cancel-in-progress: false
+
+jobs:
+  restore-drill:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+
+    permissions:
+      contents: read
+
+    services:
+      postgres:
+        image: postgres:17
+        env:
+          POSTGRES_PASSWORD: restore-drill-throwaway
+        ports:
+          - 5432:5432
+        # Without the health check the job races the container and the first
+        # psql call fails with "connection refused".
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Install PostgreSQL 17 client
+        run: |
+          set -euo pipefail
+          sudo install -d /usr/share/postgresql-common/pgdg
+          sudo curl -fsSL -o /usr/share/postgresql-common/pgdg/apt.postgresql.org.asc \
+            https://www.postgresql.org/media/keys/ACCC4CF8.asc
+          echo "deb [signed-by=/usr/share/postgresql-common/pgdg/apt.postgresql.org.asc] \
+            https://apt.postgresql.org/pub/repos/apt $(lsb_release -cs)-pgdg main" \
+            | sudo tee /etc/apt/sources.list.d/pgdg.list > /dev/null
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq postgresql-client-17
+          pg_restore --version
+
+      - name: Install rclone
+        run: |
+          set -euo pipefail
+          sudo -v ; curl -fsSL https://rclone.org/install.sh | sudo bash
+
+      - name: Write rclone config
+        env:
+          RCLONE_CONF: ${{ secrets.RCLONE_CONFIG }}
+        run: |
+          set -euo pipefail
+          mkdir -p ~/.config/rclone
+          printf '%s' "$RCLONE_CONF" > ~/.config/rclone/rclone.conf
+          chmod 600 ~/.config/rclone/rclone.conf
+
+      - name: Run the restore drill
+        env:
+          BACKUP_BASE_DIR: ${{ github.workspace }}/.backup-work
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          BACKUP_REPORT_SECRET: ${{ secrets.BACKUP_REPORT_SECRET }}
+          RCLONE_REMOTE: ${{ secrets.RCLONE_REMOTE }}
+          GPG_PASSPHRASE: ${{ secrets.GPG_PASSPHRASE }}
+          BACKUP_LABEL: boswa
+          # The throwaway service container, never the production database.
+          # The script itself refuses to start if this points at Supabase.
+          LOCAL_PGURI: postgresql://postgres:restore-drill-throwaway@localhost:5432/postgres
+        run: node scripts/vps/db-restore-test.mjs
+
+      - name: Report failure loudly
+        if: failure()
+        run: |
+          echo "::error::The restore drill FAILED — the newest backup may not be restorable."
+          echo "This is the alarm that matters. Do not ignore it:"
+          echo "  * counts mismatched  -> the dump is incomplete. Investigate before trusting it."
+          echo "  * decryption failed  -> GPG_PASSPHRASE no longer opens the dumps."
+          echo "  * no dumps in Drive  -> the nightly job has not been running."
+          echo "See docs/BACKUP_AND_RESTORE.md section 8.2."

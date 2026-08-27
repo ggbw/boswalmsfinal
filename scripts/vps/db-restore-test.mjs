@@ -108,12 +108,15 @@ CREATE TABLE IF NOT EXISTS storage.objects (
 
 // ─── Config ───────────────────────────────────────────────────────────────────
 
+// Same rule as db-backup.mjs: the .env file is optional, because in CI the
+// values arrive as secrets already in the environment.
 function loadEnv() {
   const file = path.join(BASE_DIR, '.env');
-  if (!fs.existsSync(file)) throw new Error(`No .env at ${file}`);
-  for (const line of fs.readFileSync(file, 'utf8').split('\n')) {
-    const m = /^\s*([A-Z0-9_]+)\s*=\s*(.*)$/.exec(line);
-    if (m) process.env[m[1]] = m[2].trim().replace(/^(['"])(.*)\1$/, '$2');
+  if (fs.existsSync(file)) {
+    for (const line of fs.readFileSync(file, 'utf8').split('\n')) {
+      const m = /^\s*([A-Z0-9_]+)\s*=\s*(.*)$/.exec(line);
+      if (m) process.env[m[1]] = m[2].trim().replace(/^(['"])(.*)\1$/, '$2');
+    }
   }
   const cfg = {
     supabaseUrl: (process.env.SUPABASE_URL || '').replace(/\/$/, ''),

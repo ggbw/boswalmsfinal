@@ -26,23 +26,33 @@ import { useAuth } from '@/hooks/useAuth';
 import {
   ago,
   backupFilename,
+  bucketsFromRun,
   BULKY_TABLES,
   canWriteDirectly,
   checkBackupInstalled,
+  classifyNightly,
+  driveStateFromRun,
   fetchBackupHealth,
   fetchBackupRuns,
+  fetchLatestRuns,
   formatBytes,
   hoursSince,
   inspectBackupFile,
   listNightlyDumps,
+  mirrorStateFromRun,
+  nextScheduledRunUtc,
+  nextWeeklyRunUtc,
   restoreFromFile,
   saveBackupToUsb,
   saveNightlyDumpToUsb,
+  triggerBackupNow,
   verifyBackupFile,
   type BackupHealth,
   type BackupResult,
   type BackupRunRow,
+  type DriveFolder,
   type NightlyDump,
+  type NightlyStatus,
   type RestoreInspection,
   type RestoreStrategy,
   type VerifyResult,
@@ -76,6 +86,11 @@ export default function BackupPage() {
 
   const [health, setHealth] = useState<BackupHealth | null>(null);
   const [runs, setRuns] = useState<BackupRunRow[]>([]);
+  // The newest cloud/files runs specifically. Kept apart from `runs` because
+  // that list is ordered by time alone: a busy afternoon of USB backups would
+  // push the only nightly row past the limit, and the Nightly tab would then
+  // announce that the nightly job had never run.
+  const [machineRuns, setMachineRuns] = useState<BackupRunRow[]>([]);
   const [loading, setLoading] = useState(true);
   // null while unknown. Everything on this page needs the migration, so it is
   // checked once here rather than discovered four times in four corners.
@@ -93,11 +108,17 @@ export default function BackupPage() {
       if (!probe.installed) {
         setHealth(null);
         setRuns([]);
+        setMachineRuns([]);
         return;
       }
-      const [h, r] = await Promise.all([fetchBackupHealth(), fetchBackupRuns(50)]);
+      const [h, r, m] = await Promise.all([
+        fetchBackupHealth(),
+        fetchBackupRuns(50),
+        fetchLatestRuns(),
+      ]);
       setHealth(h);
       setRuns(r);
+      setMachineRuns(m);
     } catch (e) {
       toast((e as Error).message, 'error');
     } finally {
@@ -157,7 +178,9 @@ export default function BackupPage() {
       </div>
 
       {tab === 'backup' && <BackupTab onDone={refresh} />}
-      {tab === 'nightly' && <NightlyTab />}
+      {tab === 'nightly' && (
+        <NightlyTab runs={machineRuns} loading={loading} onRefresh={refresh} />
+      )}
       {tab === 'restore' && (canRestore ? <RestoreTab onDone={refresh} /> : <RestoreNotPermitted />)}
       {tab === 'history' && <HistoryTab runs={runs} loading={loading} />}
     </>
@@ -271,8 +294,8 @@ function HealthBanner({ health }: { health: BackupHealth | null }) {
       </div>
       {bad && (
         <div style={{ fontSize: 11.5, marginTop: 12, color: 'var(--text2)' }}>
-          Check the VPS: <code>tail -40 /var/log/db-backup-boswa.log</code>. Until it is fixed, take
-          a USB backup below at the end of each day. See{' '}
+          The <strong>Nightly cloud backups</strong> tab says what went wrong and what to do about
+          it. Until it is fixed, take a USB backup below at the end of each day. See{' '}
           <code>docs/BACKUP_AND_RESTORE.md</code> §9.
         </div>
       )}
@@ -495,23 +518,97 @@ function BackupTab({ onDone }: { onDone: () => void }) {
 
 // ─── Tab 2: nightly cloud backups ─────────────────────────────────────────────
 
-function NightlyTab() {
+/** The four colour tones this tab uses, matching the ones already established
+ *  on the other tabs so the page reads as one thing. */
+const TONES = {
+  good: { line: '#1a7f37', bg: '#dafbe1', icon: 'fa-solid fa-shield-halved' },
+  bad: { line: 'var(--danger)', bg: '#ffebe9', icon: 'fa-solid fa-triangle-exclamation' },
+  warn: { line: '#d4a72c', bg: '#fff8c5', icon: 'fa-solid fa-circle-exclamation' },
+  info: { line: '#0969da', bg: '#ddf4ff', icon: 'fa-solid fa-circle-info' },
+} as const;
+
+function Panel({
+  tone, title, children,
+}: { tone: keyof typeof TONES; title: string; children?: React.ReactNode }) {
+  const t = TONES[tone];
+  return (
+    <div
+      style={{
+        borderLeft: `4px solid ${t.line}`,
+        background: t.bg,
+        borderRadius: 6,
+        padding: '12px 14px',
+        marginBottom: 14,
+      }}
+    >
+      <div style={{ fontWeight: 700, fontSize: 12.5, display: 'flex', gap: 8, alignItems: 'center' }}>
+        <i className={t.icon} style={{ color: t.line }} />
+        {title}
+      </div>
+      {children && (
+        <div style={{ fontSize: 11.5, color: 'var(--text2)', lineHeight: 1.65, marginTop: 6 }}>
+          {children}
+        </div>
+      )}
+    </div>
+  );
+}
+
+/** A UTC instant rendered in the reader's own timezone, which is the only one
+ *  they can act on. The UTC time is kept alongside because every cron line and
+ *  every Actions log is in UTC. */
+function whenDue(d: Date): string {
+  const local = d.toLocaleString(undefined, {
+    weekday: 'short', hour: '2-digit', minute: '2-digit',
+  });
+  const utc = `${String(d.getUTCHours()).padStart(2, '0')}:${String(d.getUTCMinutes()).padStart(2, '0')} UTC`;
+  return `${local} (${utc})`;
+}
+
+/** How long to keep watching after a manual trigger before saying so plainly.
+ *  A dump of this database takes a minute or two; eight covers a cold runner
+ *  and a queue without ever pretending a slow run has failed. */
+const TRIGGER_WATCH_MS = 8 * 60_000;
+const TRIGGER_POLL_MS = 8_000;
+
+interface TriggerState {
+  phase: 'dispatched' | 'running' | 'success' | 'failed' | 'timeout';
+  message: string;
+}
+
+function NightlyTab({
+  runs, loading, onRefresh,
+}: { runs: BackupRunRow[]; loading: boolean; onRefresh: () => Promise<void> | void }) {
   const { toast } = useApp();
   const [dumps, setDumps] = useState<NightlyDump[]>([]);
-  const [loading, setLoading] = useState(true);
+  const [dumpsError, setDumpsError] = useState<string | null>(null);
+  const [dumpsLoading, setDumpsLoading] = useState(true);
   const [saving, setSaving] = useState<string | null>(null);
+  const [busy, setBusy] = useState(false);
+  const [trigger, setTrigger] = useState<TriggerState | null>(null);
+  const timers = useRef<{ poll?: number; stop?: number }>({});
 
-  useEffect(() => {
-    void (async () => {
-      try {
-        setDumps(await listNightlyDumps());
-      } catch (e) {
-        toast((e as Error).message, 'error');
-      } finally {
-        setLoading(false);
-      }
-    })();
-  }, [toast]);
+  const reloadDumps = useCallback(async () => {
+    setDumpsLoading(true);
+    const r = await listNightlyDumps();
+    setDumps(r.dumps);
+    setDumpsError(r.error);
+    setDumpsLoading(false);
+  }, []);
+
+  useEffect(() => { void reloadDumps(); }, [reloadDumps]);
+
+  // Polling must not outlive the tab. Without this, switching to History
+  // mid-run leaves an interval calling setState on an unmounted component.
+  useEffect(() => () => {
+    window.clearInterval(timers.current.poll);
+    window.clearTimeout(timers.current.stop);
+  }, []);
+
+  const cloud = classifyNightly(runs, 'cloud');
+  const files = classifyNightly(runs, 'files', 24 * 8);
+  const drive = driveStateFromRun(cloud.run);
+  const mirror = mirrorStateFromRun(cloud.run);
 
   const save = async (name: string) => {
     setSaving(name);
@@ -530,49 +627,494 @@ function NightlyTab() {
     }
   };
 
+  const refreshAll = async () => {
+    await Promise.all([reloadDumps(), onRefresh()]);
+  };
+
+  /**
+   * Start tonight's backup now.
+   *
+   * GitHub's workflow_dispatch answers 204 with an empty body — no run id, no
+   * URL, nothing to follow. So the run is identified the only way that is
+   * reliable: by snapshotting the ids already in backup_runs and watching for
+   * one that is not among them. Ids rather than timestamps, because comparing
+   * a Postgres timestamp against Date.now() assumes the browser's clock agrees
+   * with the database's, and it frequently does not.
+   */
+  const runNow = async () => {
+    setBusy(true);
+    const seen = new Set(runs.filter((r) => r.kind === 'cloud').map((r) => r.id));
+
+    try {
+      await triggerBackupNow('db-backup');
+    } catch (e) {
+      setBusy(false);
+      setTrigger(null);
+      toast((e as Error).message, 'error');
+      return;
+    }
+
+    setTrigger({
+      phase: 'dispatched',
+      message: 'GitHub has accepted the request. The runner takes a minute or two to start.',
+    });
+
+    const stopWatching = () => {
+      window.clearInterval(timers.current.poll);
+      window.clearTimeout(timers.current.stop);
+      setBusy(false);
+    };
+
+    timers.current.poll = window.setInterval(() => {
+      void (async () => {
+        let latest: BackupRunRow[];
+        try {
+          latest = await fetchLatestRuns();
+        } catch {
+          return;   // a blip in polling is not a failed backup; keep watching
+        }
+        const fresh = latest.find((r) => r.kind === 'cloud' && !seen.has(r.id));
+        if (!fresh) return;
+
+        if (fresh.status === 'running') {
+          setTrigger({
+            phase: 'running',
+            message: `Running — started ${ago(fresh.started_at)}.`,
+          });
+          return;
+        }
+
+        stopWatching();
+        setTrigger(
+          fresh.status === 'success'
+            ? { phase: 'success', message: `Finished. ${fresh.artifact ?? 'The dump'} is in Google Drive.` }
+            : { phase: 'failed', message: fresh.message ?? 'The run reported a failure.' },
+        );
+        await refreshAll();
+      })();
+    }, TRIGGER_POLL_MS);
+
+    timers.current.stop = window.setTimeout(() => {
+      stopWatching();
+      setTrigger({
+        phase: 'timeout',
+        message:
+          'Still running after 8 minutes. That is not a failure — it is safe to leave this ' +
+          'page; the banner and the History tab will show the result.',
+      });
+    }, TRIGGER_WATCH_MS);
+  };
+
+  return (
+    <>
+      {/* ─── Status ─────────────────────────────────────────────────────── */}
+      <div className="card">
+        <div
+          className="card-title"
+          style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 12 }}
+        >
+          <span>Nightly database backup</span>
+          <span style={{ display: 'flex', gap: 6 }}>
+            <button className="btn btn-outline btn-sm" onClick={() => void refreshAll()} disabled={loading}>
+              <i className="fa-solid fa-rotate" /> Refresh
+            </button>
+            <button className="btn btn-primary btn-sm" onClick={() => void runNow()} disabled={busy}>
+              <i className={busy ? 'fa-solid fa-spinner fa-spin' : 'fa-solid fa-play'} />
+              {busy ? 'Running…' : 'Run backup now'}
+            </button>
+          </span>
+        </div>
+
+        <p style={{ fontSize: 12.5, color: 'var(--text2)', lineHeight: 1.6, marginBottom: 14 }}>
+          Every night a full <code>pg_dump</code> is taken and uploaded to Google Drive, and a copy
+          is kept here for a week. That dump can rebuild the database from nothing — tables,
+          constraints and all — where the USB snapshot on the previous tab needs the tables to
+          already exist. Both are worth having.
+        </p>
+
+        {trigger && (
+          <Panel
+            tone={
+              trigger.phase === 'success' ? 'good'
+              : trigger.phase === 'failed' ? 'bad'
+              : trigger.phase === 'timeout' ? 'warn'
+              : 'info'
+            }
+            title={
+              trigger.phase === 'success' ? 'Backup finished'
+              : trigger.phase === 'failed' ? 'That run failed'
+              : trigger.phase === 'timeout' ? 'Still going'
+              : 'Backup requested'
+            }
+          >
+            {trigger.message}
+          </Panel>
+        )}
+
+        <NightlyState status={cloud} loading={loading} />
+
+        {cloud.run && (
+          <div style={{ fontSize: 11.5, color: 'var(--text2)', display: 'flex', gap: 20, flexWrap: 'wrap' }}>
+            <span>Last run <strong>{ago(cloud.run.started_at)}</strong></span>
+            <span>Next due <strong>{whenDue(nextScheduledRunUtc())}</strong></span>
+            {cloud.run.row_count !== null && (
+              <span>{cloud.run.row_count.toLocaleString()} rows across {cloud.run.table_count ?? '—'} tables</span>
+            )}
+          </div>
+        )}
+      </div>
+
+      {/* ─── Google Drive ───────────────────────────────────────────────── */}
+      {drive && <DriveSection drive={drive} />}
+
+      {/* ─── The copy kept here ─────────────────────────────────────────── */}
+      <div className="card">
+        <div className="card-title">The copy kept here</div>
+        <p style={{ fontSize: 12.5, color: 'var(--text2)', lineHeight: 1.6, marginBottom: 14 }}>
+          Each night's dump is also mirrored into this project for a week, so it can be put on a USB
+          stick from this page without anyone needing access to Google Drive. This is a convenience
+          copy — the backup itself is the one in Drive above.
+        </p>
+
+        {dumpsLoading ? (
+          <div style={{ fontSize: 12, color: 'var(--text2)' }}>Loading…</div>
+        ) : dumpsError ? (
+          <Panel tone="warn" title="This copy could not be listed">
+            {dumpsError}
+            <div style={{ marginTop: 6 }}>
+              This says nothing about the Google Drive backup, which does not depend on it.
+            </div>
+          </Panel>
+        ) : dumps.length === 0 ? (
+          <EmptyMirror cloud={cloud} mirror={mirror} />
+        ) : (
+          <div className="table-wrap">
+            <table>
+              <thead>
+                <tr>
+                  <th>File</th>
+                  <th>Taken</th>
+                  <th>Size</th>
+                  <th />
+                </tr>
+              </thead>
+              <tbody>
+                {dumps.map((d) => (
+                  <tr key={d.name}>
+                    <td style={{ fontFamily: 'JetBrains Mono, monospace', fontSize: 11.5 }}>{d.name}</td>
+                    <td style={{ fontSize: 12 }}>{ago(d.created_at)}</td>
+                    <td style={{ fontSize: 12 }}>{formatBytes(d.size)}</td>
+                    <td style={{ textAlign: 'right' }}>
+                      <button
+                        className="btn btn-outline btn-sm"
+                        onClick={() => void save(d.name)}
+                        disabled={saving !== null}
+                      >
+                        <i className={saving === d.name ? 'fa-solid fa-spinner fa-spin' : 'fa-solid fa-download'} />
+                        Save to USB
+                      </button>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </div>
+
+      {/* ─── Photos and documents ───────────────────────────────────────── */}
+      <FilesSection status={files} />
+    </>
+  );
+}
+
+/** The one panel that says what is actually going on with the nightly job. */
+function NightlyState({ status, loading }: { status: NightlyStatus; loading: boolean }) {
+  const { state, run } = status;
+  if (loading && !run) return <div style={{ fontSize: 12, color: 'var(--text2)' }}>Loading…</div>;
+
+  if (state === 'never_configured') {
+    return (
+      <Panel tone="warn" title="No cloud backup has ever run on this database">
+        The page is working; the job has simply never been switched on. Two things are needed, both
+        outside this app:
+        <ol style={{ margin: '8px 0 0 18px', padding: 0 }}>
+          <li>
+            <code>.github/workflows/db-backup.yml</code> must be committed and pushed to the{' '}
+            <code>main</code> branch. GitHub cannot run — or be asked to run — a workflow it has
+            never seen.
+          </li>
+          <li>
+            Six repository secrets must be set under <em>Settings → Secrets and variables →
+            Actions</em>, including the Google Drive credentials.
+          </li>
+        </ol>
+        <div style={{ marginTop: 8 }}>
+          Run <code>npm run check:backup</code> for a checklist of what is and is not in place, and
+          see <code>docs/BACKUP_GITHUB_ACTIONS.md</code> for how to obtain each secret.
+        </div>
+      </Panel>
+    );
+  }
+
+  if (state === 'failing') {
+    return (
+      <Panel tone="bad" title={`The last nightly backup failed, ${ago(run?.started_at)}`}>
+        <div style={{ fontFamily: 'JetBrains Mono, monospace', fontSize: 11, marginBottom: 8 }}>
+          {run?.message ?? 'No reason was recorded.'}
+        </div>
+        Until this is fixed, take a USB backup on the first tab at the end of each day. The full log
+        is in the repository's Actions tab, under <em>Nightly database backup</em>.
+      </Panel>
+    );
+  }
+
+  if (state === 'stalled') {
+    return (
+      <Panel tone="bad" title={`A backup started ${ago(run?.started_at)} and never finished`}>
+        The runner began the job and stopped without reporting either success or failure — it was
+        cancelled, timed out, or died. Whatever it managed to upload before that point should not be
+        trusted. Check the Actions tab, then start a fresh run.
+      </Panel>
+    );
+  }
+
+  if (state === 'running') {
+    return (
+      <Panel tone="info" title={`A backup is running — started ${ago(run?.started_at)}`}>
+        It will appear below when it finishes.
+      </Panel>
+    );
+  }
+
+  if (state === 'stale') {
+    return (
+      <Panel tone="bad" title={`The newest cloud backup is from ${ago(run?.started_at)}`}>
+        It succeeded, but nothing has run since. A scheduled workflow is disabled automatically
+        after 60 days without activity in the repository, which is the usual cause. Check the
+        Actions tab, and use <em>Run backup now</em> above in the meantime.
+      </Panel>
+    );
+  }
+
+  return (
+    <Panel tone="good" title={`Cloud backup is running normally — last succeeded ${ago(run?.started_at)}`} />
+  );
+}
+
+/**
+ * What to say when the mirror is empty.
+ *
+ * This is the case the page used to get wrong. An empty bucket has three
+ * completely different meanings, and announcing "no dumps here yet" for all
+ * three told an operator whose backups were landing safely in Drive that they
+ * had none at all.
+ */
+function EmptyMirror({ cloud, mirror }: { cloud: NightlyStatus; mirror: ReturnType<typeof mirrorStateFromRun> }) {
+  const s = { fontSize: 12, color: 'var(--text2)', lineHeight: 1.65 };
+
+  // The important one: the backup exists, it is just too big to keep here.
+  if (cloud.state === 'healthy' || cloud.state === 'stale') {
+    if (cloud.run?.storage_path) {
+      return (
+        <div style={s}>
+          The most recent dump was mirrored here but has since been removed — copies are kept for
+          seven days. The full history is in Google Drive above.
+        </div>
+      );
+    }
+    const size = mirror?.size_mb ? `${mirror.size_mb.toFixed(1)} MB` : 'the dump';
+    const cap = mirror?.max_mb ? `${mirror.max_mb} MB limit` : 'size limit';
+    return (
+      <Panel tone="info" title="Last night's backup is in Google Drive, but not here">
+        {mirror?.reason ?? `It was skipped because ${size} exceeds this project's ${cap}.`}{' '}
+        Nothing is wrong with the backup — it is listed above and safe in Drive. It simply cannot be
+        put on a USB stick from this page. Download it from Drive instead, or use the USB snapshot
+        on the first tab.
+      </Panel>
+    );
+  }
+
+  if (cloud.state === 'never_configured') {
+    return <div style={s}>Nothing to show until the nightly job has run for the first time.</div>;
+  }
+
+  return (
+    <div style={s}>
+      No copy is held here. See the status above — the most recent run did not complete.
+    </div>
+  );
+}
+
+/** What is actually sitting in Google Drive, as of the last run. */
+function DriveSection({ drive }: { drive: ReturnType<typeof driveStateFromRun> }) {
+  if (!drive) return null;
+
   return (
     <div className="card">
-      <div className="card-title">Nightly pg_dump files</div>
+      <div className="card-title">In Google Drive</div>
+
+      {drive.error ? (
+        <Panel tone="warn" title="Drive could not be listed after the last run">
+          {drive.error}
+          <div style={{ marginTop: 6 }}>
+            The upload itself is reported separately and may well have succeeded — see the status
+            above. Only this listing failed.
+          </div>
+        </Panel>
+      ) : (
+        <>
+          <div style={{ fontSize: 11.5, color: 'var(--text2)', lineHeight: 1.7, marginBottom: 12 }}>
+            <div>
+              Destination{' '}
+              {drive.folder_url ? (
+                <a href={drive.folder_url} target="_blank" rel="noreferrer">
+                  <code>{drive.remote}</code> <i className="fa-solid fa-arrow-up-right-from-square" style={{ fontSize: 9 }} />
+                </a>
+              ) : (
+                <code>{drive.remote}</code>
+              )}
+            </div>
+            <div>
+              Daily copies are deleted after 30 days; the 1st of each month is filed under{' '}
+              <code>monthly/</code> and kept indefinitely.
+            </div>
+            {drive.listed_at && (
+              <div style={{ marginTop: 4, fontStyle: 'italic' }}>
+                This is what was there when the last backup finished, {ago(drive.listed_at)} — this
+                page does not read Drive live.
+              </div>
+            )}
+          </div>
+
+          <DriveTable label="Daily" folder={drive.daily} />
+          <DriveTable label="Monthly" folder={drive.monthly} />
+        </>
+      )}
+    </div>
+  );
+}
+
+function DriveTable({ label, folder }: { label: string; folder: DriveFolder | null }) {
+  if (!folder) return null;
+  if (!folder.count) {
+    return (
+      <div style={{ fontSize: 11.5, color: 'var(--text2)', marginBottom: 10 }}>
+        <strong>{label}</strong> — empty
+        {label === 'Monthly' && ' (the first monthly copy is filed on the 1st)'}
+      </div>
+    );
+  }
+
+  return (
+    <div style={{ marginBottom: 14 }}>
+      <div style={{ fontSize: 11.5, fontWeight: 700, marginBottom: 6 }}>
+        {label} — {folder.count} file{folder.count === 1 ? '' : 's'}, {formatBytes(folder.bytes)}
+        {folder.truncated && (
+          <span style={{ fontWeight: 400, color: 'var(--text2)' }}>
+            {' '}(showing the newest {folder.files.length})
+          </span>
+        )}
+      </div>
+      <div className="table-wrap">
+        <table>
+          <thead>
+            <tr>
+              <th>File</th>
+              <th>Uploaded</th>
+              <th style={{ textAlign: 'right' }}>Size</th>
+            </tr>
+          </thead>
+          <tbody>
+            {folder.files.map((f) => (
+              <tr key={f.name}>
+                <td style={{ fontFamily: 'JetBrains Mono, monospace', fontSize: 11 }}>
+                  {f.id ? (
+                    <a href={`https://drive.google.com/file/d/${f.id}/view`} target="_blank" rel="noreferrer">
+                      {f.name}
+                    </a>
+                  ) : f.name}
+                </td>
+                <td style={{ fontSize: 11.5 }}>{ago(f.mod)}</td>
+                <td style={{ fontSize: 11.5, textAlign: 'right' }}>{formatBytes(f.size)}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  );
+}
+
+/**
+ * Photos, documents and attachments.
+ *
+ * Kept visually and logically apart from the database backup, and deliberately
+ * absent from the health banner: a failed photo sync must never turn the
+ * database's indicator red, and a successful one must never mask a database
+ * backup that has stopped running.
+ */
+function FilesSection({ status }: { status: NightlyStatus }) {
+  const { state, run } = status;
+  const buckets = bucketsFromRun(run);
+
+  return (
+    <div className="card">
+      <div className="card-title">Photos and documents</div>
       <p style={{ fontSize: 12.5, color: 'var(--text2)', lineHeight: 1.6, marginBottom: 14 }}>
-        Every night the server takes a full <code>pg_dump</code>, uploads it to Google Drive, and
-        keeps a copy here for a week. This file is the one that can rebuild the database from
-        nothing — tables, constraints and all — where the USB snapshot on the previous tab needs
-        the tables to already exist. Both are worth having.
+        Student photos, applicant documents, employee files, assignment uploads and timetables live
+        in file storage, not in the database, so the nightly <code>pg_dump</code> does not contain
+        them. They are copied to Google Drive once a week instead. A file deleted or replaced in the
+        app is moved aside in Drive rather than destroyed, so last week's version can still be
+        recovered.
       </p>
 
-      {loading ? (
-        <div style={{ fontSize: 12, color: 'var(--text2)' }}>Loading…</div>
-      ) : dumps.length === 0 ? (
-        <div style={{ fontSize: 12, color: 'var(--text2)' }}>
-          No dumps here yet. Either the nightly job has not run since it was set up, or it is
-          failing — check the History tab and the VPS log.
-        </div>
+      {state === 'never_configured' ? (
+        <Panel tone="warn" title="The weekly file backup has never run">
+          Photos, documents and attachments are currently in no backup at all. This needs the
+          workflow pushed to <code>main</code> and three Supabase Storage S3 keys set as repository
+          secrets — see <code>docs/BACKUP_GITHUB_ACTIONS.md</code>.
+        </Panel>
+      ) : state === 'failing' || state === 'stalled' ? (
+        <Panel tone="bad" title={`The last file backup ${state === 'failing' ? 'failed' : 'never finished'}, ${ago(run?.started_at)}`}>
+          {run?.message ?? 'No reason was recorded.'}
+        </Panel>
+      ) : state === 'stale' ? (
+        <Panel tone="warn" title={`The newest file backup is from ${ago(run?.started_at)}`}>
+          It succeeded, but the weekly job has not run since.
+        </Panel>
+      ) : state === 'running' ? (
+        <Panel tone="info" title={`A file backup is running — started ${ago(run?.started_at)}`} />
       ) : (
+        <>
+          <Panel tone="good" title={`Files backed up ${ago(run?.started_at)}`}>
+            {run?.message ?? null}
+          </Panel>
+          <div style={{ fontSize: 11.5, color: 'var(--text2)', marginBottom: 10 }}>
+            Next due <strong>{whenDue(nextWeeklyRunUtc())}</strong>
+          </div>
+        </>
+      )}
+
+      {buckets.length > 0 && (
         <div className="table-wrap">
           <table>
             <thead>
               <tr>
-                <th>File</th>
-                <th>Taken</th>
-                <th>Size</th>
-                <th />
+                <th>Bucket</th>
+                <th style={{ textAlign: 'right' }}>Files</th>
+                <th style={{ textAlign: 'right' }}>Size</th>
+                <th>Note</th>
               </tr>
             </thead>
             <tbody>
-              {dumps.map((d) => (
-                <tr key={d.name}>
-                  <td style={{ fontFamily: 'JetBrains Mono, monospace', fontSize: 11.5 }}>{d.name}</td>
-                  <td style={{ fontSize: 12 }}>{ago(d.created_at)}</td>
-                  <td style={{ fontSize: 12 }}>{formatBytes(d.size)}</td>
-                  <td style={{ textAlign: 'right' }}>
-                    <button
-                      className="btn btn-outline btn-sm"
-                      onClick={() => void save(d.name)}
-                      disabled={saving !== null}
-                    >
-                      <i className={saving === d.name ? 'fa-solid fa-spinner fa-spin' : 'fa-solid fa-download'} />
-                      Save to USB
-                    </button>
+              {buckets.map((b) => (
+                <tr key={b.name}>
+                  <td style={{ fontFamily: 'JetBrains Mono, monospace', fontSize: 11.5 }}>{b.name}</td>
+                  <td style={{ fontSize: 11.5, textAlign: 'right' }}>{b.objects.toLocaleString()}</td>
+                  <td style={{ fontSize: 11.5, textAlign: 'right' }}>{formatBytes(b.bytes)}</td>
+                  <td style={{ fontSize: 11, color: b.skipped ? 'var(--danger)' : 'var(--text2)' }}>
+                    {b.skipped ?? '—'}
                   </td>
                 </tr>
               ))}
@@ -788,6 +1330,7 @@ function RestoreTab({ onDone }: { onDone: () => void }) {
 const KIND_LABEL: Record<string, string> = {
   usb: 'USB / local',
   cloud: 'Google Drive',
+  files: 'Google Drive (files)',
   restore_test: 'Restore test',
 };
 

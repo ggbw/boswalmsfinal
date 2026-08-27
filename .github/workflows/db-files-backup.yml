@@ -1,0 +1,128 @@
+# Weekly file backup: Supabase Storage → Google Drive.
+#
+# The other half of the backup. The nightly pg_dump copies the database; it does
+# not — cannot — copy anything in Supabase Storage, because those objects are
+# not rows. Student photos, applicant documents, employee files, assignment
+# uploads and timetables all live outside the database, and until this workflow
+# existed they were in no backup at all: a recovery would have restored every
+# record about a student and none of their documents.
+#
+# WHY WEEKLY AND NOT NIGHTLY
+#
+# Photos and documents are almost entirely write-once. A seven-day worst case on
+# a student photo is proportionate where a twenty-four-hour one on the database
+# is not, and keeping the two jobs apart keeps Drive API quota and runner
+# minutes away from the backup that runs every night. If the first few runs turn
+# out fast and cheap, the cron line below is the only thing that has to change.
+#
+# WHY A SEPARATE WORKFLOW RATHER THAN A STEP IN db-backup.yml
+#
+# Different failure domains. Folded in, an rclone error copying photos would
+# either mark the *database* backup failed — turning the health banner red for a
+# reason that has nothing to do with the database — or be swallowed, which is a
+# lie in the other direction. Separate runs, separate rows in the History tab.
+#
+# WHAT PROTECTS AGAINST A BAD SYNC
+#
+# `rclone sync` with --backup-dir: an object deleted or replaced in the app is
+# MOVED ASIDE in Drive, not destroyed, and stays recoverable for FILES_KEEP_DAYS.
+# Plus --max-delete, and an empty-source check in the script that refuses to
+# sync a bucket that listed as empty. See scripts/vps/files-backup.mjs.
+#
+# SETUP: docs/BACKUP_GITHUB_ACTIONS.md — this workflow needs three secrets the
+# nightly one does not (the Supabase Storage S3 keys).
+
+name: Weekly file backup
+
+on:
+  schedule:
+    # 02:45 UTC on Sundays — after the nightly database backup at 02:15 and
+    # before the weekly restore test at 03:30, so the three never contend for
+    # the same Drive token. GitHub's scheduler can lag by several minutes;
+    # nothing here depends on the exact minute.
+    - cron: '45 2 * * 0'
+  workflow_dispatch:
+    # So the first run, and every test afterwards, can be triggered by hand —
+    # and so the "Run backup now" button in the LMS can reach it.
+
+concurrency:
+  group: db-files-backup
+  cancel-in-progress: false
+
+jobs:
+  files:
+    runs-on: ubuntu-latest
+    # Generous: this transfers real bytes, and the first run copies everything.
+    timeout-minutes: 45
+
+    permissions:
+      contents: read        # the job only reads this repo's scripts
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'      # the script needs built-in fetch (18+)
+
+      # No PostgreSQL client step. This job never touches the database, which is
+      # most of why it finishes sooner than the nightly one.
+
+      - name: Install rclone
+        run: |
+          set -euo pipefail
+          sudo -v ; curl -fsSL https://rclone.org/install.sh | sudo bash
+          rclone version | head -1
+
+      - name: Write rclone config
+        # Secrets reach the shell as environment variables, never interpolated
+        # into the script text with ${{ }} — a value containing a quote or a
+        # backtick would otherwise be executed rather than assigned.
+        env:
+          RCLONE_CONF: ${{ secrets.RCLONE_CONFIG }}
+          RCLONE_REMOTE: ${{ secrets.RCLONE_REMOTE }}
+        run: |
+          set -euo pipefail
+          if [ -z "${RCLONE_CONF:-}" ]; then
+            echo "::error::RCLONE_CONFIG secret is empty. See docs/BACKUP_GITHUB_ACTIONS.md step 2."
+            exit 1
+          fi
+          mkdir -p ~/.config/rclone
+          printf '%s' "$RCLONE_CONF" > ~/.config/rclone/rclone.conf
+          chmod 600 ~/.config/rclone/rclone.conf
+          # Prove the Drive token works BEFORE transferring anything.
+          rclone lsd "${RCLONE_REMOTE%%:*}:" > /dev/null
+          echo "Google Drive reachable."
+
+      - name: Run the file backup
+        env:
+          # Identical variable names to /opt/db-backup-boswa/.env on the VPS —
+          # the script cannot tell the difference between here and there.
+          BACKUP_BASE_DIR: ${{ github.workspace }}/.backup-work
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          BACKUP_REPORT_SECRET: ${{ secrets.BACKUP_REPORT_SECRET }}
+          RCLONE_REMOTE: ${{ secrets.RCLONE_REMOTE }}
+          # Supabase → Project Settings → Storage → S3 access keys. These are
+          # storage credentials only: they cannot read a table, bypass RLS or
+          # read auth.users. They CAN write to storage, which is why the script
+          # keeps a bucket allowlist and never syncs in that direction.
+          SUPABASE_S3_ACCESS_KEY_ID: ${{ secrets.SUPABASE_S3_ACCESS_KEY_ID }}
+          SUPABASE_S3_SECRET_ACCESS_KEY: ${{ secrets.SUPABASE_S3_SECRET_ACCESS_KEY }}
+          SUPABASE_S3_REGION: ${{ secrets.SUPABASE_S3_REGION }}
+          # How long a replaced or deleted object stays recoverable in
+          # files/_replaced/ before it is pruned.
+          FILES_KEEP_DAYS: '90'
+          FILES_MAX_DELETE: '50'
+        run: node scripts/vps/files-backup.mjs
+
+      # No artifact upload, for the same reason as the nightly backup: these are
+      # students' photos and documents, and a GitHub artifact would be a second,
+      # unmanaged copy visible to anyone with repository read access.
+
+      - name: Report failure loudly
+        if: failure()
+        run: |
+          echo "::error::The weekly file backup FAILED."
+          echo "Photos and documents may not have been copied this week. Every"
+          echo "administrator is notified in the LMS; the Nightly cloud backups"
+          echo "tab shows the reason under 'Photos and documents'."

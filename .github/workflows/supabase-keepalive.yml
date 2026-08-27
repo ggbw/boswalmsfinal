@@ -1,0 +1,151 @@
+# Keep the Supabase project awake.
+#
+# WHY THIS EXISTS
+#
+# Supabase pauses Free plan projects that show low database activity over a
+# rolling 7-day window. A school is precisely the user this catches: term ends,
+# nobody signs in for three weeks, and the project is paused. The app is then
+# simply down until somebody notices and presses Resume — and that button only
+# exists for 90 days.
+#
+# Supabase's own wording is the specification:
+#
+#   "Typically a few user requests to the database each day over the previous
+#    week is enough to keep the project from being paused."
+#
+# A few requests, EACH DAY. That is why this runs twice a day and makes four
+# real queries per run, rather than one ping a week. The exact threshold is not
+# published, so the cheap and correct thing is to exceed it comfortably — eight
+# queries a day is nothing against the free quota.
+#
+# NO SECRETS ARE NEEDED. The script uses the publishable (anon) key, which is
+# already in the tracked `.env` because it ships in the browser bundle anyway.
+# Nothing is written to the database.
+#
+# THE TRAP THIS WORKFLOW HAS TO AVOID
+#
+# GitHub disables a scheduled workflow after 60 days with no repository
+# activity. For any other cron job that is a mild annoyance. For THIS one it is
+# fatal and silent: the whole purpose is to survive long quiet periods, so the
+# workflow would switch itself off during exactly the holiday it exists to
+# cover, and the project would pause a week later with nothing in any log to
+# say why. The `keepalive-commit` job below prevents that. See §4.
+#
+# IF YOU ALREADY RUN THE VPS CRON (docs/SUPABASE_KEEPALIVE.md §3), you do not
+# need this workflow — a machine you own has no 60-day rule. Running both is
+# harmless, just redundant. Pick one.
+
+name: Supabase keep-alive
+
+on:
+  schedule:
+    # Twice a day, deliberately. GitHub's scheduler is best-effort and drops
+    # runs under load; a single daily run that is skipped three days running
+    # would go unnoticed. These are 11:30 and 23:30 in Botswana (UTC+2), and
+    # both avoid 02:15 UTC where the nightly backup runs.
+    - cron: '30 9 * * *'
+    - cron: '30 21 * * *'
+  workflow_dispatch:
+    # So the first run, and every test afterwards, can be triggered by hand
+    # from the Actions tab rather than by waiting until tomorrow.
+
+# Two overlapping pings would be pointless rather than harmful, but a queued
+# backlog after an outage would be noise in the run history.
+concurrency:
+  group: supabase-keepalive
+  cancel-in-progress: false
+
+jobs:
+  ping:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+
+    permissions:
+      contents: read        # the ping only reads this repo's scripts
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'      # the script needs built-in fetch (18+)
+
+      - name: Ping the database
+        # Fails the job when no query got through. A red run emails the repo
+        # owner, which is the entire alerting mechanism — and a project that
+        # has already paused cannot be woken by anything this sends, so being
+        # told promptly is the only useful outcome.
+        run: node scripts/keepalive.mjs --verbose
+
+  # ─── 4. Stop GitHub disabling the schedule ──────────────────────────────────
+  #
+  # GitHub counts a push as repository activity. This job pushes a one-line
+  # stamp file, but ONLY when the newest commit is more than 45 days old — well
+  # inside the 60-day limit, and quiet the rest of the time. A repository that
+  # is being worked on normally never triggers it at all; at worst it adds
+  # about eight commits a year to a dormant repository, which is the price of
+  # the schedule still being alive when term starts again.
+  #
+  # Runs on the daily 09:30 schedule only, and never on a manual dispatch —
+  # pressing "Run workflow" to test a ping should not commit to main.
+  keepalive-commit:
+    runs-on: ubuntu-latest
+    needs: ping
+    if: github.event_name == 'schedule'
+    timeout-minutes: 5
+
+    permissions:
+      contents: write       # this job, and only this job, pushes
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          # Two commits, so the age check can read the newest one. The default
+          # shallow clone of depth 1 would still work here, but being explicit
+          # costs nothing and survives someone changing the default.
+          fetch-depth: 2
+
+      - name: Refresh the schedule if the repository has gone quiet
+        env:
+          MAX_QUIET_DAYS: '45'
+        run: |
+          set -euo pipefail
+
+          last_commit_epoch=$(git log -1 --format=%ct)
+          now_epoch=$(date +%s)
+          quiet_days=$(( (now_epoch - last_commit_epoch) / 86400 ))
+
+          echo "Newest commit is ${quiet_days} day(s) old (limit ${MAX_QUIET_DAYS})."
+
+          if [ "$quiet_days" -lt "$MAX_QUIET_DAYS" ]; then
+            echo "Repository is active. GitHub will not disable the schedule; nothing to do."
+            exit 0
+          fi
+
+          echo "::warning::Repository has been quiet for ${quiet_days} days. Pushing a stamp so GitHub does not disable this schedule."
+
+          mkdir -p .github
+          cat > .github/keepalive-stamp <<EOF
+          Written by .github/workflows/supabase-keepalive.yml
+
+          GitHub disables a scheduled workflow after 60 days with no repository
+          activity. This file exists only to be changed, so that the push counts
+          as activity and the Supabase keep-alive schedule keeps running through
+          a long holiday. Nothing reads it.
+
+          Last refreshed: $(date -u +'%Y-%m-%d %H:%M:%S UTC')
+          EOF
+
+          git config user.name  'github-actions[bot]'
+          git config user.email 'github-actions[bot]@users.noreply.github.com'
+          git add .github/keepalive-stamp
+
+          # --quiet plus an explicit check: if something upstream already
+          # refreshed the stamp, committing nothing must not fail the job.
+          if git diff --cached --quiet; then
+            echo "Stamp already current; nothing to commit."
+            exit 0
+          fi
+
+          git commit -m 'chore: keep scheduled workflows enabled [skip ci]'
+          git push

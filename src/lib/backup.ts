@@ -113,6 +113,18 @@ export interface BackupRunRow {
   checksum: string | null;
   actor_label: string | null;
   message: string | null;
+  /**
+   * Whatever the runner chose to record about the run — see `metadata` in
+   * scripts/vps/db-backup.mjs. This has always been selected (the queries use
+   * `select('*')`); the type simply did not admit it, so the Drive listing and
+   * the mirror's reason for skipping were arriving and being thrown away.
+   *
+   * Written outside this app, by a script that is deployed separately and may
+   * be older than the browser reading it. Every consumer must treat the shape
+   * as unknown, which is why the readers below narrow it by hand rather than
+   * asserting a type onto it.
+   */
+  metadata: Record<string, unknown> | null;
 }
 
 export interface BackupHealth {
@@ -855,19 +867,34 @@ export interface NightlyDump {
   created_at: string;
 }
 
-/** The pg_dump files the VPS has mirrored into Supabase Storage. */
-export async function listNightlyDumps(): Promise<NightlyDump[]> {
+/**
+ * The pg_dump files the runner has mirrored into Supabase Storage.
+ *
+ * Returns the error rather than throwing it. The bucket and its RLS policy are
+ * created inside a deliberately non-fatal block in the migration (see the
+ * `DO $storage$ … EXCEPTION` comment there), so a project where everything else
+ * installed correctly can still be missing this one bucket. When that happened,
+ * a throw here toasted an error and took the whole tab down with it — including
+ * the Google Drive half, which does not depend on this bucket at all.
+ *
+ * This mirror is a convenience copy, not the backup. Failing to list it is
+ * worth saying on the page; it is not worth hiding the backup behind.
+ */
+export async function listNightlyDumps(): Promise<{ dumps: NightlyDump[]; error: string | null }> {
   const { data, error } = await supabase.storage
     .from(NIGHTLY_BUCKET)
     .list('', { limit: 100, sortBy: { column: 'created_at', order: 'desc' } });
-  if (error) throw new Error(error.message);
-  return (data ?? [])
-    .filter((o) => o.name && !o.name.startsWith('.'))
-    .map((o) => ({
-      name: o.name,
-      size: (o.metadata as { size?: number } | null)?.size ?? 0,
-      created_at: o.created_at ?? o.updated_at ?? '',
-    }));
+  if (error) return { dumps: [], error: error.message };
+  return {
+    dumps: (data ?? [])
+      .filter((o) => o.name && !o.name.startsWith('.'))
+      .map((o) => ({
+        name: o.name,
+        size: (o.metadata as { size?: number } | null)?.size ?? 0,
+        created_at: o.created_at ?? o.updated_at ?? '',
+      })),
+    error: null,
+  };
 }
 
 /**
@@ -931,4 +958,303 @@ export function hoursSince(iso: string | null | undefined): number {
   if (!iso) return Infinity;
   const h = (Date.now() - new Date(iso).getTime()) / 3_600_000;
   return Number.isNaN(h) ? Infinity : h;
+}
+
+// ─── Nightly cloud backup: reading what the runner reported ───────────────────
+//
+// Everything below reads `backup_runs` rows written by scripts/vps/db-backup.mjs
+// and scripts/vps/files-backup.mjs. The page used to work from the Storage
+// mirror alone, which meant a backup that reached Google Drive but was too
+// large to mirror rendered as "no dumps here yet" — the one claim the page must
+// never make while a backup exists.
+//
+// The classifiers are pure so they can be tested without a database; see
+// src/test/backupNightly.test.ts.
+
+/** The kinds a machine writes, as opposed to `usb`, which a person clicks. */
+export const MACHINE_KINDS = ['cloud', 'files'];
+
+/**
+ * The newest machine-written runs, whatever else is in the history.
+ *
+ * Deliberately separate from fetchBackupRuns(): that one feeds the History tab
+ * and is ordered by time alone, so fifty USB backups in an afternoon would push
+ * the only cloud row off the end of the limit and this tab would conclude the
+ * nightly job had never run.
+ */
+export async function fetchLatestRuns(limit = 20): Promise<BackupRunRow[]> {
+  const { data, error } = await looseDb
+    .from('backup_runs')
+    .select('*')
+    .in('kind', MACHINE_KINDS)
+    .order('started_at', { ascending: false })
+    .limit(limit);
+  if (error) {
+    if (looksLikeMissingSchema(error.message)) return [];
+    throw new Error(error.message);
+  }
+  return (data ?? []) as BackupRunRow[];
+}
+
+/** Workflows the backup-trigger function is willing to start. The function
+ *  keeps its own allowlist — this one exists so a typo here is a compile-time
+ *  problem rather than a 400 from GitHub. */
+export type TriggerableWorkflow = 'db-backup' | 'db-files-backup' | 'db-restore-test';
+
+export interface TriggerResult {
+  workflow: string;
+  repo: string;
+  ref: string;
+  /** When the fine-grained token expires, if GitHub told us. Worth surfacing:
+   *  a PAT that lapses turns this button into a 401 with no other warning. */
+  token_expires: string | null;
+}
+
+/**
+ * Ask GitHub to run the backup workflow now.
+ *
+ * The work happens on a GitHub Actions runner, not in the browser and not on
+ * this server, so all this does is post a workflow_dispatch. GitHub answers 204
+ * with an empty body — there is no run id to return and nothing to await. The
+ * caller finds out what happened by watching backup_runs for a row it has not
+ * seen before; see the Nightly tab.
+ *
+ * Every failure mode here is a configuration problem with a specific fix, and
+ * the edge function translates GitHub's misleading status codes into sentences
+ * that name it. invokeFn is what carries those sentences back intact.
+ */
+export async function triggerBackupNow(
+  workflow: TriggerableWorkflow = 'db-backup',
+): Promise<TriggerResult> {
+  const { data, error } = await invokeFn<TriggerResult>('backup-trigger', {
+    action: 'dispatch',
+    workflow,
+  });
+  if (error) throw new Error(error);
+
+  void logAudit({
+    action: 'backup_triggered',
+    category: 'admin',
+    entityType: 'database',
+    entityLabel: workflow,
+    summary: `Started the ${workflow} workflow by hand`,
+    severity: 'warning',
+  });
+
+  return data as TriggerResult;
+}
+
+export type NightlyState =
+  /** No run of this kind has ever been recorded — it was never set up. */
+  | 'never_configured'
+  /** Started recently and has not reported back yet. */
+  | 'running'
+  /** Started long ago and never reported back: the runner died mid-run. */
+  | 'stalled'
+  /** The most recent run reported failure. */
+  | 'failing'
+  /** The most recent run succeeded, but too long ago. */
+  | 'stale'
+  | 'healthy';
+
+export interface NightlyStatus {
+  state: NightlyState;
+  /** The run the state was decided from, or null when there is none. */
+  run: BackupRunRow | null;
+}
+
+/** A row that still says "running" after this long did not finish. The nightly
+ *  dump takes a minute or two; an hour is generous enough never to call a slow
+ *  runner dead, and short enough to have noticed by morning. */
+const RUNNING_GRACE_HOURS = 1;
+
+/**
+ * What the Nightly tab should say, from the run history alone.
+ *
+ * The distinction that matters most is `never_configured` versus everything
+ * else. "No backup has ever been taken" and "the backup is broken" call for
+ * completely different actions from the reader, and this page used to show the
+ * same sentence for both — and for the third case, where the backup is sitting
+ * safely in Drive but was too big to mirror into Supabase Storage.
+ */
+export function classifyNightly(
+  runs: BackupRunRow[],
+  kind = 'cloud',
+  staleAfterHours = 36,
+): NightlyStatus {
+  const mine = runs
+    .filter((r) => r.kind === kind)
+    .sort((a, b) => (a.started_at < b.started_at ? 1 : -1));
+
+  const run = mine[0] ?? null;
+  if (!run) return { state: 'never_configured', run: null };
+
+  if (run.status === 'running') {
+    return {
+      state: hoursSince(run.started_at) > RUNNING_GRACE_HOURS ? 'stalled' : 'running',
+      run,
+    };
+  }
+  if (run.status === 'failed') return { state: 'failing', run };
+
+  return {
+    state: hoursSince(run.started_at) > staleAfterHours ? 'stale' : 'healthy',
+    run,
+  };
+}
+
+/**
+ * When the nightly job is next due.
+ *
+ * Hard-coded to match the `cron:` line in .github/workflows/db-backup.yml — at
+ * the time of writing `15 2 * * *`, i.e. 02:15 UTC. Changing one without the
+ * other makes this page state a time the runner will not honour, so the two
+ * cross-reference each other in both files.
+ *
+ * GitHub's scheduler is best-effort and routinely runs late, sometimes by more
+ * than an hour. The page presents this as "due", never as "will happen at".
+ */
+export function nextScheduledRunUtc(from: Date = new Date(), utcHour = 2, utcMinute = 15): Date {
+  const next = new Date(Date.UTC(
+    from.getUTCFullYear(), from.getUTCMonth(), from.getUTCDate(), utcHour, utcMinute, 0, 0,
+  ));
+  if (next.getTime() <= from.getTime()) next.setUTCDate(next.getUTCDate() + 1);
+  return next;
+}
+
+/** As above, for the weekly files backup — `45 2 * * 0` (Sunday 02:45 UTC) in
+ *  .github/workflows/db-files-backup.yml. */
+export function nextWeeklyRunUtc(from: Date = new Date(), utcHour = 2, utcMinute = 45): Date {
+  const next = nextScheduledRunUtc(from, utcHour, utcMinute);
+  while (next.getUTCDay() !== 0) next.setUTCDate(next.getUTCDate() + 1);
+  return next;
+}
+
+// ─── Run metadata ─────────────────────────────────────────────────────────────
+//
+// Written by scripts that are deployed separately from this bundle, so what
+// arrives can be older or newer than the code reading it. Everything here
+// narrows by hand and returns null rather than trusting a shape: a run recorded
+// before this feature existed must render exactly as it always did, not crash.
+
+export interface DriveFile {
+  name: string;
+  size: number;
+  /** ISO timestamp, from rclone's ModTime. */
+  mod: string;
+  /** Google Drive file id, when rclone reported one. */
+  id?: string;
+}
+
+export interface DriveFolder {
+  files: DriveFile[];
+  /** Files in the folder, which may exceed files.length — the runner caps the
+   *  list it sends so one night's metadata cannot grow without bound. */
+  count: number;
+  bytes: number;
+  truncated: boolean;
+}
+
+export interface DriveState {
+  remote: string;
+  folder_url: string | null;
+  listed_at: string | null;
+  daily: DriveFolder | null;
+  monthly: DriveFolder | null;
+  /** Set when the listing failed. The upload may well have succeeded — the
+   *  runner never lets a listing error demote a good backup. */
+  error: string | null;
+}
+
+/** Why the Supabase Storage mirror was, or was not, written. */
+export interface MirrorState {
+  mirrored: boolean;
+  max_mb: number | null;
+  size_mb: number | null;
+  reason: string | null;
+}
+
+function asRecord(v: unknown): Record<string, unknown> | null {
+  return v && typeof v === 'object' && !Array.isArray(v) ? (v as Record<string, unknown>) : null;
+}
+function asString(v: unknown): string | null {
+  return typeof v === 'string' && v ? v : null;
+}
+function asNumber(v: unknown): number | null {
+  return typeof v === 'number' && Number.isFinite(v) ? v : null;
+}
+
+function readFolder(v: unknown): DriveFolder | null {
+  const o = asRecord(v);
+  if (!o) return null;
+  const files = Array.isArray(o.files)
+    ? o.files.flatMap((f): DriveFile[] => {
+        const r = asRecord(f);
+        const name = asString(r?.name);
+        if (!name) return [];
+        const id = asString(r?.id);
+        return [{
+          name,
+          size: asNumber(r?.size) ?? 0,
+          mod: asString(r?.mod) ?? '',
+          ...(id ? { id } : {}),
+        }];
+      })
+    : [];
+  return {
+    files,
+    count: asNumber(o.count) ?? files.length,
+    bytes: asNumber(o.bytes) ?? 0,
+    truncated: o.truncated === true,
+  };
+}
+
+/** What was in Google Drive when this run finished. A snapshot, not live —
+ *  nothing re-reads Drive between runs, so the page must say when it was taken. */
+export function driveStateFromRun(run: BackupRunRow | null): DriveState | null {
+  const drive = asRecord(asRecord(run?.metadata)?.drive);
+  if (!drive) return null;
+  return {
+    remote: asString(drive.remote) ?? '',
+    folder_url: asString(drive.folder_url),
+    listed_at: asString(drive.listed_at),
+    daily: readFolder(drive.daily),
+    monthly: readFolder(drive.monthly),
+    error: asString(drive.error),
+  };
+}
+
+export function mirrorStateFromRun(run: BackupRunRow | null): MirrorState | null {
+  const m = asRecord(asRecord(run?.metadata)?.mirror);
+  if (!m) return null;
+  return {
+    mirrored: m.mirrored === true,
+    max_mb: asNumber(m.max_mb),
+    size_mb: asNumber(m.size_mb),
+    reason: asString(m.reason),
+  };
+}
+
+/** Per-bucket totals from a `files` run. */
+export interface BucketResult {
+  name: string;
+  objects: number;
+  bytes: number;
+  skipped: string | null;
+}
+
+export function bucketsFromRun(run: BackupRunRow | null): BucketResult[] {
+  const raw = asRecord(run?.metadata)?.buckets;
+  if (!Array.isArray(raw)) return [];
+  return raw.flatMap((b): BucketResult[] => {
+    const r = asRecord(b);
+    const name = asString(r?.name);
+    if (!name) return [];
+    return [{
+      name,
+      objects: asNumber(r?.objects) ?? 0,
+      bytes: asNumber(r?.bytes) ?? 0,
+      skipped: asString(r?.skipped),
+    }];
+  });
 }

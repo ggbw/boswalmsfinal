@@ -1,0 +1,132 @@
+# Nightly database backup → Google Drive.
+#
+# The serverless half of the backup system. Runs the SAME script the VPS runs
+# (scripts/vps/db-backup.mjs) and produces the SAME artifact — a pg_dump custom
+# -format file plus an exact row-count sidecar — so whichever way you deploy
+# it, the restore procedure in docs/BACKUP_AND_RESTORE.md §8 is unchanged.
+#
+# WHY THIS EXISTS ALONGSIDE THE VPS SCRIPTS
+#
+# Both paths were built. Use one:
+#
+#   VPS      you own the machine end to end; needs SSH and a box that is up
+#   Actions  no server to maintain; the DB password lives in GitHub Secrets
+#
+# Running BOTH is harmless but pointless — you would get two dumps a night and
+# two rows in the History tab. Pick one and disable the other.
+#
+# WHY IT DOES NOT USE THE RUNNER'S BUNDLED pg_dump
+#
+# ubuntu-latest ships the PostgreSQL 16 client. This project's database is
+# 17.6.1, and pg_dump refuses to dump a server newer than itself with a message
+# that reads like a connection failure. The PGDG repository is added explicitly
+# below and postgresql-client-17 installed from it. The script re-checks the
+# versions at runtime and aborts with a plain-English message if they ever
+# drift apart again.
+#
+# SETUP: docs/BACKUP_GITHUB_ACTIONS.md
+
+name: Nightly database backup
+
+on:
+  schedule:
+    # 02:15 UTC. Botswana is UTC+2, so this is 04:15 local — after the
+    # Hikvision attendance sync has stopped for the night and well before
+    # anyone is in. GitHub's scheduler can lag by several minutes under load;
+    # nothing here depends on the exact minute.
+    - cron: '15 2 * * *'
+  workflow_dispatch:
+    # So the first run, and every test afterwards, can be triggered by hand
+    # from the Actions tab rather than by waiting until tomorrow.
+
+# Never let two backups overlap. A slow dump that ran past the next schedule
+# would otherwise have two jobs writing the same file name to Drive.
+concurrency:
+  group: db-backup
+  cancel-in-progress: false
+
+jobs:
+  backup:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    permissions:
+      contents: read        # the job only reads this repo's scripts
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'      # the script needs built-in fetch (18+)
+
+      - name: Install PostgreSQL 17 client
+        run: |
+          set -euo pipefail
+          sudo install -d /usr/share/postgresql-common/pgdg
+          sudo curl -fsSL -o /usr/share/postgresql-common/pgdg/apt.postgresql.org.asc \
+            https://www.postgresql.org/media/keys/ACCC4CF8.asc
+          echo "deb [signed-by=/usr/share/postgresql-common/pgdg/apt.postgresql.org.asc] \
+            https://apt.postgresql.org/pub/repos/apt $(lsb_release -cs)-pgdg main" \
+            | sudo tee /etc/apt/sources.list.d/pgdg.list > /dev/null
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq postgresql-client-17
+          pg_dump --version
+
+      - name: Install rclone
+        run: |
+          set -euo pipefail
+          sudo -v ; curl -fsSL https://rclone.org/install.sh | sudo bash
+          rclone version | head -1
+
+      - name: Write rclone config
+        # Secrets reach the shell as environment variables, never interpolated
+        # into the script text with ${{ }}. A value containing a quote or a
+        # backtick would otherwise be executed rather than assigned — the
+        # standard Actions script-injection footgun.
+        env:
+          RCLONE_CONF: ${{ secrets.RCLONE_CONFIG }}
+          RCLONE_REMOTE: ${{ secrets.RCLONE_REMOTE }}
+        run: |
+          set -euo pipefail
+          if [ -z "${RCLONE_CONF:-}" ]; then
+            echo "::error::RCLONE_CONFIG secret is empty. See docs/BACKUP_GITHUB_ACTIONS.md step 2."
+            exit 1
+          fi
+          mkdir -p ~/.config/rclone
+          printf '%s' "$RCLONE_CONF" > ~/.config/rclone/rclone.conf
+          chmod 600 ~/.config/rclone/rclone.conf
+          # Prove the token works BEFORE spending time on a dump. A refresh
+          # token that has been revoked fails here, in one second, with a
+          # readable message — rather than after the dump, as an upload error.
+          rclone lsd "${RCLONE_REMOTE%%:*}:" > /dev/null
+          echo "Google Drive reachable."
+
+      - name: Run the backup
+        env:
+          # Identical variable names to /opt/db-backup-boswa/.env on the VPS —
+          # the script cannot tell the difference.
+          BACKUP_BASE_DIR: ${{ github.workspace }}/.backup-work
+          PGURI: ${{ secrets.PGURI }}
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          BACKUP_REPORT_SECRET: ${{ secrets.BACKUP_REPORT_SECRET }}
+          RCLONE_REMOTE: ${{ secrets.RCLONE_REMOTE }}
+          GPG_PASSPHRASE: ${{ secrets.GPG_PASSPHRASE }}
+          DUMP_SCHEMAS: public
+          KEEP_DAYS: '30'
+          MIRROR_MAX_MB: '45'
+          BACKUP_LABEL: boswa
+        run: node scripts/vps/db-backup.mjs
+
+      # No artifact upload on purpose. The dump contains every student's
+      # personal data and every payslip; GitHub artifacts are visible to anyone
+      # with repository read access and would be a second, unmanaged copy
+      # outside the retention policy. The backup lives in Drive.
+
+      - name: Report failure loudly
+        if: failure()
+        run: |
+          echo "::error::The nightly database backup FAILED."
+          echo "The Backup & Restore page in the LMS will turn red once the"
+          echo "newest success is more than 36 hours old. Check the log above,"
+          echo "then docs/BACKUP_AND_RESTORE.md section 9."
