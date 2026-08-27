@@ -260,8 +260,26 @@ async function describeGithubError(res: Response, repo: string, file: string, re
            `issue a new fine-grained token with Actions: Read and write on ${repo}.`;
   }
   if (res.status === 403) {
-    return `GitHub refused the request (403). The token is valid but lacks Actions: Read and write ` +
-           `on ${repo}, or the repository has Actions disabled. ${brief}`;
+    const owner = repo.split("/")[0];
+    // "Resource not accessible by personal access token" is GitHub's answer to
+    // several quite different mistakes, and the wording points at none of them.
+    // The first cause below is the one people lose an afternoon to: a
+    // fine-grained token can ONLY reach repositories owned by the account
+    // chosen as its resource owner. Being a collaborator on someone else's
+    // repository is not enough — no permission setting fixes it, and the only
+    // way through is a classic token.
+    return `GitHub refused the request (403). Three things cause this, in order of how ` +
+           `often they are the answer:\n\n` +
+           `1. The token is a fine-grained token that does not belong to "${owner}". ` +
+           `Fine-grained tokens can only reach repositories owned by their resource owner, ` +
+           `so if you are a collaborator on ${repo} rather than "${owner}" itself, no ` +
+           `permission setting will make one work — use a CLASSIC token with the "workflow" ` +
+           `scope instead.\n` +
+           `2. The token's repository access is "Public repositories (read-only)". Read-only ` +
+           `cannot start a workflow. Set it to "Only select repositories" and pick ${repo}.\n` +
+           `3. Repository permissions → Actions is missing or set to Read-only. It must be ` +
+           `"Read and write".\n\n` +
+           `GitHub said: ${brief}`;
   }
   if (res.status === 422) {
     return `GitHub could not use the ref "${ref}" (422). It does not exist on ${repo}, or the ` +
