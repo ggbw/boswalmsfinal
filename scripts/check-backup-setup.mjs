@@ -49,8 +49,24 @@ const bad = (label, note = '') => log(`[ FAIL ] ${label}${note ? `  ${note}` : '
 const skip = (label, note = '') => log(`[ SKIP ] ${label}${note ? `  ${note}` : ''}`);
 const warn = (label, note = '') => log(`[ WARN ] ${label}${note ? `  ${note}` : ''}`);
 
+/**
+ * Not yet done, and not a problem.
+ *
+ * Distinct from WARN on purpose. Before the Drive setup is finished this script
+ * legitimately has several things to report that are simply outstanding — and
+ * labelling those WARN made a completely successful run look like a failing
+ * one, which is worse than saying nothing. TODO reads as a step remaining;
+ * WARN is reserved for something that is actually odd.
+ */
+const todo = (label, note = '') => log(`[ TODO ] ${label}${note ? `  ${note}` : ''}`);
+
 let failures = 0;
 const fail = (label, note) => { bad(label, note); failures++; };
+
+/** Steps the operator still has to take. Printed as the closing instruction, so
+ *  the last line of output is always "here is what to do next" rather than a
+ *  verdict the reader has to work out for themselves. */
+const nextSteps = [];
 
 /** Show enough of a secret to recognise it, never enough to use it. */
 const mask = (s) => (s ? `${s.slice(0, 8)}… (${s.length} chars)` : '(empty)');
@@ -364,7 +380,21 @@ async function checkDatabase() {
       }
       if (!rows.some((r) => r.kind === 'cloud')) {
         log('');
-        warn('no `cloud` run has EVER happened', '— the nightly Google Drive backup has never run');
+        todo(
+          'the nightly Google Drive backup has never run',
+          '— expected until Drive is connected and the six GitHub secrets are set',
+        );
+        nextSteps.push('Connect Google Drive (rclone config) and set the six repository secrets below.');
+        nextSteps.push('Then: GitHub → Actions → Nightly database backup → Run workflow.');
+      } else {
+        nextSteps.push('Nothing outstanding for the nightly database backup.');
+      }
+      if (!rows.some((r) => r.kind === 'files')) {
+        todo(
+          'the weekly file backup has never run',
+          '— photos, documents and attachments are not yet in any backup',
+        );
+        nextSteps.push('Add the three SUPABASE_S3_* secrets, then run the Weekly file backup workflow.');
       }
     }
   } catch (e) {
@@ -420,6 +450,9 @@ function reportManual(acceptedSecret) {
 
 log(`Backup setup preflight — project ${REF}`);
 log('Nothing here writes, uploads, or triggers anything.');
+log('');
+log('  OK    in place        TODO  a step you still have to take');
+log('  SKIP  not applicable  WARN  odd, worth a look   FAIL  blocking');
 
 const accepted = await checkSecret();
 await checkFunctions();
@@ -427,10 +460,22 @@ await checkDatabase();
 reportManual(accepted);
 
 log('');
+log('─'.repeat(72));
 if (failures === 0) {
-  log('No blocking problems found. Anything marked SKIP or WARN is listed above.');
+  log('RESULT: nothing is broken.');
+  log('');
+  if (nextSteps.length) {
+    log('Still to do — none of it is a fault, it is just not set up yet:');
+    for (const s of nextSteps) log(`  · ${s}`);
+    log('');
+    log('Walk-through: docs/BACKUP_GITHUB_ACTIONS.md');
+  } else {
+    log('The backup is fully configured and has run. Nothing outstanding.');
+  }
 } else {
-  log(`${failures} blocking problem(s) — the nightly backup cannot work until they are fixed.`);
+  log(`RESULT: ${failures} blocking problem(s) — marked FAIL above.`);
+  log('The nightly backup cannot work until those are fixed.');
   process.exitCode = 1;
 }
+log('─'.repeat(72));
 log('');
