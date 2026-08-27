@@ -853,6 +853,14 @@ function NightlyState({ status, loading }: { status: NightlyStatus; loading: boo
           Run <code>npm run check:backup</code> for a checklist of what is and is not in place, and
           see <code>docs/BACKUP_GITHUB_ACTIONS.md</code> for how to obtain each secret.
         </div>
+        {/* Said explicitly because the button sits directly above this panel, and
+            pressing it here is the obvious thing to try. It starts the very same
+            workflow, so until the secrets exist it can only produce a failed run —
+            better to say so than to let someone discover it as a red row. */}
+        <div style={{ marginTop: 8 }}>
+          <strong>Run backup now</strong> cannot stand in for this. It starts the same workflow, so
+          until those two things are done it can only produce a failed run.
+        </div>
       </Panel>
     );
   }
