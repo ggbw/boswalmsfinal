@@ -128,7 +128,12 @@ function loadEnv() {
     rcloneRemote: process.env.RCLONE_REMOTE,
     s3AccessKey: process.env.SUPABASE_S3_ACCESS_KEY_ID,
     s3SecretKey: process.env.SUPABASE_S3_SECRET_ACCESS_KEY,
-    s3Region: process.env.SUPABASE_S3_REGION || 'eu-central-1',
+    // eu-west-1 is this project's actual region, confirmed against the
+    // Management API — not a guess from the URL, which does not contain it.
+    // The region is part of the S3 signature, so a wrong value here fails with
+    // SignatureDoesNotMatch, which reads like bad keys rather than bad config.
+    // Verify with: Supabase → Project Settings → Storage → S3 connection.
+    s3Region: process.env.SUPABASE_S3_REGION || 'eu-west-1',
     buckets: (process.env.FILES_BUCKETS || DEFAULT_BUCKETS.join(','))
       .split(',').map((s) => s.trim()).filter(Boolean),
     keepDays: Number(process.env.FILES_KEEP_DAYS || 90),
@@ -366,7 +371,19 @@ async function main() {
       },
     });
 
-    log('Done.');
+    // The exit code is what GitHub Actions turns into a green tick or a red
+    // cross, and it is the only signal the `if: failure()` step reacts to. A
+    // run in which every bucket failed had been reporting `failed` to the
+    // database while still exiting 0 — so the workflow went green over a backup
+    // that copied nothing, which is the precise kind of manufactured confidence
+    // this whole system exists to prevent.
+    if (allFailed) {
+      fail(`No bucket was copied. ${summary}`);
+      process.exitCode = 1;
+    } else {
+      if (failed.length) log(`${failed.length} bucket(s) were skipped — see the run in the LMS.`);
+      log('Done.');
+    }
   } catch (e) {
     fail(e.message);
     await report(cfg, {

@@ -201,7 +201,7 @@ The secret is shown **once**.
 |---|---|
 | `SUPABASE_S3_ACCESS_KEY_ID` | from that page |
 | `SUPABASE_S3_SECRET_ACCESS_KEY` | from that page — copy it immediately |
-| `SUPABASE_S3_REGION` | the project's region, e.g. `eu-central-1` |
+| `SUPABASE_S3_REGION` | **`eu-west-1`** for this project — confirmed against the Management API. Shown on the same page as the keys. The region is part of the S3 signature, so a wrong value fails with `SignatureDoesNotMatch`, which reads like bad keys rather than a bad region. |
 
 These are *storage* credentials: they cannot read a table, bypass RLS, read
 `auth.users`, or call a function. They can read and write every bucket, which is
