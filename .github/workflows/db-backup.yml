@@ -54,6 +54,41 @@ jobs:
       contents: read        # the job only reads this repo's scripts
 
     steps:
+      # Check EVERY secret before doing any work, and name all the missing ones
+      # at once. The old order stopped at the first one that was absent, so an
+      # operator setting this up discovered them one failed run at a time --
+      # and on the schedule, that is one per day. Lengths are printed, never
+      # values: a secret pasted short (a truncated rclone.conf, a copied-with-
+      # ellipsis URI) is otherwise indistinguishable from a correct one.
+      - name: Check the secrets are set
+        env:
+          PGURI: ${{ secrets.PGURI }}
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          BACKUP_REPORT_SECRET: ${{ secrets.BACKUP_REPORT_SECRET }}
+          RCLONE_REMOTE: ${{ secrets.RCLONE_REMOTE }}
+          RCLONE_CONFIG: ${{ secrets.RCLONE_CONFIG }}
+          GPG_PASSPHRASE: ${{ secrets.GPG_PASSPHRASE }}
+        run: |
+          missing=""
+          for name in PGURI SUPABASE_URL BACKUP_REPORT_SECRET RCLONE_REMOTE RCLONE_CONFIG; do
+            value="${!name:-}"
+            if [ -z "$value" ]; then
+              missing="$missing $name"
+            else
+              echo "  set:   $name (${#value} chars)"
+            fi
+          done
+          if [ -n "${GPG_PASSPHRASE:-}" ]; then echo "  set:   GPG_PASSPHRASE -- dumps will be encrypted"; else echo "  unset: GPG_PASSPHRASE -- optional; dumps will NOT be encrypted"; fi
+          if [ -n "$missing" ]; then
+            for m in $missing; do echo "::error::Repository secret $m is not set"; done
+            echo ""
+            echo "Missing:$missing"
+            echo "Set them under Settings -> Secrets and variables -> Actions."
+            echo "See docs/BACKUP_GITHUB_ACTIONS.md step 2 for where each value comes from."
+            exit 1
+          fi
+          echo "All required secrets are present."
+
       - uses: actions/checkout@v4
 
       - uses: actions/setup-node@v4
