@@ -45,7 +45,7 @@ const statusBadge = (s: string) => {
 
 export default function HRDashboardPage() {
   const { navigate } = useApp();
-  const { isHR } = useUserRole();
+  const { isHR, isPayrollAdmin } = useUserRole();
   const [stats, setStats] = useState<Stats | null>(null);
   const [loading, setLoading] = useState(true);
 
@@ -171,7 +171,10 @@ export default function HRDashboardPage() {
               'fa-solid fa-hand-holding-dollar',
               '#cf222e',
             )}
-            {statTile(
+            {/* A salary total is a payroll figure, so it follows payroll: the
+                Accountant role, plus admin and super_admin. HR no longer sees
+                it, in step with losing the Payroll and Contracts menus. */}
+            {isPayrollAdmin && statTile(
               'Est. Monthly Payroll',
               fmtCurrency(stats.monthlyPayrollEstimate),
               'fa-solid fa-money-check-dollar',

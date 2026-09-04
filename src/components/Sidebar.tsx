@@ -381,8 +381,10 @@ function getNavConfig(role: string, db: any, hrPending: HrPendingCounts): NavSec
     hr: [
       {
         section: "Main",
+        // No "Dashboard" item here: it pointed at hr-dashboard, the same page
+        // as "HR Dashboard" in the section below, so the menu offered one page
+        // twice under two names. HR lands there anyway (see App.tsx).
         items: [
-          { id: "hr-dashboard", label: "Dashboard", icon: "fa-solid fa-gauge" },
           { id: "profile", label: "My Profile", icon: "fa-solid fa-circle-user" },
           { id: "notifications", label: "Notifications", icon: "fa-solid fa-bullhorn", badge: db.notifications.length },
         ],
