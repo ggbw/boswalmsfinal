@@ -22,6 +22,24 @@ const HR_KEYS = [
   'admin_users',
 ] as const;
 
+/**
+ * Payroll and contracts — carved OUT of the HR role.
+ *
+ * These are salary figures and employment terms. They are handled by the
+ * Accountant role, plus admin and super_admin. HR keeps every other HR
+ * function: employees, leave, loans, documents, attendance, departments.
+ *
+ * Listed separately rather than removed from HR_KEYS because HR_KEYS is also
+ * what a manager gets read access to, and the two need to diverge.
+ */
+const PAYROLL_KEYS = [
+  'payslips',
+  'pay_components',
+  'pay_components_admin',
+  'contracts',
+  'contract_templates',
+] as const;
+
 const SELF_KEYS = [
   'my_payslips',
   'my_leaves',
@@ -42,6 +60,12 @@ export function useUserRole() {
   // intentionally LMS-only and must not grant HR write/admin permissions.
   const isAdmin = isSuperAdmin;
   const isHR = isAdmin || role === 'hr';
+  // The Accountant exists for exactly one purpose: payroll and contracts.
+  const isAccountant = role === 'accountant';
+  // Who may see salary figures and employment terms. Note this is the one
+  // place the plain LMS 'admin' role DOES carry an HR permission — everywhere
+  // else in this module admin is deliberately LMS-only.
+  const isPayrollAdmin = isSuperAdmin || role === 'admin' || isAccountant;
   const isManager = role === 'manager' || role === 'hod' || role === 'hoa';
   // Anyone with a staff or HR role is considered an "employee" for self-service
   const isEmployee =
@@ -53,6 +77,17 @@ export function useUserRole() {
     isHR;
 
   const can = (key: string, action: PermAction = 'read'): boolean => {
+    // Payroll and contracts are decided FIRST and on their own terms, before
+    // the general admin shortcut. Otherwise HR — which passes the isHR test
+    // below — would keep the access this change exists to remove.
+    if ((PAYROLL_KEYS as readonly string[]).includes(key)) return isPayrollAdmin;
+
+    // An Accountant has no other HR permissions. Their own payslip and leave
+    // remain available, like any member of staff.
+    if (isAccountant) {
+      return (SELF_KEYS as readonly string[]).includes(key) && action === 'read';
+    }
+
     if (isAdmin) return true;
     if (isHR && (HR_KEYS as readonly string[]).includes(key)) return true;
     if (isManager && action === 'read' && (HR_KEYS as readonly string[]).includes(key)) return true;
@@ -78,6 +113,8 @@ export function useUserRole() {
   return {
     user,
     profile,
+    isAccountant,
+    isPayrollAdmin,
     role: role ?? null,
     appRole: role ?? null,
     customRoleId: null as string | null,

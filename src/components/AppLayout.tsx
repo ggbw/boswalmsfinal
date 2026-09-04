@@ -66,7 +66,10 @@ import ForcePasswordChange from '@/components/hr/ForcePasswordChange';
 import type { Database } from '@/integrations/supabase/types';
 
 /** The role names the database actually recognises. */
-type AppRole = Database['public']['Enums']['app_role'];
+// 'accountant' is added by 20260821150000. types.ts is generated from the
+// database, so it will not carry the value until those types are regenerated;
+// naming it here keeps the compile-time guard working for every other role.
+type AppRole = Database['public']['Enums']['app_role'] | 'accountant';
 import NotificationBell from '@/components/hr/NotificationBell';
 import ImpersonationBanner from '@/components/hr/ImpersonationBanner';
 import { useAuth } from '@/hooks/useAuth';
@@ -179,6 +182,10 @@ const pageComponents: Record<string, React.ComponentType> = {
  * enum, so this cannot recur.
  */
 const ROLE_PAGES: Record<string, AppRole[]> = {
+  // NOTE: 'hr' was removed from every payroll and contract page below. Salary
+  // figures and employment terms now belong to 'accountant', plus admin and
+  // super_admin. This list is the URL guard — hiding the menu item alone would
+  // leave the pages reachable by typing the address.
   dashboard:      ['admin','super_admin','hr','manager','employee','hod','hoa','lecturer','student','principal','deputy_principal'],
   profile:        ['admin','super_admin','hr','manager','employee','hod','hoa','lecturer','student','principal','deputy_principal'],
   notifications:  ['admin','super_admin','hr','manager','employee','hod','hoa','lecturer','student','principal','deputy_principal'],
@@ -226,14 +233,14 @@ const ROLE_PAGES: Record<string, AppRole[]> = {
   'hr-employee-detail':      ['super_admin','hr','manager'],
   'hr-employee-form':        ['super_admin','hr'],
   'hr-departments':          ['super_admin','hr'],
-  'hr-payslips':             ['super_admin','hr'],
-  'hr-payslip-detail':       ['super_admin','hr'],
-  'hr-payslip-batch':        ['super_admin','hr'],
-  'hr-payroll-report':       ['super_admin','hr','manager'],
-  'hr-pay-components':       ['super_admin','hr'],
-  'hr-contracts':            ['super_admin','hr'],
-  'hr-contract-detail':      ['super_admin','hr'],
-  'hr-contract-templates':   ['super_admin','hr'],
+  'hr-payslips':             ['super_admin','admin','accountant'],
+  'hr-payslip-detail':       ['super_admin','admin','accountant'],
+  'hr-payslip-batch':        ['super_admin','admin','accountant'],
+  'hr-payroll-report':       ['super_admin','admin','accountant'],
+  'hr-pay-components':       ['super_admin','admin','accountant'],
+  'hr-contracts':            ['super_admin','admin','accountant'],
+  'hr-contract-detail':      ['super_admin','admin','accountant'],
+  'hr-contract-templates':   ['super_admin','admin','accountant'],
   'hr-leaves':               ['super_admin','hr','manager'],
   'hr-leave-types':          ['super_admin','hr'],
   'hr-leave-report':         ['super_admin','hr','manager'],

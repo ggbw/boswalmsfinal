@@ -42,7 +42,7 @@ function AuthGate() {
 
   if (!user || !profile) return <LoginScreen />;
 
-  const staffRoles = ["admin", "super_admin", "hr", "manager", "employee", "hod", "hoa", "lecturer", "student", "principal", "deputy_principal"];
+  const staffRoles = ["admin", "super_admin", "hr", "accountant", "manager", "employee", "hod", "hoa", "lecturer", "student", "principal", "deputy_principal"];
 
   // Applicants get their own portal — not the full SMS
   if (role === "applicant" || !role || !staffRoles.includes(role)) {
@@ -69,9 +69,14 @@ function AuthGate() {
   const initialPage =
     role === "hr"
       ? "hr-dashboard"
-      : role === "manager" || role === "employee"
-        ? "my-employee-file"
-        : "dashboard";
+      // An accountant's menu holds only payroll and contracts, so landing them
+      // on "dashboard" would fail the allow-list and drop them on a page they
+      // cannot navigate back from.
+      : role === "accountant"
+        ? "hr-payslips"
+        : role === "manager" || role === "employee"
+          ? "my-employee-file"
+          : "dashboard";
 
   return (
     <AppProvider authUser={authUser} onSignOut={signOut} initialPage={initialPage}>

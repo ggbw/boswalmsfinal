@@ -292,7 +292,8 @@ export default function UserManagementPage() {
                 <option value="deputy_principal">Deputy Principal</option>
                 <option value="hod">HOD</option>
                 <option value="hoa">HOA - Head of Academics</option>
-                <option value="lecturer">Lecturer</option>
+                <option value="accountant">Accountant — payroll &amp; contracts</option>
+              <option value="lecturer">Lecturer</option>
                 <option value="student">Student</option>
               </select>
             </div>
@@ -356,6 +357,7 @@ export default function UserManagementPage() {
               <option value="deputy_principal">Deputy Principal</option>
               <option value="hod">HOD</option>
               <option value="hoa">HOA - Head of Academics</option>
+              <option value="accountant">Accountant — payroll &amp; contracts</option>
               <option value="lecturer">Lecturer</option>
               <option value="student">Student</option>
             </select>

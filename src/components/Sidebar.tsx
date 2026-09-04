@@ -66,25 +66,6 @@ const buildHrManagementSection = (pending: HrPendingCounts): NavSection => ({
       ],
     },
     {
-      id: "hr-group-payroll",
-      label: "Payroll",
-      icon: "fa-solid fa-money-check-dollar",
-      children: [
-        { id: "hr-payslips", label: "Payslips", icon: "fa-solid fa-receipt" },
-        { id: "hr-payroll-report", label: "Payroll Report", icon: "fa-solid fa-file-invoice-dollar" },
-        { id: "hr-pay-components", label: "Pay Components", icon: "fa-solid fa-coins" },
-      ],
-    },
-    {
-      id: "hr-group-contracts",
-      label: "Contracts",
-      icon: "fa-solid fa-file-signature",
-      children: [
-        { id: "hr-contracts", label: "Contracts", icon: "fa-solid fa-file-signature" },
-        { id: "hr-contract-templates", label: "Contract Templates", icon: "fa-solid fa-file-lines" },
-      ],
-    },
-    {
       id: "hr-group-leaves",
       label: "Leaves",
       icon: "fa-solid fa-calendar-days",
@@ -149,6 +130,42 @@ const buildHrManagementSection = (pending: HrPendingCounts): NavSection => ({
   ],
 });
 
+/**
+ * Payroll and contracts — salary figures and employment terms.
+ *
+ * Deliberately NOT part of the HR Management section any more. HR keeps
+ * employees, leave, loans, documents and attendance; this section belongs to
+ * the Accountant role, plus admin and super_admin.
+ *
+ * Removing it from the menu is only half of it — ROLE_PAGES in AppLayout
+ * refuses these pages by URL as well, and the database refuses the rows. A
+ * hidden menu item is not an access control.
+ */
+const PAYROLL_CONTRACTS_SECTION: NavSection = {
+  section: "Payroll & Contracts",
+  items: [
+    {
+      id: "hr-group-payroll",
+      label: "Payroll",
+      icon: "fa-solid fa-money-check-dollar",
+      children: [
+        { id: "hr-payslips", label: "Payslips", icon: "fa-solid fa-receipt" },
+        { id: "hr-payroll-report", label: "Payroll Report", icon: "fa-solid fa-file-invoice-dollar" },
+        { id: "hr-pay-components", label: "Pay Components", icon: "fa-solid fa-coins" },
+      ],
+    },
+    {
+      id: "hr-group-contracts",
+      label: "Contracts",
+      icon: "fa-solid fa-file-signature",
+      children: [
+        { id: "hr-contracts", label: "Contracts", icon: "fa-solid fa-file-signature" },
+        { id: "hr-contract-templates", label: "Contract Templates", icon: "fa-solid fa-file-lines" },
+      ],
+    },
+  ],
+};
+
 const SELF_SERVICE_SECTION: NavSection = {
   section: "Self Service",
   items: [
@@ -206,8 +223,9 @@ function getNavConfig(role: string, db: any, hrPending: HrPendingCounts): NavSec
   ];
 
   const configs: Record<string, NavSection[]> = {
-    admin: adminLmsSections,
-    super_admin: [...adminLmsSections, HR_MANAGEMENT_SECTION],
+    // Admin gains payroll and contracts, but no other HR function.
+    admin: [...adminLmsSections, PAYROLL_CONTRACTS_SECTION],
+    super_admin: [...adminLmsSections, PAYROLL_CONTRACTS_SECTION, HR_MANAGEMENT_SECTION],
     // Read-only oversight. The principal sees admissions and operational health;
     // the deputy's remit is academic, so admissions is omitted there.
     principal: [
@@ -354,6 +372,11 @@ function getNavConfig(role: string, db: any, hrPending: HrPendingCounts): NavSec
           { id: "transcripts", label: "My Transcript", icon: "fa-solid fa-scroll" },
         ],
       },
+    ],
+    // Accountant: payroll and contracts only. No employees, no leave, no
+    // loans, no documents — those stay with HR.
+    accountant: [
+      PAYROLL_CONTRACTS_SECTION,
     ],
     hr: [
       {
