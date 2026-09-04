@@ -407,7 +407,7 @@ export async function saveBackupToUsb(opts: SaveBackupOptions = {}): Promise<Bac
   });
 
   const byteStream = compressed
-    ? tapped.pipeThrough(new CompressionStream('gzip'))
+    ? tapped.pipeThrough(new CompressionStream('gzip') as unknown as ReadableWritablePair<Uint8Array, Uint8Array>)
     : tapped;
 
   // ── Drain it onto disk ───────────────────────────────────────────────────
@@ -423,7 +423,7 @@ export async function saveBackupToUsb(opts: SaveBackupOptions = {}): Promise<Bac
       if (!value) continue;
       hasher.update(value);
       bytesWritten += value.length;
-      if (writable) await writable.write(value);
+      if (writable) await writable.write(value as unknown as BufferSource);
       else fallbackChunks.push(value);
       report({ phase: 'Writing…', rowsDone, rowsExpected, bytesWritten });
     }
@@ -545,7 +545,7 @@ export async function verifyBackupFile(
   let plain: ReadableStream<Uint8Array>;
   try {
     plain = looksCompressed && typeof DecompressionStream !== 'undefined'
-      ? forRead.pipeThrough(new DecompressionStream('gzip'))
+      ? forRead.pipeThrough(new DecompressionStream('gzip') as unknown as ReadableWritablePair<Uint8Array, Uint8Array>)
       : forRead;
   } catch {
     problems.push('This browser cannot decompress .gz files.');
@@ -649,7 +649,7 @@ export async function inspectBackupFile(file: File): Promise<RestoreInspection> 
 async function readManifest(file: File): Promise<BackupManifest | null> {
   const raw = file.stream() as unknown as ReadableStream<Uint8Array>;
   const plain = /\.gz$/i.test(file.name) && typeof DecompressionStream !== 'undefined'
-    ? raw.pipeThrough(new DecompressionStream('gzip'))
+    ? raw.pipeThrough(new DecompressionStream('gzip') as unknown as ReadableWritablePair<Uint8Array, Uint8Array>)
     : raw;
   const decoder = new TextDecoder();
   for await (const line of ndjsonLines(plain)) {
@@ -719,7 +719,7 @@ export async function restoreFromFile(
   // so a single forward pass inserts parents before children.
   const raw = file.stream() as unknown as ReadableStream<Uint8Array>;
   const plain = /\.gz$/i.test(file.name) && typeof DecompressionStream !== 'undefined'
-    ? raw.pipeThrough(new DecompressionStream('gzip'))
+    ? raw.pipeThrough(new DecompressionStream('gzip') as unknown as ReadableWritablePair<Uint8Array, Uint8Array>)
     : raw;
 
   const decoder = new TextDecoder();
