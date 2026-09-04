@@ -10,7 +10,7 @@ export type Database = {
   // Allows to automatically instantiate createClient with right options
   // instead of createClient<Database, { PostgrestVersion: 'XX' }>(URL, KEY)
   __InternalSupabase: {
-    PostgrestVersion: "14.1"
+    PostgrestVersion: "14.5"
   }
   public: {
     Tables: {
@@ -504,6 +504,66 @@ export type Database = {
           saturday_work_start_time?: string | null
           updated_at?: string
           work_start_time?: string
+        }
+        Relationships: []
+      }
+      backup_runs: {
+        Row: {
+          actor_id: string | null
+          actor_label: string | null
+          artifact: string | null
+          checksum: string | null
+          created_at: string
+          destination: string | null
+          finished_at: string | null
+          id: string
+          kind: string
+          message: string | null
+          metadata: Json
+          row_count: number | null
+          size_bytes: number | null
+          started_at: string
+          status: string
+          storage_path: string | null
+          table_count: number | null
+        }
+        Insert: {
+          actor_id?: string | null
+          actor_label?: string | null
+          artifact?: string | null
+          checksum?: string | null
+          created_at?: string
+          destination?: string | null
+          finished_at?: string | null
+          id?: string
+          kind: string
+          message?: string | null
+          metadata?: Json
+          row_count?: number | null
+          size_bytes?: number | null
+          started_at?: string
+          status?: string
+          storage_path?: string | null
+          table_count?: number | null
+        }
+        Update: {
+          actor_id?: string | null
+          actor_label?: string | null
+          artifact?: string | null
+          checksum?: string | null
+          created_at?: string
+          destination?: string | null
+          finished_at?: string | null
+          id?: string
+          kind?: string
+          message?: string | null
+          metadata?: Json
+          row_count?: number | null
+          size_bytes?: number | null
+          started_at?: string
+          status?: string
+          storage_path?: string | null
+          table_count?: number | null
         }
         Relationships: []
       }
@@ -2918,6 +2978,32 @@ export type Database = {
     }
     Functions: {
       activate_student_account: { Args: { p_user_id?: string }; Returns: Json }
+      backup_clear_table: { Args: { _table: string }; Returns: number }
+      backup_health: { Args: never; Returns: Json }
+      backup_row_counts: {
+        Args: never
+        Returns: {
+          exact_rows: number
+          table_name: string
+        }[]
+      }
+      backup_table_columns: {
+        Args: never
+        Returns: {
+          column_name: string
+          is_generated: boolean
+          table_name: string
+        }[]
+      }
+      backup_table_order: {
+        Args: never
+        Returns: {
+          approx_rows: number
+          depth: number
+          pk_columns: string[]
+          table_name: string
+        }[]
+      }
       can_view_school: { Args: { _uid: string }; Returns: boolean }
       check_username_available: {
         Args: { p_exclude_id?: string; p_username: string }
@@ -2999,9 +3085,28 @@ export type Database = {
       is_oversight_only: { Args: { _uid: string }; Returns: boolean }
       is_own_attendance_code: { Args: { _code: string }; Returns: boolean }
       is_own_employee_id: { Args: { _employee_id: string }; Returns: boolean }
+      is_payroll_admin: { Args: { _uid: string }; Returns: boolean }
       is_school_staff: { Args: { _uid: string }; Returns: boolean }
       my_student_number: { Args: { _uid: string }; Returns: string }
       my_student_ref: { Args: { _uid: string }; Returns: string }
+      record_backup_run: {
+        Args: {
+          p_actor_label?: string
+          p_artifact?: string
+          p_checksum?: string
+          p_destination?: string
+          p_id?: string
+          p_kind?: string
+          p_message?: string
+          p_metadata?: Json
+          p_row_count?: number
+          p_size_bytes?: number
+          p_status?: string
+          p_storage_path?: string
+          p_table_count?: number
+        }
+        Returns: string
+      }
     }
     Enums: {
       app_role:
@@ -3016,6 +3121,7 @@ export type Database = {
         | "employee"
         | "principal"
         | "deputy_principal"
+        | "accountant"
     }
     CompositeTypes: {
       [_ in never]: never
@@ -3031,12 +3137,12 @@ export type Tables<
   DefaultSchemaTableNameOrOptions extends
     | keyof (DefaultSchema["Tables"] & DefaultSchema["Views"])
     | { schema: keyof DatabaseWithoutInternals },
-  TableName extends DefaultSchemaTableNameOrOptions extends {
+  TableName extends (DefaultSchemaTableNameOrOptions extends {
     schema: keyof DatabaseWithoutInternals
   }
     ? keyof (DatabaseWithoutInternals[DefaultSchemaTableNameOrOptions["schema"]]["Tables"] &
         DatabaseWithoutInternals[DefaultSchemaTableNameOrOptions["schema"]]["Views"])
-    : never = never,
+    : never) = never,
 > = DefaultSchemaTableNameOrOptions extends {
   schema: keyof DatabaseWithoutInternals
 }
@@ -3060,11 +3166,11 @@ export type TablesInsert<
   DefaultSchemaTableNameOrOptions extends
     | keyof DefaultSchema["Tables"]
     | { schema: keyof DatabaseWithoutInternals },
-  TableName extends DefaultSchemaTableNameOrOptions extends {
+  TableName extends (DefaultSchemaTableNameOrOptions extends {
     schema: keyof DatabaseWithoutInternals
   }
     ? keyof DatabaseWithoutInternals[DefaultSchemaTableNameOrOptions["schema"]]["Tables"]
-    : never = never,
+    : never) = never,
 > = DefaultSchemaTableNameOrOptions extends {
   schema: keyof DatabaseWithoutInternals
 }
@@ -3085,11 +3191,11 @@ export type TablesUpdate<
   DefaultSchemaTableNameOrOptions extends
     | keyof DefaultSchema["Tables"]
     | { schema: keyof DatabaseWithoutInternals },
-  TableName extends DefaultSchemaTableNameOrOptions extends {
+  TableName extends (DefaultSchemaTableNameOrOptions extends {
     schema: keyof DatabaseWithoutInternals
   }
     ? keyof DatabaseWithoutInternals[DefaultSchemaTableNameOrOptions["schema"]]["Tables"]
-    : never = never,
+    : never) = never,
 > = DefaultSchemaTableNameOrOptions extends {
   schema: keyof DatabaseWithoutInternals
 }
@@ -3110,11 +3216,11 @@ export type Enums<
   DefaultSchemaEnumNameOrOptions extends
     | keyof DefaultSchema["Enums"]
     | { schema: keyof DatabaseWithoutInternals },
-  EnumName extends DefaultSchemaEnumNameOrOptions extends {
+  EnumName extends (DefaultSchemaEnumNameOrOptions extends {
     schema: keyof DatabaseWithoutInternals
   }
     ? keyof DatabaseWithoutInternals[DefaultSchemaEnumNameOrOptions["schema"]]["Enums"]
-    : never = never,
+    : never) = never,
 > = DefaultSchemaEnumNameOrOptions extends {
   schema: keyof DatabaseWithoutInternals
 }
@@ -3127,11 +3233,11 @@ export type CompositeTypes<
   PublicCompositeTypeNameOrOptions extends
     | keyof DefaultSchema["CompositeTypes"]
     | { schema: keyof DatabaseWithoutInternals },
-  CompositeTypeName extends PublicCompositeTypeNameOrOptions extends {
+  CompositeTypeName extends (PublicCompositeTypeNameOrOptions extends {
     schema: keyof DatabaseWithoutInternals
   }
     ? keyof DatabaseWithoutInternals[PublicCompositeTypeNameOrOptions["schema"]]["CompositeTypes"]
-    : never = never,
+    : never) = never,
 > = PublicCompositeTypeNameOrOptions extends {
   schema: keyof DatabaseWithoutInternals
 }
@@ -3155,6 +3261,7 @@ export const Constants = {
         "employee",
         "principal",
         "deputy_principal",
+        "accountant",
       ],
     },
   },
