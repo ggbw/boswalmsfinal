@@ -73,7 +73,7 @@ function AuthGate() {
       // on "dashboard" would fail the allow-list and drop them on a page they
       // cannot navigate back from.
       : role === "accountant"
-        ? "hr-payslips"
+        ? "accountant-dashboard"
         : role === "manager" || role === "employee"
           ? "my-employee-file"
           : "dashboard";

@@ -62,6 +62,7 @@ import MyLeavesPage from '@/pages/hr/self-service/MyLeavesPage';
 import MyLoansPage from '@/pages/hr/self-service/MyLoansPage';
 import MyPayslipsPage from '@/pages/hr/self-service/MyPayslipsPage';
 import MyEmployeeFilePage from '@/pages/hr/self-service/MyEmployeeFilePage';
+import AccountantDashboardPage from '@/pages/hr/AccountantDashboardPage';
 import ForcePasswordChange from '@/components/hr/ForcePasswordChange';
 import type { Database } from '@/integrations/supabase/types';
 
@@ -160,6 +161,7 @@ const pageComponents: Record<string, React.ComponentType> = {
   'hr-workflows': WorkflowsPage,
   'hr-workflow-editor': WorkflowEditorPage,
   'hr-employee-groups': EmployeeGroupsPage,
+  'accountant-dashboard': AccountantDashboardPage,
   'hr-user-management': HRUserManagementPage,
   'my-leaves': MyLeavesPage,
   'my-loans': MyLoansPage,
@@ -233,6 +235,7 @@ const ROLE_PAGES: Record<string, AppRole[]> = {
   'hr-employee-detail':      ['super_admin','hr','manager'],
   'hr-employee-form':        ['super_admin','hr'],
   'hr-departments':          ['super_admin','hr'],
+  'accountant-dashboard':    ['super_admin','admin','accountant'],
   'hr-payslips':             ['super_admin','admin','accountant'],
   'hr-payslip-detail':       ['super_admin','admin','accountant'],
   'hr-payslip-batch':        ['super_admin','admin','accountant'],

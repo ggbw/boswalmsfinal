@@ -144,6 +144,9 @@ const buildHrManagementSection = (pending: HrPendingCounts): NavSection => ({
 const PAYROLL_CONTRACTS_SECTION: NavSection = {
   section: "Payroll & Contracts",
   items: [
+    // First, so it reads as the section's home — and it is where an accountant
+    // lands, so the highlighted item matches the page on sign-in.
+    { id: "accountant-dashboard", label: "Accountant Dashboard", icon: "fa-solid fa-chart-line" },
     {
       id: "hr-group-payroll",
       label: "Payroll",
