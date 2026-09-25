@@ -23,6 +23,11 @@ export interface PayLine {
   isTaxable?: boolean;
 }
 
+// computePayslip always adds Basic Salary from the contract wage. A contract
+// line using the BASIC component would add it a second time, so contract lines
+// with this code are skipped when a payslip is built from a contract.
+export const BASIC_COMPONENT_CODE = 'BASIC';
+
 export function computePayslip(
   basicSalary: number,
   earnings: PayLine[],

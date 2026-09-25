@@ -3,7 +3,7 @@ import { useApp } from '@/context/AppContext';
 import { useUserRole } from '@/hooks/hr/useUserRole';
 import { useEmployees } from '@/hooks/hr/useEmployees';
 import { usePayComponents } from '@/hooks/hr/usePayComponents';
-import { computePayslip, fmtMoney, type PayLine } from '@/lib/hr/payrollEngine';
+import { BASIC_COMPONENT_CODE, computePayslip, fmtMoney, type PayLine } from '@/lib/hr/payrollEngine';
 import { fmtCurrency, fmtDate } from '@/lib/hr/leaveUtils';
 import { calcSeveranceBenefit, splitSeverance } from '@/lib/hr/severanceBenefit';
 import { supabase } from '@/integrations/supabase/client';
@@ -266,7 +266,7 @@ export default function PayslipDetailPage() {
         const rows = (lines ?? []) as unknown as LineRow[];
         const mapLine = (l: LineRow): PayLine | null => {
           const def = l.pay_component_defs;
-          if (!def?.code) return null;
+          if (!def?.code || def.code === BASIC_COMPONENT_CODE) return null;
           return {
             description: def.name ?? def.code,
             code: def.code,
@@ -561,7 +561,7 @@ export default function PayslipDetailPage() {
           <div className="page-sub">HR Management · Payslip</div>
         </div>
         <div style={{ display: 'flex', gap: 8 }}>
-          <button className="btn btn-outline btn-sm" onClick={() => navigate('hr-payslips')}>
+          <button className="btn btn-outline btn-sm" onClick={() => navigate(writeOk ? 'hr-payslips' : 'my-payslips')}>
             <i className="fa-solid fa-arrow-left" /> Back
           </button>
           {form.id && (

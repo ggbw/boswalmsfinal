@@ -249,6 +249,7 @@ function getNavConfig(role: string, db: any, hrPending: HrPendingCounts): NavSec
         { id: "timetable", label: "Timetable", icon: "fa-solid fa-calendar-days" },
         { id: "admissions", label: "Admissions", icon: "fa-solid fa-door-open" },
       ] },
+      SELF_SERVICE_SECTION,
     ],
     deputy_principal: [
       { section: "Main", items: [
@@ -267,6 +268,7 @@ function getNavConfig(role: string, db: any, hrPending: HrPendingCounts): NavSec
         { id: "attendance", label: "Attendance", icon: "fa-solid fa-clipboard-check" },
         { id: "timetable", label: "Timetable", icon: "fa-solid fa-calendar-days" },
       ] },
+      SELF_SERVICE_SECTION,
     ],
     hod: [
       { section: "Main", items: [{ id: "dashboard", label: "Dashboard", icon: "fa-solid fa-gauge" }] },

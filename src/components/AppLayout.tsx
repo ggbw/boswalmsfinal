@@ -237,7 +237,10 @@ const ROLE_PAGES: Record<string, AppRole[]> = {
   'hr-departments':          ['super_admin','hr'],
   'accountant-dashboard':    ['super_admin','admin','accountant'],
   'hr-payslips':             ['super_admin','admin','accountant'],
-  'hr-payslip-detail':       ['super_admin','admin','accountant'],
+  // Self-service roles open it read-only from My Payslips ("View"). Every field
+  // and action on the page is gated on can('payslips','write'), and RLS
+  // (payslips_self_select) returns only the viewer's own payslips.
+  'hr-payslip-detail':       ['super_admin','admin','accountant','hr','manager','employee','lecturer','hod','hoa','principal','deputy_principal'],
   'hr-payslip-batch':        ['super_admin','admin','accountant'],
   'hr-payroll-report':       ['super_admin','admin','accountant'],
   'hr-pay-components':       ['super_admin','admin','accountant'],
@@ -255,7 +258,7 @@ const ROLE_PAGES: Record<string, AppRole[]> = {
   'hr-document-settings':    ['super_admin','hr'],
   // Also reachable by individual staff via Self Service → My Attendance,
   // where HRAttendanceReportPage self-filters to just their own punches.
-  'hr-attendance-report':    ['super_admin','hr','manager','employee','lecturer','hod','hoa'],
+  'hr-attendance-report':    ['super_admin','hr','manager','employee','lecturer','hod','hoa','principal','deputy_principal'],
   'hr-attendance-live':      ['super_admin','hr','manager'],
   'hr-attendance-records':   ['super_admin','hr','manager'],
   'hr-attendance-settings':  ['super_admin','hr'],
@@ -266,12 +269,14 @@ const ROLE_PAGES: Record<string, AppRole[]> = {
   'hr-config':               ['super_admin','hr'],
 
   // Employee self-service — visible to anyone with an HR self-service role.
-  // 'admin' is intentionally excluded: admin is LMS-only.
-  'my-payslips':       ['super_admin','hr','manager','employee','lecturer','hod','hoa'],
-  'my-leaves':         ['super_admin','hr','manager','employee','lecturer','hod','hoa'],
-  'my-loans':          ['super_admin','hr','manager','employee','lecturer','hod','hoa'],
-  'my-employee-file':  ['super_admin','hr','manager','employee','lecturer','hod','hoa'],
-  'my-advance-salary': ['super_admin','hr','manager','employee','lecturer','hod','hoa'],
+  // 'admin' is intentionally excluded: admin is LMS-only. Principal and deputy
+  // are staff too, and each user holds exactly one role (useAuth reads it with
+  // .single()), so they are listed here rather than given a second role.
+  'my-payslips':       ['super_admin','hr','manager','employee','lecturer','hod','hoa','principal','deputy_principal'],
+  'my-leaves':         ['super_admin','hr','manager','employee','lecturer','hod','hoa','principal','deputy_principal'],
+  'my-loans':          ['super_admin','hr','manager','employee','lecturer','hod','hoa','principal','deputy_principal'],
+  'my-employee-file':  ['super_admin','hr','manager','employee','lecturer','hod','hoa','principal','deputy_principal'],
+  'my-advance-salary': ['super_admin','hr','manager','employee','lecturer','hod','hoa','principal','deputy_principal'],
 };
 
 /**

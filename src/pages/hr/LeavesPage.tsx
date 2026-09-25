@@ -89,20 +89,21 @@ export default function LeavesPage() {
 
   // Employees with an active contract — drives who can be picked when
   // applying for leave on behalf. Suspended/inactive contracts hide the
-  // employee from the new-leave dropdown.
+  // employee from the new-leave dropdown. Read through an RPC because HR has
+  // no SELECT on contracts (wages are Accountant-only); querying the table
+  // directly returned nothing for HR and emptied the dropdown.
   const [activeContractEmpIds, setActiveContractEmpIds] = useState<Set<string>>(new Set());
   useEffect(() => {
     void supabase
-      .from('contracts')
-      .select('employee_id')
-      .eq('status', 'active')
-      .then(({ data }) => {
-        const ids = ((data ?? []) as Array<{ employee_id: string | null }>)
-          .map((r) => r.employee_id)
-          .filter((v): v is string => !!v);
-        setActiveContractEmpIds(new Set(ids));
+      .rpc('active_contract_employee_ids')
+      .then(({ data, error }) => {
+        if (error) {
+          toast(`Could not load employees on active contracts: ${error.message}`, 'error');
+          return;
+        }
+        setActiveContractEmpIds(new Set((data ?? []) as string[]));
       });
-  }, []);
+  }, [toast]);
 
   // Allocations (balances)
   const [allocations, setAllocations] = useState<Allocation[]>([]);

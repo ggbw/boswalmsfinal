@@ -2,7 +2,7 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useApp } from '@/context/AppContext';
 import { useUserRole } from '@/hooks/hr/useUserRole';
 import { useEmployees } from '@/hooks/hr/useEmployees';
-import { computePayslip, fmtMoney, type PayLine } from '@/lib/hr/payrollEngine';
+import { BASIC_COMPONENT_CODE, computePayslip, fmtMoney, type PayLine } from '@/lib/hr/payrollEngine';
 import { fmtCurrency } from '@/lib/hr/leaveUtils';
 import { supabase } from '@/integrations/supabase/client';
 import { nextPayslipReference, type PayslipBreakdownLine } from '@/hooks/hr/usePayslips';
@@ -97,7 +97,7 @@ export default function PayslipBatchPage() {
 
     const mapLine = (l: LineRow): PayLine | null => {
       const def = l.pay_component_defs;
-      if (!def?.code) return null;
+      if (!def?.code || def.code === BASIC_COMPONENT_CODE) return null;
       return {
         description: def.name ?? def.code,
         code: def.code,

@@ -2978,6 +2978,7 @@ export type Database = {
     }
     Functions: {
       activate_student_account: { Args: { p_user_id?: string }; Returns: Json }
+      active_contract_employee_ids: { Args: never; Returns: string[] }
       backup_clear_table: { Args: { _table: string }; Returns: number }
       backup_health: { Args: never; Returns: Json }
       backup_row_counts: {
