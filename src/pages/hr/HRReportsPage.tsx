@@ -45,7 +45,11 @@ interface LoanRow {
 
 export default function HRReportsPage() {
   const { toast, activePage } = useApp();
-  const { isHR } = useUserRole();
+  const { isHR, isPayrollAdmin } = useUserRole();
+  // Payroll is the Accountant's report; leaves and loans stay with HR.
+  const visibleTabs = (['payroll', 'leaves', 'loans'] as ReportType[]).filter((t) =>
+    t === 'payroll' ? isPayrollAdmin : isHR,
+  );
   // Pre-select the tab matching the sidebar entry that opened this page so
   // "Loan Report" lands on Loans, "Payroll Report" lands on Payroll, etc.
   const initialTab: ReportType =
@@ -191,7 +195,7 @@ export default function HRReportsPage() {
     URL.revokeObjectURL(url);
   };
 
-  if (!isHR) {
+  if (!visibleTabs.includes(tab)) {
     return <div className="card" style={{ padding: 32, textAlign: 'center' }}>Permission denied.</div>;
   }
 
@@ -208,7 +212,7 @@ export default function HRReportsPage() {
       </div>
 
       <div className="tabs">
-        {(['payroll', 'leaves', 'loans'] as ReportType[]).map((t) => (
+        {visibleTabs.map((t) => (
           <div
             key={t}
             className={`tab ${tab === t ? 'active' : ''}`}
