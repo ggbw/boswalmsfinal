@@ -3,6 +3,7 @@ import { useApp } from '@/context/AppContext';
 import { supabase } from '@/integrations/supabase/client';
 import { getScopedClasses, isReadOnlyOversight } from '@/lib/scope';
 import { downloadCsv, slug } from '@/lib/csv';
+import { buildRegisterGrid, downloadRegisterXlsx, printRegisterPdf, type RegisterMeta } from '@/lib/registerExport';
 import { useRowSelection } from '@/lib/useRowSelection';
 
 type Session = 'start' | 'end';
@@ -297,7 +298,7 @@ function computeRange(period: 'day' | 'week' | 'month', dateStr: string): { from
 }
 
 function AttendanceSummary({ availableClasses }: { availableClasses: ClassRow[] }) {
-  const { db } = useApp();
+  const { db, toast } = useApp();
   const [cls, setCls] = useState(availableClasses[0]?.id || '');
   const [moduleId, setModuleId] = useState('');
   const [period, setPeriod] = useState<'day' | 'week' | 'month'>('month');
@@ -345,6 +346,29 @@ function AttendanceSummary({ availableClasses }: { availableClasses: ClassRow[] 
   // filter — so the file always matches what the person was looking at.
   const className = availableClasses.find(c => c.id === cls)?.name || 'Class';
   const moduleName = moduleId ? (db.modules.find(m => m.id === moduleId)?.name || 'Module') : 'All modules';
+
+  const exportBase = `attendance-${slug(className)}-${slug(moduleName)}-${range.from}-to-${range.to}`;
+  const exportMeta: RegisterMeta = {
+    title: 'Boswa CIB — Class Register', className, moduleName,
+    periodLabel: range.label, from: range.from, to: range.to,
+  };
+  const exportSummary = () => rows.map(r => ({
+    name: r.s.name, studentId: r.s.studentId,
+    present: r.present, absent: r.absent, late: r.late, total: r.total, rate: r.rate,
+  }));
+  const exportGrid = () => buildRegisterGrid(rows.map(r => r.s), recs);
+
+  const handleExportXlsx = () => {
+    if (rows.length === 0) return;
+    downloadRegisterXlsx(`${exportBase}.xlsx`, exportMeta, exportSummary(), exportGrid());
+  };
+
+  const handleExportPdf = () => {
+    if (rows.length === 0) return;
+    if (!printRegisterPdf(`${exportBase}.pdf`, exportMeta, exportSummary(), exportGrid())) {
+      toast('Allow pop-ups for this site to download the PDF.', 'error');
+    }
+  };
 
   const handleExport = () => {
     if (rows.length === 0) return;
@@ -430,6 +454,24 @@ function AttendanceSummary({ availableClasses }: { availableClasses: ClassRow[] 
           title={rows.length === 0 ? 'Nothing to export' : `Download ${rows.length} row(s) as CSV`}
         >
           <i className="fa-solid fa-download" style={{ marginRight: 6 }} /> Export CSV
+        </button>
+        <button
+          className="btn btn-outline btn-sm"
+          data-testid="attendance-export-xlsx"
+          onClick={handleExportXlsx}
+          disabled={rows.length === 0}
+          title={rows.length === 0 ? 'Nothing to export' : 'Download a formatted Excel register'}
+        >
+          <i className="fa-solid fa-file-excel" style={{ marginRight: 6 }} /> Excel
+        </button>
+        <button
+          className="btn btn-outline btn-sm"
+          data-testid="attendance-export-pdf"
+          onClick={handleExportPdf}
+          disabled={rows.length === 0}
+          title={rows.length === 0 ? 'Nothing to export' : 'Open a print-ready register to save as PDF'}
+        >
+          <i className="fa-solid fa-file-pdf" style={{ marginRight: 6 }} /> PDF
         </button>
       </div>
 

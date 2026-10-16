@@ -192,7 +192,7 @@ export default function ReportsPage() {
     rows.forEach((r) => {
       gradeCounts[r.decision] = (gradeCounts[r.decision] || 0) + 1;
     });
-    // Pass rate uses the shared pass mark (40%): a fail is any mark below it.
+    // Pass rate uses the shared pass mark (50%): a fail is any mark below it.
     const failCount = rows.filter((r) => r.moduleMark < PASS_MARK).length;
     const passPct = students.length
       ? Math.round(((students.length - failCount) / students.length) * 100)

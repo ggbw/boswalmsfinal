@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useApp } from "@/context/AppContext";
 import { grade, gradeColor } from "@/data/db";
 import { supabase } from "@/integrations/supabase/client";
@@ -6,6 +6,8 @@ import { cleanStudentId } from "@/lib/studentId";
 import { getScopedStudents, isAdminRole } from '@/lib/scope';
 import { useAssessmentMarks } from "@/hooks/useAssessmentMarks";
 import { studentModuleResults } from "@/lib/studentMarks";
+import { signedUrl } from "@/lib/storage";
+import { StudentImportDialog, StudentPhotoUploadDialog } from "@/components/students/StudentBulkTools";
 
 /**
  * Student IDs are hand-typed in this form, and two in the live data ended up
@@ -381,7 +383,8 @@ export default function StudentsPage() {
               year: cls?.year || 1,
               semester: cls?.semester || 1,
               status: "active",
-              enrolment_date: enrolmentDate,
+              // A date column: an empty string is rejected, so no date is null.
+              enrolment_date: enrolmentDate || null,
             });
             if (error) {
               toast(error.message, "error");
@@ -416,9 +419,21 @@ export default function StudentsPage() {
             <div className="page-sub">{filtered.length} students</div>
           </div>
           {isAdminRole(role) && (
-            <button className="btn btn-primary btn-sm" onClick={showAddStudent}>
-              <i className="fa-solid fa-user-plus" /> Add Student
-            </button>
+            <div style={{ display: "flex", gap: 6 }}>
+              <button className="btn btn-outline btn-sm" data-testid="student-import"
+                      onClick={() => showModal("Import Students",
+                        <StudentImportDialog db={db} toast={toast} onDone={() => { closeModal(); reloadDb(); }} />, "large")}>
+                <i className="fa-solid fa-file-import" /> Import
+              </button>
+              <button className="btn btn-outline btn-sm" data-testid="student-photos-upload"
+                      onClick={() => showModal("Upload Student Photos",
+                        <StudentPhotoUploadDialog db={db} toast={toast} onDone={closeModal} />, "large")}>
+                <i className="fa-solid fa-camera" /> Photos
+              </button>
+              <button className="btn btn-primary btn-sm" data-testid="student-create" onClick={showAddStudent}>
+                <i className="fa-solid fa-user-plus" /> Add Student
+              </button>
+            </div>
           )}
         </div>
 
@@ -669,12 +684,7 @@ function StudentProfilePanel({ student: s, db, role, onClose, onEdit }: any) {
       {/* Header */}
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 20 }}>
         <div style={{ display: "flex", gap: 14, alignItems: "center" }}>
-          <div
-            className="avatar"
-            style={{ background: s.gender === "Female" ? "#8250df" : "#1f6feb", width: 52, height: 52, fontSize: 20 }}
-          >
-            {s.name[0]}
-          </div>
+          <StudentPhoto studentRef={s.id} name={s.name} gender={s.gender} />
           <div>
             <div style={{ fontSize: 18, fontWeight: 700 }}>{s.name}</div>
             <div style={{ fontSize: 12, color: "var(--text2)", marginTop: 2 }}>{s.studentId}</div>
@@ -864,6 +874,29 @@ function StudentProfileFallback() {
     <div className="card">
       <div className="page-title">My Profile</div>
       <p style={{ marginTop: 10 }}>{currentUser?.name}</p>
+    </div>
+  );
+}
+
+/** The student's profile photo when one has been uploaded, otherwise their initial. */
+function StudentPhoto({ studentRef, name, gender }: { studentRef: string; name: string; gender: string }) {
+  const [url, setUrl] = useState("");
+  useEffect(() => {
+    let cancelled = false;
+    setUrl("");
+    signedUrl("student-photos", `${studentRef}/profile_photo.webp`).then(u => { if (!cancelled) setUrl(u); });
+    return () => { cancelled = true; };
+  }, [studentRef]);
+
+  if (url) {
+    return (
+      <img src={url} alt={name} onError={() => setUrl("")}
+           style={{ width: 52, height: 52, borderRadius: "50%", objectFit: "cover" }} />
+    );
+  }
+  return (
+    <div className="avatar" style={{ background: gender === "Female" ? "#8250df" : "#1f6feb", width: 52, height: 52, fontSize: 20 }}>
+      {name[0]}
     </div>
   );
 }

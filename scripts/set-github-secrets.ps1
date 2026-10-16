@@ -80,7 +80,7 @@ if (Test-Path $conf) {
 }
 
 $secrets['RCLONE_REMOTE'] = 'gdrive:Supabase-Backups'
-$secrets['SUPABASE_URL']  = 'https://gmdbrgjxdeztgzvqsaaj.supabase.co'
+$secrets['SUPABASE_URL']  = 'https://dwavbotriuabrvhqeshm.supabase.co'
 
 $envLocal = Join-Path $PSScriptRoot '..\.env.local'
 if (Test-Path $envLocal) {

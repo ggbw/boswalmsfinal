@@ -1,0 +1,30 @@
+-- ════════════════════════════════════════════════════════════════════════════
+-- Boswa LMS — UAT step 3: wipe the UAT data   (run ONCE, at go-live)
+-- ════════════════════════════════════════════════════════════════════════════
+--
+-- Before running:
+--   1. Run 02_check_uat_changes.sql and read the results.
+--   2. Make sure nobody is using the LMS (announce a 15-minute window).
+--
+-- What it does, in a single transaction:
+--   a. puts back every live LMS row that UAT edited or deleted
+--   b. deletes every LMS row UAT created
+--   c. deletes the login accounts created during UAT, except those tied to
+--      HR or payroll, and any you list in keep_emails
+--   d. checks that every LMS table now matches the snapshot exactly. If one
+--      row differs, it raises an error and NOTHING is changed.
+--
+-- HR, payroll, leave, staff attendance, workflows and settings are never
+-- touched. Neither are code, tables, columns, policies or functions added
+-- during UAT: fixes made because of UAT are live and stay. Only data rows are
+-- put back. If 02 shows "[new columns" or "[new table" lines, record them
+-- first (see README) so their migration data is kept.
+--
+-- To keep real accounts that step 2 marked "delete", list their emails:
+--   select * from uat_snapshot.restore('WIPE UAT DATA', array['new.lecturer@boswa.ac.bw']);
+
+select * from uat_snapshot.restore('WIPE UAT DATA');
+
+-- Afterwards, this must show 0 / 0 / 0 on every LMS table:
+--   select * from uat_snapshot.diff();
+-- Then delete the files listed by uat_snapshot.new_files() in Lovable Cloud > Storage.

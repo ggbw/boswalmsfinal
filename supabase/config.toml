@@ -1,12 +1,13 @@
-# Active project: the self-managed Supabase project. Its schema and data were
-# created outside this CLI, so `supabase_migrations.schema_migrations` does not
-# know about the 71 files in ./migrations.
+# Active project: boswa-live, the client-owned Supabase project (Frankfurt),
+# live since the move off Lovable Cloud in October 2026. Its schema and data
+# were restored from a Lovable export, not built by this CLI, so
+# `supabase_migrations.schema_migrations` does not know about ./migrations.
 #
 # DO NOT run `supabase db push`, `supabase db reset`, or `supabase migration
 # repair` against this project. Push would try to replay every migration
 # against an already-populated database. `functions deploy` and `gen types`
 # are safe -- neither touches data.
-project_id = "gmdbrgjxdeztgzvqsaaj"
+project_id = "dwavbotriuabrvhqeshm"
 
 # hikvision-attendance and hik-attendance are called ONLY from the browser, by
 # src/lib/hr/hikvisionService.ts, through supabase.functions.invoke() — which

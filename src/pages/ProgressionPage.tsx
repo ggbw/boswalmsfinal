@@ -3,9 +3,11 @@ import { useApp } from '@/context/AppContext';
 import { supabase } from '@/integrations/supabase/client';
 import { useAssessmentMarks } from '@/hooks/useAssessmentMarks';
 import { studentModuleResults } from '@/lib/studentMarks';
+import { recordClassOutcomes } from '@/lib/recordClassOutcomes';
+import { isReadOnlyOversight } from '@/lib/scope';
 
 export default function ProgressionPage() {
-  const { db, toast, reloadDb } = useApp();
+  const { db, toast, reloadDb, currentUser } = useApp();
   // Marks for every class on the page. Progression is gated on them, and this
   // used to read db.marks — which is keyed by students.id while the filter used
   // the student number, so it ALWAYS found zero marks and every approval was
@@ -105,6 +107,22 @@ export default function ProgressionPage() {
     reloadDb();
   };
 
+  // Records each settled student's module outcomes (and announces new
+  // supplementaries) for one class — the same step that runs after exam marks
+  // are saved, for marks that arrived another way.
+  const handleRecordOutcomes = async (classId: string) => {
+    setProcessing(true);
+    const res = await recordClassOutcomes(db, classId, currentUser?.id ?? null);
+    setProcessing(false);
+    if (res.errors.length) { toast(`Could not record outcomes: ${res.errors[0]}`, 'error'); return; }
+    toast(
+      res.studentsSettled === 0
+        ? 'No student in this class has all results in yet.'
+        : `${res.outcomesWritten} outcome(s) recorded for ${res.studentsSettled} student(s).`,
+      'success',
+    );
+  };
+
   const handleIndividual = async (studentId: string, classId: string, action: 'approved' | 'rejected') => {
     setProcessing(true);
     const ok = await progressStudent(studentId, classId, action);
@@ -152,6 +170,12 @@ export default function ProgressionPage() {
                   <button className="btn btn-outline btn-sm" disabled={processing || sel.size === 0} onClick={() => handleBulkAction(cls.id, 'rejected')} style={{ color: '#f85149' }}>
                     ✕ Reject Selected
                   </button>
+                  {!isReadOnlyOversight(currentUser?.role) && (
+                    <button className="btn btn-outline btn-sm" disabled={processing} data-testid="progression-record-outcomes"
+                            onClick={() => handleRecordOutcomes(cls.id)}>
+                      {processing ? <span data-testid="progression-record-outcomes-loading">Working…</span> : 'Record outcomes'}
+                    </button>
+                  )}
                   <button className="btn btn-outline btn-sm" onClick={() => selectAll(cls.id, students.map(s => s.id))}>
                     {students.every(s => sel.has(s.id)) ? 'Deselect All' : 'Select All'}
                   </button>

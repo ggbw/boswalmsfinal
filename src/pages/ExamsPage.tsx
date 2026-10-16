@@ -5,6 +5,8 @@ import { canManageAcademics } from '@/lib/scope';
 import { SUPP_EXAM_TYPE } from '@/lib/progression';
 import { supabase } from '@/integrations/supabase/client';
 import { getLecturerClassIds, getLecturerModulesList } from '@/lib/lecturerHelpers';
+import { recordClassOutcomes } from '@/lib/recordClassOutcomes';
+import type { DB, Exam, Student } from '@/data/db';
 
 // Stateful exam create/edit form. Re-renders the Class dropdown whenever the
 // selected Module changes (the previous mutable-variable version did not, which
@@ -198,44 +200,149 @@ function ExamFormModal({
 
 
 /**
- * Exam marks sheet, with tick-box selection.
+ * Exam marks sheet, with tick-box selection and exam attendance.
  *
- * Was inline JSX passed to showModal() with a plain mutable object for the
- * marks. That works for typing into inputs — nothing needs to re-render — but
- * selection has to be visible, so it has to be state, so this has to be a
- * component.
- *
- * The bulk action here is "set the selected students to N", which in practice
- * means zero: absentees and no-shows are the students a lecturer would
- * otherwise type 0 into one box at a time. Same shape as the register.
+ * Each student is in one of three states:
+ *   - not marked yet: blank score, no assessment_marks row — left out of the
+ *     module-mark averages (moduleMark.ts treats a missing row as null);
+ *   - present: sat the exam, score 0–100 as entered;
+ *   - absent: missed the exam — recorded as attendance 'absent', score 0.
+ * A blank used to be saved as 0, which made "absent", "scored 0" and "not
+ * marked" indistinguishable and dragged coursework averages down.
  */
-function ExamMarksSheet({ exam, className, students, initialMarks, existing, db, toast, closeModal, reloadDb }: {
-  exam: any; className?: string; students: any[];
-  initialMarks: Record<string, number>; existing: any[];
-  db: any; toast: (m: string, t?: string) => void; closeModal: () => void; reloadDb: () => void;
+type ExamAttendance = 'present' | 'absent';
+
+function ExamMarksSheet({ exam, className, students, initialMarks, initialAttendance, existing, db, decidedBy, toast, closeModal, reloadDb }: {
+  exam: Exam; className?: string; students: Student[];
+  initialMarks: Record<string, number | null>;
+  initialAttendance: Record<string, ExamAttendance>;
+  existing: { id: string; student_id: string }[];
+  db: DB; decidedBy: string | null; toast: (m: string, t?: string) => void; closeModal: () => void; reloadDb: () => void;
 }) {
-  const [marks, setMarks] = useState<Record<string, number>>(initialMarks);
+  const [marks, setMarks] = useState<Record<string, number | null>>(initialMarks);
+  const [attendance, setAttendance] = useState<Record<string, ExamAttendance>>(initialAttendance);
   const [bulkValue, setBulkValue] = useState('0');
   const [saving, setSaving] = useState(false);
-  const sel = useRowSelection(students.map((s: any) => s.studentId));
+  const sel = useRowSelection(students.map(s => s.studentId));
+
+  const isAbsent = (sid: string) => attendance[sid] === 'absent';
+  const setAbsent = (sids: string[], absent: boolean) => {
+    setAttendance(prev => {
+      const next = { ...prev };
+      sids.forEach(sid => { next[sid] = absent ? 'absent' : 'present'; });
+      return next;
+    });
+  };
 
   const applyToSelected = () => {
     const v = Number(bulkValue);
-    if (!Number.isFinite(v) || v < 0 || v > 100) { toast('Enter a score between 0 and 100.', 'error'); return; }
+    if (bulkValue.trim() === '' || !Number.isFinite(v) || v < 0 || v > 100) { toast('Enter a score between 0 and 100.', 'error'); return; }
     setMarks(prev => {
       const next = { ...prev };
       sel.selected.forEach(sid => { next[sid] = v; });
       return next;
     });
+    setAbsent([...sel.selected], false);
     sel.clear();
   };
 
-  const marksMap = marks;   // the save body below reads this name
+  const markSelectedAbsent = () => {
+    setAbsent([...sel.selected], true);
+    sel.clear();
+  };
+
+  const absentCount = students.filter(s => isAbsent(s.studentId)).length;
+  const markedCount = students.filter(s => !isAbsent(s.studentId) && marks[s.studentId] != null).length;
+  const blankCount = students.length - absentCount - markedCount;
+
+  const save = async () => {
+    // Validate BEFORE writing anything. min/max on a number input are hints —
+    // a typed 500 or -20 reaches the state unchallenged.
+    const bad = students
+      .filter(s => !isAbsent(s.studentId) && marks[s.studentId] != null)
+      .map(s => ({ name: s.name, v: marks[s.studentId] as number }))
+      .filter(x => !Number.isFinite(x.v) || x.v < 0 || x.v > 100);
+    if (bad.length > 0) {
+      toast(
+        `${bad.length} mark(s) are outside 0-100: ` +
+        bad.slice(0, 3).map(b => `${b.name} (${b.v})`).join(', ') +
+        (bad.length > 3 ? `, and ${bad.length - 3} more` : ''),
+        'error',
+      );
+      return;
+    }
+
+    setSaving(true);
+    const existingById: Record<string, string> = {};
+    existing.forEach(x => { existingById[x.student_id] = x.id; });
+
+    // Students with a mark or marked absent get a row; blanks get none.
+    const recorded = students.filter(s => isAbsent(s.studentId) || marks[s.studentId] != null);
+    const scoreFor = (sid: string) => (isAbsent(sid) ? 0 : (marks[sid] as number));
+
+    // Step 1: assessment_marks (the report + transcript source of truth), in one
+    // idempotent upsert keyed on (student_id, assessment_id).
+    const asmRows = recorded.map(s => ({
+      id: existingById[s.studentId] || ('am_' + Date.now() + '_' + s.studentId),
+      student_id: s.studentId, assessment_id: exam.id, assessment_type: 'exam',
+      class_id: exam.classId, module_id: exam.moduleId,
+      score: scoreFor(s.studentId),
+      attendance: attendance[s.studentId] || 'present',
+    }));
+    const { error: asmErr } = asmRows.length
+      ? await supabase.from('assessment_marks').upsert(asmRows, { onConflict: 'student_id,assessment_id' })
+      : { error: null };
+
+    // A mark that existed and has been cleared is removed, so the student goes
+    // back to "not marked yet" instead of keeping a stale score.
+    const clearedIds = students
+      .filter(s => existingById[s.studentId] && !isAbsent(s.studentId) && marks[s.studentId] == null)
+      .map(s => existingById[s.studentId]);
+    const { error: clearErr } = clearedIds.length
+      ? await supabase.from('assessment_marks').delete().in('id', clearedIds)
+      : { error: null };
+
+    // Step 2: best-effort sync to the legacy marks table (final_exam) for the
+    // Reports overview, scoped to the current academic period. Blanks are not
+    // sent, so they are not written as 0.
+    const curYear = db.config.currentYear;
+    const curSemester = db.config.currentSemester;
+    const markRows = recorded.map(s => ({
+      student_id: s.studentId, module_id: exam.moduleId, class_id: exam.classId,
+      final_exam: scoreFor(s.studentId),
+      year: curYear, semester: curSemester,
+    }));
+    const { error: marksErr } = markRows.length
+      ? await supabase.from('marks').upsert(markRows, { onConflict: 'student_id,module_id,class_id,year,semester' })
+      : { error: null };
+
+    // Only mark the exam done once every student has a mark or is absent.
+    if (blankCount === 0) await supabase.from('exams').update({ status: 'done' }).eq('id', exam.id);
+
+    setSaving(false);
+    const err = asmErr || clearErr;
+    if (err) {
+      toast(err.message || 'Marks could not be saved. Please try again.', 'error');
+      return;
+    }
+    toast(marksErr ? 'Marks saved (overview sync pending).' : 'Marks saved!', 'success');
+    closeModal(); reloadDb();
+
+    // Settle the class's module outcomes now that results have changed, rather
+    // than waiting for each student to open their dashboard.
+    const outcomes = await recordClassOutcomes(db, exam.classId, decidedBy);
+    if (outcomes.errors.length) {
+      toast(`Marks saved, but outcomes could not be recorded: ${outcomes.errors[0]}`, 'error');
+    } else if (outcomes.outcomesWritten > 0) {
+      toast(`${outcomes.outcomesWritten} module outcome(s) recorded for ${outcomes.studentsSettled} student(s).`, 'info');
+    }
+  };
 
   return (
-    <div>
+    <div data-testid="exam-marks-dialog">
       <div style={{ background: 'var(--bg2)', borderRadius: 8, padding: '8px 14px', marginBottom: 12, fontSize: 12, color: 'var(--text2)' }}>
         <strong>{exam.type || 'Exam'}</strong> · Class: <strong>{className}</strong> · {students.length} student(s)
+        {' '}· <span data-testid="exam-marks-summary">{markedCount} marked · {absentCount} absent · {blankCount} not marked</span>
       </div>
 
       <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap', padding: '8px 10px',
@@ -243,7 +350,7 @@ function ExamMarksSheet({ exam, className, students, initialMarks, existing, db,
                     background: sel.count ? 'var(--bg2)' : 'transparent',
                     border: `1px solid ${sel.count ? 'var(--border)' : 'transparent'}` }}>
         <label style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 12, cursor: 'pointer' }}>
-          <input type="checkbox" checked={sel.allSelected}
+          <input type="checkbox" checked={sel.allSelected} data-testid="exam-marks-select-all"
                  ref={el => { if (el) el.indeterminate = sel.someSelected; }}
                  onChange={sel.toggleAll} />
           Select all
@@ -251,113 +358,62 @@ function ExamMarksSheet({ exam, className, students, initialMarks, existing, db,
         {sel.count > 0 ? (<>
           <span style={{ fontSize: 12, fontWeight: 700 }}>{sel.count} selected</span>
           <span style={{ fontSize: 12, color: 'var(--text2)' }}>Set score to:</span>
-          <input className="form-input" type="number" min={0} max={100} value={bulkValue}
+          <input className="form-input" type="number" min={0} max={100} value={bulkValue} data-testid="exam-marks-bulk-score"
                  onChange={e => setBulkValue(e.target.value)} style={{ width: 70 }} />
-          <button className="btn btn-primary btn-sm" onClick={applyToSelected}>Apply</button>
+          <button className="btn btn-primary btn-sm" data-testid="exam-marks-bulk-apply" onClick={applyToSelected}>Apply</button>
+          <button className="btn btn-outline btn-sm" data-testid="exam-marks-bulk-absent" onClick={markSelectedAbsent}>Mark absent</button>
           <button className="btn btn-outline btn-sm" onClick={sel.clear}>Clear</button>
         </>) : (
           <span style={{ fontSize: 11, color: 'var(--text3)' }}>
-            Tick students to set several scores at once · shift-click for a range
+            Leave a score blank if not marked yet · tick students to set scores or mark them absent · shift-click for a range
           </span>
         )}
       </div>
 
       <div className="table-wrap" style={{ maxHeight: 400, overflowY: 'auto' }}>
         <table>
-          <thead><tr><th style={{ width: 32 }} /><th>Student</th><th>ID</th><th>Score (0–100)</th></tr></thead>
+          <thead><tr><th style={{ width: 32 }} /><th>Student</th><th>ID</th><th>Absent</th><th>Score (0–100)</th></tr></thead>
           <tbody>
-            {students.map((s: any) => (
-              <tr key={s.id} style={sel.isSelected(s.studentId) ? { background: 'var(--bg2)' } : undefined}>
-                <td>
-                  <input type="checkbox" checked={sel.isSelected(s.studentId)}
-                         onClick={(e) => { e.stopPropagation(); sel.toggle(s.studentId, (e as unknown as MouseEvent).shiftKey); }}
-                         onChange={() => { /* handled in onClick so shiftKey is available */ }} />
-                </td>
-                <td className="td-name">{s.name}</td>
-                <td style={{ fontFamily: "'JetBrains Mono',monospace", fontSize: 11 }}>{s.studentId}</td>
-                <td>
-                  <input className="form-input" type="number" min={0} max={100}
-                         value={marks[s.studentId] ?? 0} style={{ width: 80 }}
-                         onChange={e => setMarks(prev => ({ ...prev, [s.studentId]: Number(e.target.value) }))} />
-                </td>
-              </tr>
-            ))}
+            {students.map(s => {
+              const absent = isAbsent(s.studentId);
+              return (
+                <tr key={s.id} data-testid={`exam-mark-row-${s.studentId}`}
+                    style={sel.isSelected(s.studentId) ? { background: 'var(--bg2)' } : undefined}>
+                  <td>
+                    <input type="checkbox" checked={sel.isSelected(s.studentId)}
+                           onClick={(e) => { e.stopPropagation(); sel.toggle(s.studentId, (e as unknown as MouseEvent).shiftKey); }}
+                           onChange={() => { /* handled in onClick so shiftKey is available */ }} />
+                  </td>
+                  <td className="td-name">{s.name}</td>
+                  <td style={{ fontFamily: "'JetBrains Mono',monospace", fontSize: 11 }}>{s.studentId}</td>
+                  <td>
+                    <input type="checkbox" checked={absent} data-testid={`exam-mark-absent-${s.studentId}`}
+                           onChange={e => setAbsent([s.studentId], e.target.checked)} />
+                  </td>
+                  <td>
+                    {absent ? (
+                      <span className="badge badge-fail">Absent · 0</span>
+                    ) : (
+                      <input className="form-input" type="number" min={0} max={100} placeholder="—"
+                             data-testid={`exam-mark-score-${s.studentId}`}
+                             value={marks[s.studentId] ?? ''} style={{ width: 80 }}
+                             onChange={e => {
+                               const raw = e.target.value;
+                               setMarks(prev => ({ ...prev, [s.studentId]: raw === '' ? null : Number(raw) }));
+                             }} />
+                    )}
+                  </td>
+                </tr>
+              );
+            })}
           </tbody>
         </table>
       </div>
 
       <button className="btn btn-primary" style={{ marginTop: 14, width: '100%' }} disabled={saving}
-              onClick={async () => {
-        setSaving(true);
-
-          // Save the whole class in ONE idempotent upsert per table instead of a
-          // per-student insert/update loop. Upsert keys on each table's unique
-          // constraint, so re-saving always works whether or not a row already
-          // exists — this removes the old "insert-from-a-stale-snapshot" path
-          // that silently failed (and lost marks) whenever the initial lookup
-          // hiccupped, and the partial-failure window of N separate writes.
-
-          // Validate BEFORE writing anything. min/max on a number input are
-          // hints — they gate the spinner arrows and nothing else, so a typed
-          // 500 or -20 reaches Number() and then the database unchallenged.
-          // Exam scores are already percentages, so the bound is 0-100.
-          const bad = students
-            .map(s => ({ name: s.name, v: marksMap[s.studentId] ?? 0 }))
-            .filter(x => !Number.isFinite(x.v) || x.v < 0 || x.v > 100);
-          if (bad.length > 0) {
-            toast(
-              `${bad.length} mark(s) are outside 0-100: ` +
-              bad.slice(0, 3).map(b => `${b.name} (${b.v})`).join(', ') +
-              (bad.length > 3 ? `, and ${bad.length - 3} more` : ''),
-              'error',
-            );
-            return;
-          }
-
-          // Step 1: assessment_marks (the report + transcript source of truth).
-          // Reuse the existing row id when known so the primary key stays stable;
-          // genuinely new rows get a fresh id.
-          const existingById: Record<string, string> = {};
-          (existing || []).forEach((x: any) => { existingById[x.student_id] = x.id; });
-          const asmRows = students.map(s => ({
-            id: existingById[s.studentId] || ('am_' + Date.now() + '_' + s.studentId),
-            student_id: s.studentId, assessment_id: exam.id, assessment_type: 'exam',
-            class_id: exam.classId, module_id: exam.moduleId,
-            score: marksMap[s.studentId] ?? 0,
-          }));
-          const { error: asmErr } = await supabase
-            .from('assessment_marks')
-            .upsert(asmRows, { onConflict: 'student_id,assessment_id' });
-
-          // Step 2: sync to the legacy marks table (final_exam) for the Reports
-          // overview. Scoped to the CURRENT academic period so a retake (later
-          // year/semester) is a separate attempt, not an overwrite. Only the
-          // final_exam column is sent, so coursework columns on existing rows are
-          // preserved; new rows fall back to the table's DEFAULT 0.
-          const curYear = db.config.currentYear;
-          const curSemester = db.config.currentSemester;
-          const markRows = students.map(s => ({
-            student_id: s.studentId, module_id: exam.moduleId, class_id: exam.classId,
-            final_exam: marksMap[s.studentId] ?? 0,
-            year: curYear, semester: curSemester,
-          }));
-          const { error: marksErr } = await supabase
-            .from('marks')
-            .upsert(markRows, { onConflict: 'student_id,module_id,class_id,year,semester' });
-
-          await supabase.from('exams').update({ status: 'done' }).eq('id', exam.id);
-
-          // Success is determined by the report/transcript source (assessment_marks).
-          // The legacy marks sync is best-effort and must never block saving.
-          if (asmErr) {
-            toast(asmErr.message || 'Marks could not be saved. Please try again.', 'error');
-          } else {
-            toast(marksErr ? 'Marks saved (overview sync pending).' : 'Marks saved!', 'success');
-            closeModal(); reloadDb();
-          }
-        
-        setSaving(false);
-      }}>{saving ? 'Saving…' : 'Save Marks'}</button>
+              data-testid="exam-marks-save" onClick={save}>
+        {saving ? <span data-testid="exam-marks-save-loading">Saving…</span> : 'Save Marks'}
+      </button>
     </div>
   );
 }
@@ -438,8 +494,8 @@ export default function ExamsPage() {
     if (students.length === 0) { toast('No students found for this class', 'error'); return; }
 
     // Load existing assessment_marks for this exam. We MUST surface a load
-    // failure here: if it silently returned nothing the form would pre-fill 0
-    // for every student, and saving would overwrite real marks with zeros.
+    // failure here: if it silently returned nothing the form would show every
+    // student as not marked, and saving would delete their real marks.
     const { data: existing, error: loadErr } = await supabase
       .from('assessment_marks')
       .select('*')
@@ -450,17 +506,20 @@ export default function ExamsPage() {
       return;
     }
 
-    const marksMap: Record<string, number> = {};
+    // No row = not marked yet (blank), not 0.
+    const marksMap: Record<string, number | null> = {};
+    const attendanceMap: Record<string, ExamAttendance> = {};
     students.forEach(s => {
       const ex = (existing || []).find((x: any) => x.student_id === s.studentId);
-      marksMap[s.studentId] = ex ? Number(ex.score) : 0;
+      marksMap[s.studentId] = ex ? Number(ex.score) : null;
+      attendanceMap[s.studentId] = ex?.attendance === 'absent' ? 'absent' : 'present';
     });
 
     showModal(`Enter Marks — ${exam.name}`, (
       <ExamMarksSheet
         exam={exam} className={cls?.name} students={students}
-        initialMarks={marksMap} existing={existing || []}
-        db={db} toast={toast} closeModal={closeModal} reloadDb={reloadDb}
+        initialMarks={marksMap} initialAttendance={attendanceMap} existing={existing || []}
+        db={db} decidedBy={currentUser?.id ?? null} toast={toast} closeModal={closeModal} reloadDb={reloadDb}
       />
     ), 'large');
   };

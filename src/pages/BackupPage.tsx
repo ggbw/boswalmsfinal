@@ -228,15 +228,15 @@ function NotInstalled({ onRecheck }: { onRecheck: () => void }) {
             <strong>Deploy the functions.</strong>
             <br />
             <code style={{ fontSize: 11 }}>
-              supabase functions deploy db-backup --project-ref gmdbrgjxdeztgzvqsaaj
+              supabase functions deploy db-backup --project-ref dwavbotriuabrvhqeshm
             </code>
             <br />
             <code style={{ fontSize: 11 }}>
-              supabase functions deploy db-restore --project-ref gmdbrgjxdeztgzvqsaaj
+              supabase functions deploy db-restore --project-ref dwavbotriuabrvhqeshm
             </code>
             <br />
             <code style={{ fontSize: 11 }}>
-              supabase functions deploy backup-report --project-ref gmdbrgjxdeztgzvqsaaj
+              supabase functions deploy backup-report --project-ref dwavbotriuabrvhqeshm
             </code>
           </li>
         </ol>

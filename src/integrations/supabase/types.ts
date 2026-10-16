@@ -226,6 +226,7 @@ export type Database = {
         Row: {
           assessment_id: string
           assessment_type: string
+          attendance: string
           class_id: string | null
           created_at: string | null
           id: string
@@ -236,6 +237,7 @@ export type Database = {
         Insert: {
           assessment_id: string
           assessment_type: string
+          attendance?: string
           class_id?: string | null
           created_at?: string | null
           id: string
@@ -246,6 +248,7 @@ export type Database = {
         Update: {
           assessment_id?: string
           assessment_type?: string
+          attendance?: string
           class_id?: string | null
           created_at?: string | null
           id?: string

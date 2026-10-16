@@ -10,13 +10,31 @@ export default function NotificationsPage() {
     setDb(prev => ({ ...prev, notifications: prev.notifications.filter(n => n.id !== id) }));
     toast('Notification deleted', 'info');
   };
+  // Saved to the notifications table first, so a posted notice survives a reload
+  // and reaches every user; local state is updated only once the insert succeeds.
+  const postNotif = async (title: string, body: string, priority: string) => {
+    if (!title.trim()) { toast('Title required', 'error'); return; }
+    const row = {
+      id: 'n' + Date.now(),
+      title: title.trim(),
+      body: body.trim(),
+      date: new Date().toISOString().split('T')[0],
+      priority,
+      author: currentUser?.name || 'Admin',
+    };
+    const { error } = await supabase.from('notifications').insert(row);
+    if (error) { toast(error.message, 'error'); return; }
+    setDb(prev => ({ ...prev, notifications: [row, ...prev.notifications] }));
+    closeModal();
+    toast('Announcement posted!', 'success');
+  };
   const showAddNotif = () => {
     let title = '', body = '', priority = 'normal';
-    showModal('Post Announcement', <div>
-      <div className="form-group" style={{marginBottom:12}}><label>Title</label><input className="form-input" onChange={e=>title=e.target.value}/></div>
-      <div className="form-group" style={{marginBottom:12}}><label>Message</label><textarea className="form-textarea" onChange={e=>body=e.target.value}/></div>
-      <div className="form-group" style={{marginBottom:14}}><label>Priority</label><select className="form-select" onChange={e=>priority=e.target.value}><option value="normal">Normal</option><option value="high">High</option><option value="low">Low</option></select></div>
-      <button className="btn btn-primary" onClick={()=>{if(!title){toast('Title required','error');return;}setDb(prev=>({...prev,notifications:[{id:'n'+Date.now(),title,body,date:new Date().toISOString().split('T')[0],priority,author:currentUser?.name||'Admin'},...prev.notifications]}));closeModal();toast('Announcement posted!','success');}}>Post Announcement</button>
+    showModal('Post Announcement', <div data-testid="notification-create-dialog">
+      <div className="form-group" style={{marginBottom:12}}><label>Title</label><input className="form-input" data-testid="notification-title" onChange={e=>title=e.target.value}/></div>
+      <div className="form-group" style={{marginBottom:12}}><label>Message</label><textarea className="form-textarea" data-testid="notification-body" onChange={e=>body=e.target.value}/></div>
+      <div className="form-group" style={{marginBottom:14}}><label>Priority</label><select className="form-select" data-testid="notification-priority-select" onChange={e=>priority=e.target.value}><option value="normal">Normal</option><option value="high">High</option><option value="low">Low</option></select></div>
+      <button className="btn btn-primary" data-testid="notification-save" onClick={()=>postNotif(title, body, priority)}>Post Announcement</button>
     </div>);
   };
   return (<>

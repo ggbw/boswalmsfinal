@@ -4,6 +4,7 @@ import { supabase } from "@/integrations/supabase/client";
 import { signedUrls } from "@/lib/storage";
 import { compressImage, createThumbnail } from "@/lib/imageCompression";
 import { getLecturerClassIds } from "@/lib/lecturerHelpers";
+import { isReadOnlyOversight } from "@/lib/scope";
 import { buildZip, uniqueName } from "@/lib/zip";
 
 type ViewMode = "folders" | "student" | "custom_folder";
@@ -22,7 +23,9 @@ export default function PhotoGalleryPage() {
   const role = currentUser?.role;
   const isStudent = role === "student";
   const canManage = role === "admin" || role === "super_admin" || role === "lecturer"; // upload + delete
-  const canView = canManage || role === "hod" || role === "hoa"; // view folders
+  // Principal and deputy read the whole school, so they view the gallery too —
+  // read-only (isReadOnlyOversight), matching the student-photos read policy.
+  const canView = canManage || role === "hod" || role === "hoa" || isReadOnlyOversight(role); // view folders
   const canUploadToOthers = canManage; // keep alias for existing JSX
 
   // For students: their own student record ID (from studentRef on profile)

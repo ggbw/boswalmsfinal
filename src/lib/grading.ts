@@ -2,8 +2,12 @@
 // transcript (TranscriptsPage) and the class report (ReportsPage), so the two can
 // never show a different grade for the same mark.
 //
-// University letter-grade scale with +/- bands. Pass mark is 40% (D); below 40 is
-// a fail (F).
+// University letter-grade scale with +/- bands. A module is passed at 50% (C-),
+// the same pass mark progression uses; below 50 is a fail (F).
+
+import { PASS_MARK } from "./progression";
+
+export { PASS_MARK };
 
 export function letterGrade(pct: number): string {
   if (pct >= 86) return "A";
@@ -13,8 +17,7 @@ export function letterGrade(pct: number): string {
   if (pct >= 65) return "B-";
   if (pct >= 60) return "C+";
   if (pct >= 55) return "C";
-  if (pct >= 50) return "C-";
-  if (pct >= 40) return "D";
+  if (pct >= PASS_MARK) return "C-";
   return "F";
 }
 
@@ -29,18 +32,13 @@ export function gradePoint(letter: string): number {
     "C+": 2.3,
     C: 2.0,
     "C-": 1.7,
-    D: 1.0,
     F: 0.0,
   };
   return m[letter] ?? 0;
 }
 
-// The fail mark: anything below this percentage is an F (used for pass-rate /
-// fail counts). D (40–49%) and above are passes.
-export const PASS_MARK = 40;
-
 // All letter grades, best → worst. Used to order grade-distribution columns.
-export const LETTER_ORDER = ["A", "A-", "B+", "B", "B-", "C+", "C", "C-", "D", "F"] as const;
+export const LETTER_ORDER = ["A", "A-", "B+", "B", "B-", "C+", "C", "C-", "F"] as const;
 
 // Grading scale shown to users (percentage band · grade point). Matches the
 // scale printed at the foot of the transcript.
@@ -53,8 +51,7 @@ export const GRADE_SCALE: [string, string][] = [
   ["C+", "60–64% · 2.3"],
   ["C", "55–59% · 2.0"],
   ["C-", "50–54% · 1.7"],
-  ["D", "40–49% · 1.0"],
-  ["F", "0–39% · 0.0 (Fail)"],
+  ["F", "0–49% · 0.0 (Fail)"],
 ];
 
 // Badge CSS class for a letter grade, grouped into the report's existing colour
@@ -63,6 +60,5 @@ export function letterBadgeClass(letter: string): string {
   if (letter === "A" || letter === "A-") return "badge-distinction";
   if (letter === "B+" || letter === "B" || letter === "B-") return "badge-merit";
   if (letter === "C+" || letter === "C" || letter === "C-") return "badge-credit";
-  if (letter === "D") return "badge-pass";
   return "badge-fail";
 }
