@@ -73,6 +73,7 @@ import type { Database } from '@/integrations/supabase/types';
 type AppRole = Database['public']['Enums']['app_role'] | 'accountant';
 import NotificationBell from '@/components/hr/NotificationBell';
 import ImpersonationBanner from '@/components/hr/ImpersonationBanner';
+import { UatBanner } from '@/components/UatBanner';
 import { useAuth } from '@/hooks/useAuth';
 import { useAuditHeartbeat } from '@/hooks/useAuditHeartbeat';
 
@@ -346,6 +347,7 @@ export default function AppLayout() {
     <div style={{ display: 'flex', height: '100vh', overflow: 'hidden' }}>
       <Sidebar />
       <div className="main-area" style={{ display: 'flex', flexDirection: 'column', minWidth: 0 }}>
+        <UatBanner />
         <ImpersonationBanner />
         <LoadFailureBanner />
         <div className="topbar">

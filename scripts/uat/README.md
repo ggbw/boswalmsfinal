@@ -1,8 +1,10 @@
 # UAT on the live instance: snapshot and wipe
 
-UAT runs on the live Lovable Cloud database. The live data stays. Everything UAT does to the LMS academic tables is undone at go-live. HR and payroll stay live throughout and are never touched.
+UAT runs on the live database, boswa-live (the client's Supabase project). The live data stays. Everything UAT does to the LMS academic tables is undone at go-live. HR and payroll stay live throughout and are never touched.
 
-Every script is pasted into the Lovable Cloud SQL editor.
+Every script is pasted into the Supabase SQL editor for boswa-live (or run with psql).
+
+The snapshot was taken on 16 Oct 2026 at 07:56 UTC. The UAT test cohort — `UAT Class`, students `UAT-01`…`UAT-10` and the `uat.*@uat.boswa.ac.bw` logins — was created after it, so the wipe removes it. The banner shown during UAT is switched off by setting `VITE_UAT_MODE` to `"false"` in `.env`.
 
 | Step | Script | When | Changes data? |
 |---|---|---|---|
