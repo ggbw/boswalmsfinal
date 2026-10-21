@@ -4,6 +4,7 @@ import { useAssessmentMarks } from '@/hooks/useAssessmentMarks';
 import { studentModuleResults, assignmentsForStudent } from '@/lib/studentMarks';
 import { PrincipalDashboard, HodDashboard, LecturerDashboard } from '@/pages/RoleDashboards';
 import StudentRegistrationPanel from '@/components/StudentRegistrationPanel';
+import { StudentPhoto } from '@/components/students/StudentPhoto';
 import { ModuleMarksChart } from '@/components/charts/DashboardCharts';
 
 /**
@@ -28,7 +29,7 @@ function StudentDashboard({ stu, db }: { stu: Student; db: DB }) {
 
   return (
     <>
-      <div className="page-header"><div><div className="page-title">Welcome, {stu.name.split(' ')[0]}</div><div className="page-sub">{cls?.name} · {prog?.name} · Year {stu.year} Semester {stu.semester}</div></div></div>
+      <div className="page-header"><div style={{ display: 'flex', alignItems: 'center', gap: 14 }}><StudentPhoto studentRef={stu.id} name={stu.name} gender={stu.gender} size={64} fallback /><div><div className="page-title">Welcome, {stu.name.split(' ')[0]}</div><div className="page-sub">{cls?.name} · {prog?.name} · Year {stu.year} Semester {stu.semester}</div></div></div></div>
       <div className="stat-grid">
         <div className="stat-card"><div className="stat-icon" style={{ background: '#fff3cc' }}><i className="fa-solid fa-book-open-reader" style={{ color: '#d4920a' }} /></div><div><div className="stat-val">{results.length}</div><div className="stat-label">Modules</div></div></div>
         <div className="stat-card"><div className="stat-icon" style={{ background: '#dafbe1' }}><i className="fa-solid fa-circle-check" style={{ color: '#1a7f37' }} /></div><div><div className="stat-val">{attPct2}%</div><div className="stat-label">My Attendance</div></div></div>

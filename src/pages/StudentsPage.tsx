@@ -6,8 +6,8 @@ import { cleanStudentId } from "@/lib/studentId";
 import { getScopedStudents, isAdminRole } from '@/lib/scope';
 import { useAssessmentMarks } from "@/hooks/useAssessmentMarks";
 import { studentModuleResults } from "@/lib/studentMarks";
-import { signedUrl } from "@/lib/storage";
 import { StudentImportDialog, StudentPhotoUploadDialog } from "@/components/students/StudentBulkTools";
+import { StudentPhoto } from "@/components/students/StudentPhoto";
 
 /**
  * Student IDs are hand-typed in this form, and two in the live data ended up
@@ -874,29 +874,6 @@ function StudentProfileFallback() {
     <div className="card">
       <div className="page-title">My Profile</div>
       <p style={{ marginTop: 10 }}>{currentUser?.name}</p>
-    </div>
-  );
-}
-
-/** The student's profile photo when one has been uploaded, otherwise their initial. */
-function StudentPhoto({ studentRef, name, gender }: { studentRef: string; name: string; gender: string }) {
-  const [url, setUrl] = useState("");
-  useEffect(() => {
-    let cancelled = false;
-    setUrl("");
-    signedUrl("student-photos", `${studentRef}/profile_photo.webp`).then(u => { if (!cancelled) setUrl(u); });
-    return () => { cancelled = true; };
-  }, [studentRef]);
-
-  if (url) {
-    return (
-      <img src={url} alt={name} onError={() => setUrl("")}
-           style={{ width: 52, height: 52, borderRadius: "50%", objectFit: "cover" }} />
-    );
-  }
-  return (
-    <div className="avatar" style={{ background: gender === "Female" ? "#8250df" : "#1f6feb", width: 52, height: 52, fontSize: 20 }}>
-      {name[0]}
     </div>
   );
 }
