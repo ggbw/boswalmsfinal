@@ -128,6 +128,26 @@ body {
    than letting margin-left:auto push it against the edge. */
 .sidebar.collapsed .sidebar-toggle { margin: 6px auto 0; }
 
+/* Area switcher — LMS | SMS | HR & Payroll, between the logo and the menu.
+   Shown only to roles with more than one area. Clicking a tab changes the
+   menu, never the open page. */
+.area-tabs { display: flex; gap: 4px; padding: 8px 10px; border-bottom: 1px solid #21262d; }
+.area-tab {
+  flex: 1; min-width: 0; display: flex; align-items: center; justify-content: center; gap: 5px;
+  padding: 6px 4px; cursor: pointer; user-select: none;
+  color: #8b949e; font-size: 10.5px; font-weight: 600; white-space: nowrap;
+  background: none; border: 1px solid #21262d; border-bottom: 2px solid transparent; border-radius: 6px;
+  transition: background .15s, color .15s, border-color .15s;
+}
+.area-tab span { overflow: hidden; text-overflow: ellipsis; }
+.area-tab:hover { background: var(--sidebar-hover); color: #c9d1d9; }
+.area-tab.active { background: var(--sidebar-active); color: #e6edf3; border-bottom-color: var(--gold); }
+.area-tab:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+/* Collapsed: stacked icon-only buttons; the title attribute is the tooltip. */
+.sidebar.collapsed .area-tabs { flex-direction: column; padding: 8px 6px; }
+.sidebar.collapsed .area-tab { padding: 8px 0; font-size: 13px; }
+.sidebar.collapsed .area-tab span { display: none; }
+
 /* MAIN */
 .main-area { flex: 1; display: flex; flex-direction: column; overflow: hidden; }
 .topbar { height: 52px; background: var(--surface); border-bottom: 1px solid var(--border); display: flex; align-items: center; padding: 0 20px; gap: 12px; flex-shrink: 0; }

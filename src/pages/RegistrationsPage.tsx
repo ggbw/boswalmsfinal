@@ -231,7 +231,7 @@ export default function RegistrationsPage() {
     <>
       <div className="page-header">
         <div>
-          <div className="page-title">Registrations</div>
+          <div className="page-title">Registrations &amp; Enrolment</div>
           <div className="page-sub">
             {loading ? 'Loading…' : `${pendingCount} awaiting approval`}
           </div>

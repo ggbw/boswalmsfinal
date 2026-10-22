@@ -981,7 +981,7 @@ export default function ReportsPage() {
         <div>
           <div className="page-title">
             <i className="fa-solid fa-chart-bar" style={{ color: "var(--accent)", marginRight: 8 }} />
-            Reports
+            {currentUser?.role === "hod" ? "HOD Reports" : "Academic Reports"}
           </div>
           <div className="page-sub">
             {db.config.currentYear} · Semester {db.config.currentSemester}

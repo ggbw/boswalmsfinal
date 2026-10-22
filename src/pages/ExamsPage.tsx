@@ -6,13 +6,14 @@ import { SUPP_EXAM_TYPE } from '@/lib/progression';
 import { supabase } from '@/integrations/supabase/client';
 import { getLecturerClassIds, getLecturerModulesList } from '@/lib/lecturerHelpers';
 import { recordClassOutcomes } from '@/lib/recordClassOutcomes';
+import { PRACTICAL_TYPES, THEORY_TYPES, isPracticalType } from '@/lib/examTypes';
 import type { DB, Exam, Student } from '@/data/db';
 
 // Stateful exam create/edit form. Re-renders the Class dropdown whenever the
 // selected Module changes (the previous mutable-variable version did not, which
 // left admins unable to pick a class).
 function ExamFormModal({
-  exam, db, currentUser, isAdmin, availableModules, toast, onDone,
+  exam, db, currentUser, isAdmin, availableModules, toast, onDone, mode = 'all',
 }: {
   exam?: any;
   db: any;
@@ -21,6 +22,8 @@ function ExamFormModal({
   availableModules: any[];
   toast: (msg: string, type?: string) => void;
   onDone: () => void;
+  /** 'practical' = the Practical & Recipe Assessments page: practical types only. */
+  mode?: ExamsPageMode;
 }) {
   const classesForModule = (mid: string) => {
     const lecClassIds = getLecturerClassIds(db.lecturerModules, currentUser?.id || '');
@@ -30,16 +33,17 @@ function ExamFormModal({
     return linked.length > 0 ? linked : availableClasses;
   };
 
-  // Exam types split by whether they belong to the practical section of a module.
-  // Theory-only modules (hasPractical === false) must not offer practical types.
-  const THEORY_TYPES = ['Written Exam', 'Final Theory Exam', 'Oral Exam'];
-  const PRACTICAL_TYPES = ['Practical Exam', 'Final Practical Exam', 'Final Practical Theory Exam', 'Recipe'];
+  // Theory-only modules (hasPractical === false) must not offer practical
+  // types; the lists live in examTypes.ts.
   // A supplementary is an ordinary exam row typed 'Supplementary Exam'. It
   // deliberately matches none of the categories in categorizeModuleAssessments,
   // so it does NOT distort the normal module mark — the supp result is applied
   // separately, capped at 50, by outcomeAfterSupp(). Without this option there
   // was no way to create one at all.
-  const typeOptionsFor = (mid: string) => {
+  // Supplementaries stay on Exams & Marks: the practicals page offers the
+  // practical types alone.
+  const typeOptionsFor = (mid: string): string[] => {
+    if (mode === 'practical') return [...PRACTICAL_TYPES];
     const mod = db.modules.find((m: any) => m.id === mid);
     const base = mod?.hasPractical === false ? THEORY_TYPES : [...THEORY_TYPES, ...PRACTICAL_TYPES];
     return [...base, SUPP_EXAM_TYPE];
@@ -55,7 +59,7 @@ function ExamFormModal({
     exam?.classId ? [exam.classId] : (classesForModule(firstModuleId)[0]?.id ? [classesForModule(firstModuleId)[0].id] : []),
   );
   const [date, setDate] = useState(exam?.date || '');
-  const [type, setType] = useState(exam?.type || 'Written Exam');
+  const [type, setType] = useState(exam?.type || (mode === 'practical' ? 'Practical Exam' : 'Written Exam'));
   const [startTime, setStartTime] = useState(exam?.startTime || '');
   const [endTime, setEndTime] = useState(exam?.endTime || '');
   const [room, setRoom] = useState(exam?.room || '');
@@ -418,8 +422,17 @@ function ExamMarksSheet({ exam, className, students, initialMarks, initialAttend
   );
 }
 
-export default function ExamsPage() {
+export type ExamsPageMode = 'all' | 'practical';
+
+/**
+ * Exams & Marks (mode 'all', in the SMS) and Practical & Recipe Assessments
+ * (mode 'practical', in the LMS). One page, two views of the same exam rows:
+ * mark entry, permissions and the module-mark maths are identical, so a mark
+ * entered in either appears in both.
+ */
+export default function ExamsPage({ mode = 'all' }: { mode?: ExamsPageMode }) {
   const { db, currentUser, showModal, closeModal, toast, reloadDb } = useApp();
+  const isPracticalView = mode === 'practical';
   const role = currentUser?.role;
   const [search, setSearch] = useState('');
 
@@ -433,6 +446,9 @@ export default function ExamsPage() {
   let exams = db.exams;
   if (isTeacher) {
     exams = exams.filter(e => e.createdBy === currentUser?.id);
+  }
+  if (isPracticalView) {
+    exams = exams.filter(e => isPracticalType(e.type));
   }
 
   // Free-text search across exam name, type, status, date, module and class.
@@ -449,11 +465,21 @@ export default function ExamsPage() {
   const getLecturerModules = () =>
     getLecturerModulesList(db.lecturerModules, db.modules, currentUser?.id || '');
 
+  // Theory-only modules have nothing to assess practically.
+  const modulesForForm = () => {
+    const mods = isAdmin ? db.modules : getLecturerModules();
+    return isPracticalView ? mods.filter(m => m.hasPractical !== false) : mods;
+  };
+
   const handleCreateExam = () => {
-    const availableModules = isAdmin ? db.modules : getLecturerModules();
-    showModal('Create Exam', (
+    const availableModules = modulesForForm();
+    if (isPracticalView && availableModules.length === 0) {
+      toast('None of your modules has a practical section.', 'error');
+      return;
+    }
+    showModal(isPracticalView ? 'Create Practical Assessment' : 'Create Exam', (
       <ExamFormModal
-        db={db} currentUser={currentUser} isAdmin={isAdmin}
+        db={db} currentUser={currentUser} isAdmin={isAdmin} mode={mode}
         availableModules={availableModules} toast={toast}
         onDone={() => { closeModal(); reloadDb(); }}
       />
@@ -461,10 +487,10 @@ export default function ExamsPage() {
   };
 
   const handleEditExam = (exam: typeof exams[0]) => {
-    const availableModules = isAdmin ? db.modules : getLecturerModules();
-    showModal('Edit Exam', (
+    const availableModules = modulesForForm();
+    showModal(isPracticalView ? 'Edit Practical Assessment' : 'Edit Exam', (
       <ExamFormModal
-        exam={exam} db={db} currentUser={currentUser} isAdmin={isAdmin}
+        exam={exam} db={db} currentUser={currentUser} isAdmin={isAdmin} mode={mode}
         availableModules={availableModules} toast={toast}
         onDone={() => { closeModal(); reloadDb(); }}
       />
@@ -526,8 +552,19 @@ export default function ExamsPage() {
 
   return (<>
     <div className="page-header">
-      <div><div className="page-title"><i className="fa-solid fa-file-pen" style={{color:'var(--accent)',marginRight:8}}/>Examinations</div><div className="page-sub">{filteredExams.length} of {exams.length} exam(s)</div></div>
-      {(isAdmin || isTeacher) && <button className="btn btn-primary btn-sm" onClick={handleCreateExam}><i className="fa-solid fa-plus" /> Create Exam</button>}
+      {isPracticalView ? (
+        <div>
+          <div className="page-title"><i className="fa-solid fa-utensils" style={{color:'var(--accent)',marginRight:8}}/>Practical &amp; Recipe Assessments</div>
+          <div className="page-sub">Practical exams and recipe assessments. Marks feed the same module mark as Exams &amp; Marks. · {filteredExams.length} of {exams.length} assessment(s)</div>
+        </div>
+      ) : (
+        <div><div className="page-title"><i className="fa-solid fa-file-pen" style={{color:'var(--accent)',marginRight:8}}/>Exams &amp; Marks</div><div className="page-sub">{filteredExams.length} of {exams.length} exam(s)</div></div>
+      )}
+      {(isAdmin || isTeacher) && (
+        <button className="btn btn-primary btn-sm" data-testid={isPracticalView ? 'practical-create' : undefined} onClick={handleCreateExam}>
+          <i className="fa-solid fa-plus" /> {isPracticalView ? 'Create Assessment' : 'Create Exam'}
+        </button>
+      )}
     </div>
     <div className="card">
       <div className="search-bar">
@@ -575,7 +612,9 @@ export default function ExamsPage() {
       {filteredExams.length === 0 && (
         <tr>
           <td colSpan={(isAdmin || isTeacher) ? 7 : 5} style={{ textAlign: 'center', color: 'var(--text2)', padding: 32 }}>
-            {exams.length === 0 ? 'No exams found.' : 'No exams match your search.'}
+            {exams.length === 0
+              ? (isPracticalView ? 'No practical or recipe assessments yet.' : 'No exams found.')
+              : 'No exams match your search.'}
           </td>
         </tr>
       )}</tbody>

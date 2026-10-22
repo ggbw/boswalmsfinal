@@ -197,7 +197,7 @@ export default function AttendanceSettingsPage() {
     <>
       <div className="page-header">
         <div>
-          <div className="page-title">Attendance Settings</div>
+          <div className="page-title">Staff Attendance · Devices &amp; Settings</div>
           <div className="page-sub">HR Management · Device registry &amp; late-detection</div>
         </div>
         <button className="btn btn-outline btn-sm" onClick={() => navigate('hr-attendance-report')}>

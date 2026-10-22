@@ -45,11 +45,20 @@ interface UserRow {
   studentRecordId?: string;
 }
 
-export default function UserManagementPage() {
+export type UserManagementScope = 'all' | 'students';
+
+/**
+ * User Management (scope 'all') and Student Accounts (scope 'students', in the
+ * SMS). Student Accounts is this same page pre-filtered to student logins, so
+ * every action — reset password, remove login, provisioning — behaves exactly
+ * as it does here.
+ */
+export default function UserManagementPage({ scope = 'all' }: { scope?: UserManagementScope }) {
   const { toast, showModal, closeModal, reloadDb, db } = useApp();
+  const studentsOnly = scope === 'students';
   const [users, setUsers] = useState<UserRow[]>([]);
   const [loading, setLoading] = useState(true);
-  const [filter, setFilter] = useState<'all' | 'staff' | 'student'>('all');
+  const [filter, setFilter] = useState<'all' | 'staff' | 'student'>(studentsOnly ? 'student' : 'all');
   const [search, setSearch] = useState('');
 
   const loadUsers = useCallback(async () => {
@@ -325,7 +334,7 @@ export default function UserManagementPage() {
   };
 
   const handleCreate = () => {
-    let name = '', email = '', role = 'lecturer', dept = '';
+    let name = '', email = '', role = studentsOnly ? 'student' : 'lecturer', dept = '';
     // Left empty until submit so it can follow the role the admin picks. A
     // defaultValue set now would keep the staff password even if they chose
     // Student, and hand out the wrong credential.
@@ -560,17 +569,26 @@ export default function UserManagementPage() {
   return (
     <>
       <div className="page-header">
-        <div><div className="page-title">User Management</div><div className="page-sub">{filtered.length} of {users.length} users</div></div>
+        <div>
+          <div className="page-title">{studentsOnly ? 'Student Accounts' : 'User Management'}</div>
+          <div className="page-sub">
+            {studentsOnly
+              ? `${filtered.length} of ${users.filter(u => !!u.studentRecordId).length} students`
+              : `${filtered.length} of ${users.length} users`}
+          </div>
+        </div>
         <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
           <input className="search-input" placeholder="Search by name, email or ID…" value={search} onChange={e => setSearch(e.target.value)} style={{ width: 220 }} />
-          <select className="form-select" value={filter} onChange={e => setFilter(e.target.value as any)} style={{ width: 'auto', fontSize: 11 }}>
-            <option value="all">All Users ({users.length})</option>
-            <option value="staff">Staff Only ({users.filter(u => !u.studentRecordId).length})</option>
-            <option value="student">Students Only ({users.filter(u => !!u.studentRecordId).length})</option>
-          </select>
+          {!studentsOnly && (
+            <select className="form-select" value={filter} onChange={e => setFilter(e.target.value as any)} style={{ width: 'auto', fontSize: 11 }}>
+              <option value="all">All Users ({users.length})</option>
+              <option value="staff">Staff Only ({users.filter(u => !u.studentRecordId).length})</option>
+              <option value="student">Students Only ({users.filter(u => !!u.studentRecordId).length})</option>
+            </select>
+          )}
           <button className="btn btn-outline btn-sm" onClick={handleForcePasswordChange}><i className="fa-solid fa-key" /> Require Password Change</button>
           <button className="btn btn-outline btn-sm" onClick={handleProvisionStudents}><i className="fa-solid fa-user-graduate" /> Provision Student Accounts</button>
-          <button className="btn btn-primary btn-sm" onClick={handleCreate}><i className="fa-solid fa-user-plus" /> Add User</button>
+          <button className="btn btn-primary btn-sm" onClick={handleCreate}><i className="fa-solid fa-user-plus" /> {studentsOnly ? 'Add Student Login' : 'Add User'}</button>
         </div>
       </div>
       <div className="card">

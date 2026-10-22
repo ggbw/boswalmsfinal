@@ -138,7 +138,7 @@ export default function AttendancePage() {
 
   return (<>
     <div className="page-header" style={{ display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap' }}>
-      <div className="page-title">Attendance</div>
+      <div className="page-title">Student Attendance</div>
       <div style={{ display: 'inline-flex', border: '1px solid var(--border)', borderRadius: 8, overflow: 'hidden' }}>
         {!readOnly && tabBtn('mark', 'Mark', 'fa-user-check')}
         {tabBtn('summary', 'Summary Report', 'fa-chart-column')}

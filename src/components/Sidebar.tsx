@@ -2,6 +2,18 @@ import { useEffect, useState } from "react";
 import { useApp } from "@/context/AppContext";
 import { useUserRole } from "@/hooks/hr/useUserRole";
 import { supabase } from "@/integrations/supabase/client";
+import type { AppRole } from "@/lib/rolePages";
+import {
+  DEFAULT_AREA,
+  NAV_AREAS,
+  areaOfPage,
+  areasForRole,
+  buildMenu,
+  getNavArea,
+  type AreaId,
+  type BadgeKey,
+  type NavItem,
+} from "@/lib/navAreas";
 
 // Counts of pending HR approvals shown as badges next to the Leaves / Loans
 // menu items. Returns zeros when the user lacks HR access — the query is
@@ -35,408 +47,9 @@ function useHrPendingCounts(isHR: boolean): HrPendingCounts {
   return counts;
 }
 
-interface NavItem {
-  id: string;
-  label: string;
-  icon: string;
-  badge?: number;
-  children?: NavItem[];
-}
-interface NavSection {
-  section: string;
-  items: NavItem[];
-}
-
 interface HrPendingCounts {
   pendingLeaves: number;
   pendingLoans: number;
-}
-
-const buildHrManagementSection = (pending: HrPendingCounts): NavSection => ({
-  section: "HR Management",
-  items: [
-    { id: "hr-dashboard", label: "HR Dashboard", icon: "fa-solid fa-chart-line" },
-    {
-      id: "hr-group-employees",
-      label: "Employees",
-      icon: "fa-solid fa-users",
-      children: [
-        { id: "hr-employees", label: "Employees", icon: "fa-solid fa-user" },
-        { id: "hr-departments", label: "HR Departments", icon: "fa-solid fa-building" },
-      ],
-    },
-    {
-      id: "hr-group-leaves",
-      label: "Leaves",
-      icon: "fa-solid fa-calendar-days",
-      children: [
-        {
-          id: "hr-leaves",
-          label: "Leaves",
-          icon: "fa-solid fa-calendar-days",
-          badge: pending.pendingLeaves > 0 ? pending.pendingLeaves : undefined,
-        },
-        { id: "hr-leave-types", label: "Leave Types", icon: "fa-solid fa-list-check" },
-        { id: "hr-leave-report", label: "Leave Report", icon: "fa-solid fa-file-export" },
-      ],
-    },
-    {
-      id: "hr-group-loans",
-      label: "Loans",
-      icon: "fa-solid fa-credit-card",
-      children: [
-        {
-          id: "hr-loans",
-          label: "Loans / Advances",
-          icon: "fa-solid fa-hand-holding-dollar",
-          badge: pending.pendingLoans > 0 ? pending.pendingLoans : undefined,
-        },
-        { id: "hr-loan-types", label: "Loan Types", icon: "fa-solid fa-tags" },
-        { id: "hr-loan-report", label: "Loan Report", icon: "fa-solid fa-file-export" },
-      ],
-    },
-    {
-      id: "hr-group-documents",
-      label: "Documents",
-      icon: "fa-solid fa-folder",
-      children: [
-        { id: "hr-documents", label: "Employee Documents", icon: "fa-solid fa-folder-open" },
-        { id: "hr-document-expiry", label: "Document Expiry", icon: "fa-solid fa-triangle-exclamation" },
-        { id: "hr-document-settings", label: "Document Settings", icon: "fa-solid fa-sliders" },
-      ],
-    },
-    {
-      id: "hr-group-attendance",
-      label: "Attendance",
-      icon: "fa-solid fa-clipboard-user",
-      children: [
-        { id: "hr-attendance-live",    label: "Live Dashboard",    icon: "fa-solid fa-display" },
-        { id: "hr-attendance-report",  label: "Attendance Report", icon: "fa-solid fa-clipboard-user" },
-        { id: "hr-attendance-records", label: "Raw Punches",       icon: "fa-solid fa-list" },
-        { id: "hr-attendance-settings", label: "Devices & Settings", icon: "fa-solid fa-sliders" },
-      ],
-    },
-    {
-      id: "hr-group-admin",
-      label: "Administration",
-      icon: "fa-solid fa-gear",
-      children: [
-        { id: "hr-user-management", label: "HR User Management", icon: "fa-solid fa-user-shield" },
-        { id: "hr-workflows", label: "Workflow Management", icon: "fa-solid fa-diagram-project" },
-        { id: "hr-employee-groups", label: "Employee Groups", icon: "fa-solid fa-people-group" },
-        { id: "hr-config", label: "HR Configuration", icon: "fa-solid fa-gear" },
-      ],
-    },
-  ],
-});
-
-/**
- * Payroll and contracts — salary figures and employment terms.
- *
- * Deliberately NOT part of the HR Management section any more. HR keeps
- * employees, leave, loans, documents and attendance; this section belongs to
- * the Accountant role, plus admin and super_admin.
- *
- * Removing it from the menu is only half of it — ROLE_PAGES in AppLayout
- * refuses these pages by URL as well, and the database refuses the rows. A
- * hidden menu item is not an access control.
- */
-const PAYROLL_CONTRACTS_SECTION: NavSection = {
-  section: "Payroll & Contracts",
-  items: [
-    // First, so it reads as the section's home — and it is where an accountant
-    // lands, so the highlighted item matches the page on sign-in.
-    { id: "accountant-dashboard", label: "Accountant Dashboard", icon: "fa-solid fa-chart-line" },
-    {
-      id: "hr-group-payroll",
-      label: "Payroll",
-      icon: "fa-solid fa-money-check-dollar",
-      children: [
-        { id: "hr-payslips", label: "Payslips", icon: "fa-solid fa-receipt" },
-        { id: "hr-payroll-report", label: "Payroll Report", icon: "fa-solid fa-file-invoice-dollar" },
-        { id: "hr-pay-components", label: "Pay Components", icon: "fa-solid fa-coins" },
-      ],
-    },
-    {
-      id: "hr-group-contracts",
-      label: "Contracts",
-      icon: "fa-solid fa-file-signature",
-      children: [
-        { id: "hr-contracts", label: "Contracts", icon: "fa-solid fa-file-signature" },
-        { id: "hr-contract-templates", label: "Contract Templates", icon: "fa-solid fa-file-lines" },
-      ],
-    },
-  ],
-};
-
-const SELF_SERVICE_SECTION: NavSection = {
-  section: "Self Service",
-  items: [
-    { id: "my-employee-file", label: "My File", icon: "fa-solid fa-id-card" },
-    { id: "hr-attendance-report", label: "My Attendance", icon: "fa-solid fa-clipboard-user" },
-    { id: "my-payslips", label: "My Payslips", icon: "fa-solid fa-receipt" },
-    { id: "my-leaves", label: "My Leaves", icon: "fa-solid fa-calendar-check" },
-    { id: "my-loans", label: "My Loans", icon: "fa-solid fa-hand-holding-dollar" },
-  ],
-};
-
-function getNavConfig(role: string, db: any, hrPending: HrPendingCounts): NavSection[] {
-  const HR_MANAGEMENT_SECTION = buildHrManagementSection(hrPending);
-  const adminLmsSections: NavSection[] = [
-    {
-      section: "Main",
-      items: [
-        { id: "dashboard", label: "Dashboard", icon: "fa-solid fa-gauge" },
-        { id: "notifications", label: "Notifications", icon: "fa-solid fa-bullhorn", badge: db.notifications.length },
-      ],
-    },
-    {
-      section: "Academic",
-      items: [
-        { id: "students", label: "Students", icon: "fa-solid fa-user-graduate", badge: db.students.length },
-        { id: "lecturers", label: "Lecturers", icon: "fa-solid fa-chalkboard-user" },
-        { id: "classes", label: "Classes", icon: "fa-solid fa-school" },
-        { id: "timetable", label: "Timetable", icon: "fa-solid fa-calendar-days" },
-      ],
-    },
-    {
-      section: "Operations",
-      items: [
-        { id: "attendance", label: "Attendance", icon: "fa-solid fa-clipboard-check" },
-        { id: "exams", label: "Exams", icon: "fa-solid fa-file-pen" },
-        { id: "assignments", label: "Assignments", icon: "fa-solid fa-list-check" },
-        { id: "notes", label: "Notes", icon: "fa-solid fa-folder-open" },
-        { id: "reports", label: "Reports", icon: "fa-solid fa-file-lines" },
-        { id: "transcripts", label: "Transcripts", icon: "fa-solid fa-scroll" },
-      ],
-    },
-    {
-      section: "Management",
-      items: [
-        { id: "admissions", label: "Admissions", icon: "fa-solid fa-door-open" },
-        { id: "progression", label: "Progression", icon: "fa-solid fa-arrow-up-right-dots" },
-        { id: "photogallery", label: "Photo Gallery", icon: "fa-solid fa-images" },
-        { id: "registrations", label: "Registrations", icon: "fa-solid fa-clipboard-list" },
-        { id: "usermanagement", label: "User Management", icon: "fa-solid fa-users-gear" },
-        { id: "audit", label: "Audit Trail", icon: "fa-solid fa-shield-halved" },
-        { id: "backup", label: "Backup & Restore", icon: "fa-solid fa-database" },
-        { id: "config", label: "Configuration", icon: "fa-solid fa-gear" },
-      ],
-    },
-  ];
-
-  const configs: Record<string, NavSection[]> = {
-    // Admin gains payroll and contracts, but no other HR function.
-    admin: [...adminLmsSections, PAYROLL_CONTRACTS_SECTION],
-    super_admin: [...adminLmsSections, PAYROLL_CONTRACTS_SECTION, HR_MANAGEMENT_SECTION],
-    // Read-only oversight. The principal sees admissions and operational health;
-    // the deputy's remit is academic, so admissions is omitted there.
-    principal: [
-      { section: "Main", items: [
-        { id: "dashboard", label: "School Overview", icon: "fa-solid fa-gauge" },
-        { id: "notifications", label: "Notifications", icon: "fa-solid fa-bullhorn" },
-      ] },
-      { section: "Academic", items: [
-        { id: "students", label: "All Students", icon: "fa-solid fa-user-graduate" },
-        { id: "lecturers", label: "All Lecturers", icon: "fa-solid fa-chalkboard-user" },
-        { id: "grades", label: "Grades Overview", icon: "fa-solid fa-star-half-stroke" },
-        { id: "progression", label: "Progression", icon: "fa-solid fa-arrow-up-right-dots" },
-      ] },
-      { section: "Insight", items: [
-        { id: "reports", label: "Reports", icon: "fa-solid fa-file-lines" },
-        { id: "transcripts", label: "Transcripts", icon: "fa-solid fa-scroll" },
-        { id: "attendance", label: "Attendance", icon: "fa-solid fa-clipboard-check" },
-        { id: "timetable", label: "Timetable", icon: "fa-solid fa-calendar-days" },
-        { id: "photogallery", label: "Photo Gallery", icon: "fa-solid fa-images" },
-        { id: "admissions", label: "Admissions", icon: "fa-solid fa-door-open" },
-      ] },
-      SELF_SERVICE_SECTION,
-    ],
-    deputy_principal: [
-      { section: "Main", items: [
-        { id: "dashboard", label: "Academic Overview", icon: "fa-solid fa-gauge" },
-        { id: "notifications", label: "Notifications", icon: "fa-solid fa-bullhorn" },
-      ] },
-      { section: "Academic", items: [
-        { id: "students", label: "All Students", icon: "fa-solid fa-user-graduate" },
-        { id: "lecturers", label: "All Lecturers", icon: "fa-solid fa-chalkboard-user" },
-        { id: "grades", label: "Grades Overview", icon: "fa-solid fa-star-half-stroke" },
-        { id: "progression", label: "Progression", icon: "fa-solid fa-arrow-up-right-dots" },
-      ] },
-      { section: "Insight", items: [
-        { id: "reports", label: "Reports", icon: "fa-solid fa-file-lines" },
-        { id: "transcripts", label: "Transcripts", icon: "fa-solid fa-scroll" },
-        { id: "attendance", label: "Attendance", icon: "fa-solid fa-clipboard-check" },
-        { id: "timetable", label: "Timetable", icon: "fa-solid fa-calendar-days" },
-        { id: "photogallery", label: "Photo Gallery", icon: "fa-solid fa-images" },
-      ] },
-      SELF_SERVICE_SECTION,
-    ],
-    hod: [
-      { section: "Main", items: [{ id: "dashboard", label: "Dashboard", icon: "fa-solid fa-gauge" }] },
-      {
-        section: "Academic",
-        items: [
-          { id: "students", label: "Students", icon: "fa-solid fa-user-graduate" },
-          { id: "lecturers", label: "Lecturers", icon: "fa-solid fa-chalkboard-user" },
-          { id: "mapping", label: "Module Mapping", icon: "fa-solid fa-diagram-project" },
-        ],
-      },
-      {
-        section: "Teaching",
-        items: [
-          { id: "mystudents", label: "My Students", icon: "fa-solid fa-users" },
-          { id: "timetable", label: "Timetable", icon: "fa-solid fa-calendar-days" },
-          { id: "attendance", label: "Mark Attendance", icon: "fa-solid fa-clipboard-check" },
-          { id: "notes", label: "Notes", icon: "fa-solid fa-folder-open" },
-        ],
-      },
-      {
-        section: "Assessment",
-        items: [
-          { id: "exams", label: "Exams", icon: "fa-solid fa-file-pen" },
-          { id: "assignments", label: "Assignments", icon: "fa-solid fa-list-check" },
-          { id: "reports", label: "HOD Reports", icon: "fa-solid fa-file-lines" },
-          { id: "transcripts", label: "Transcripts", icon: "fa-solid fa-scroll" },
-        ],
-      },
-      SELF_SERVICE_SECTION,
-    ],
-    hoa: [
-      { section: "Main", items: [{ id: "dashboard", label: "Dashboard", icon: "fa-solid fa-gauge" }] },
-      {
-        section: "Students",
-        items: [
-          { id: "students", label: "All Students", icon: "fa-solid fa-user-graduate" },
-          { id: "lecturers", label: "All Lecturers", icon: "fa-solid fa-chalkboard-user" },
-          { id: "grades", label: "Grades Overview", icon: "fa-solid fa-star-half-stroke" },
-          { id: "progression", label: "Promotion", icon: "fa-solid fa-arrow-up-right-dots" },
-        ],
-      },
-      {
-        section: "Teaching",
-        items: [
-          { id: "mystudents", label: "My Students", icon: "fa-solid fa-users" },
-          { id: "timetable", label: "Timetable", icon: "fa-solid fa-calendar-days" },
-          { id: "attendance", label: "Mark Attendance", icon: "fa-solid fa-clipboard-check" },
-          { id: "notes", label: "Notes", icon: "fa-solid fa-folder-open" },
-        ],
-      },
-      {
-        section: "Assessment",
-        items: [
-          { id: "exams", label: "Exams", icon: "fa-solid fa-file-pen" },
-          { id: "assignments", label: "Assignments", icon: "fa-solid fa-list-check" },
-          { id: "reports", label: "Reports", icon: "fa-solid fa-file-lines" },
-          { id: "transcripts", label: "Transcripts", icon: "fa-solid fa-scroll" },
-        ],
-      },
-      SELF_SERVICE_SECTION,
-    ],
-    lecturer: [
-      { section: "Main", items: [{ id: "dashboard", label: "Dashboard", icon: "fa-solid fa-gauge" }] },
-      {
-        section: "Teaching",
-        items: [
-          { id: "mystudents", label: "My Students", icon: "fa-solid fa-users" },
-          // "modules" is correct — ModulesPage, now scoped per role. NOT
-          // "mymodules": that is MyModulesPage, a STUDENT page showing their
-          // own marks per module, and ROLE_PAGES.mymodules is ['student'], so
-          // a lecturer sent there fails the allow-list and AppLayout silently
-          // falls back to Dashboard. The menu item appeared to do nothing.
-          { id: "modules", label: "My Modules", icon: "fa-solid fa-book-open" },
-          { id: "timetable", label: "Timetable", icon: "fa-solid fa-calendar-days" },
-          { id: "attendance", label: "Mark Attendance", icon: "fa-solid fa-clipboard-check" },
-        ],
-      },
-      {
-        section: "Assessment",
-        items: [
-          { id: "exams", label: "Exams", icon: "fa-solid fa-file-pen" },
-          { id: "assignments", label: "Assignments", icon: "fa-solid fa-list-check" },
-          { id: "notes", label: "Notes", icon: "fa-solid fa-folder-open" },
-          { id: "photogallery", label: "Photo Gallery", icon: "fa-solid fa-images" },
-        ],
-      },
-      SELF_SERVICE_SECTION,
-    ],
-    student: [
-      {
-        section: "Main",
-        items: [
-          { id: "dashboard", label: "My Dashboard", icon: "fa-solid fa-gauge" },
-          { id: "profile", label: "My Profile", icon: "fa-solid fa-circle-user" },
-        ],
-      },
-      {
-        section: "Academic",
-        items: [
-          { id: "mymodules", label: "My Modules", icon: "fa-solid fa-book-open" },
-          { id: "mytimetable", label: "My Timetable", icon: "fa-solid fa-calendar-days" },
-          { id: "notes", label: "Notes", icon: "fa-solid fa-folder-open" },
-          { id: "assignments", label: "Assignments", icon: "fa-solid fa-list-check" },
-          { id: "results", label: "My Results", icon: "fa-solid fa-chart-line" },
-          { id: "transcripts", label: "My Transcript", icon: "fa-solid fa-scroll" },
-        ],
-      },
-    ],
-    // Accountant: payroll and contracts only. No employees, no leave, no
-    // loans, no documents — those stay with HR.
-    accountant: [
-      PAYROLL_CONTRACTS_SECTION,
-    ],
-    hr: [
-      {
-        section: "Main",
-        // No "Dashboard" item here: it pointed at hr-dashboard, the same page
-        // as "HR Dashboard" in the section below, so the menu offered one page
-        // twice under two names. HR lands there anyway (see App.tsx).
-        items: [
-          { id: "profile", label: "My Profile", icon: "fa-solid fa-circle-user" },
-          { id: "notifications", label: "Notifications", icon: "fa-solid fa-bullhorn", badge: db.notifications.length },
-        ],
-      },
-      HR_MANAGEMENT_SECTION,
-      SELF_SERVICE_SECTION,
-    ],
-    manager: [
-      {
-        section: "Main",
-        items: [
-          { id: "dashboard", label: "Dashboard", icon: "fa-solid fa-gauge" },
-          { id: "profile", label: "My Profile", icon: "fa-solid fa-circle-user" },
-        ],
-      },
-      SELF_SERVICE_SECTION,
-    ],
-    employee: [
-      {
-        section: "Main",
-        items: [
-          { id: "dashboard", label: "Dashboard", icon: "fa-solid fa-gauge" },
-          { id: "profile", label: "My Profile", icon: "fa-solid fa-circle-user" },
-        ],
-      },
-      SELF_SERVICE_SECTION,
-    ],
-  };
-  // A role with no entry above falls back to the smallest possible menu, not
-  // to the admin one. The previous fallback was `configs.admin`, which handed
-  // an unrecognised role the full Management section — Audit Trail, Backup &
-  // Restore, User Management, Configuration. ROLE_PAGES in AppLayout still
-  // refused to render those pages, so the items silently did nothing, but a
-  // menu that offers the audit trail to someone who may not open it is a
-  // disclosure in itself and reads as a bug. Any future role added to the
-  // app_role enum now lands here safely until it is given a menu of its own.
-  return configs[role] || [
-    {
-      section: "Main",
-      items: [
-        { id: "dashboard", label: "Dashboard", icon: "fa-solid fa-gauge" },
-        { id: "profile", label: "My Profile", icon: "fa-solid fa-circle-user" },
-      ],
-    },
-  ];
 }
 
 function hasActiveDescendant(item: NavItem, activeId: string): boolean {
@@ -450,6 +63,9 @@ function hasActiveDescendant(item: NavItem, activeId: string): boolean {
  * than an effect avoids a visible flash of the expanded rail on load.
  */
 const COLLAPSE_KEY = "boswa.sidebar.collapsed";
+
+/** Per user, so two people sharing a browser each keep their own area. */
+const areaKeyFor = (userId: string | undefined) => `boswa.sidebar.area.${userId ?? "anon"}`;
 
 export default function Sidebar() {
   const [collapsed, setCollapsed] = useState<boolean>(() => {
@@ -466,9 +82,53 @@ export default function Sidebar() {
 
   const { db, currentUser, activePage, navigate, setCurrentUser } = useApp();
   const { isHR } = useUserRole();
-  const role = currentUser?.role || "admin";
+  // Same default as AppLayout's guard: an unset role gets the smallest menu,
+  // never the admin one.
+  const role = (currentUser?.role || "student") as AppRole;
   const hrPending = useHrPendingCounts(isHR);
-  const navConfig = getNavConfig(role, db, hrPending);
+  const areas = areasForRole(role);
+  const areaKey = areaKeyFor(currentUser?.id);
+
+  const pickArea = (): AreaId | null => {
+    try {
+      const saved = localStorage.getItem(areaKey) as AreaId | null;
+      if (saved && areas.includes(saved)) return saved;
+    } catch { /* private mode */ }
+    const fallback = DEFAULT_AREA[role];
+    return fallback && areas.includes(fallback) ? fallback : areas[0] ?? null;
+  };
+
+  const [area, setArea] = useState<AreaId | null>(pickArea);
+
+  // Impersonation changes the role without remounting: re-pick for the new
+  // role and user.
+  useEffect(() => { setArea(pickArea()); }, [role, currentUser?.id]);
+
+  // Follow the page. A dashboard tile or notification can open a page in
+  // another area, so the menu switches to show where the user now is.
+  useEffect(() => {
+    const pageArea = areaOfPage(activePage);
+    if (pageArea && pageArea !== area && areas.includes(pageArea)) setArea(pageArea);
+  }, [activePage, role]);
+
+  const chooseArea = (next: AreaId) => {
+    setArea(next);
+    try { localStorage.setItem(areaKey, next); } catch { /* private mode */ }
+  };
+
+  const navConfig = buildMenu(role, area);
+  const currentArea = getNavArea(area);
+
+  const badgeValue = (key: BadgeKey | undefined): number | undefined => {
+    switch (key) {
+      case "notifications": return db.notifications.length;
+      // Admin only, as before: the count of every student in the school.
+      case "students": return role === "admin" || role === "super_admin" ? db.students.length : undefined;
+      case "pendingLeaves": return hrPending.pendingLeaves > 0 ? hrPending.pendingLeaves : undefined;
+      case "pendingLoans": return hrPending.pendingLoans > 0 ? hrPending.pendingLoans : undefined;
+      default: return undefined;
+    }
+  };
 
   const [expanded, setExpanded] = useState<Record<string, boolean>>({});
 
@@ -486,12 +146,14 @@ export default function Sidebar() {
     if (Object.keys(open).length) {
       setExpanded((prev) => ({ ...prev, ...open }));
     }
-  }, [activePage, role]);
+  }, [activePage, role, area]);
 
   const toggleGroup = (id: string) =>
     setExpanded((prev) => ({ ...prev, [id]: !prev[id] }));
 
-  const renderItem = (item: NavItem, depth: number) => {
+  // hr-attendance-report sits in both HR Management and Self Service, so the
+  // Self Service copy gets its own test id.
+  const renderItem = (item: NavItem, depth: number, sectionName: string) => {
     const isGroup = !!item.children && item.children.length > 0;
     const indentStyle = depth > 0 ? { paddingLeft: 16 + depth * 14 } : undefined;
 
@@ -504,6 +166,7 @@ export default function Sidebar() {
             className={`nav-item nav-group ${activeInside ? "has-active" : ""}`}
             title={item.label}
             style={indentStyle}
+            data-testid={`sidebar-group-${item.id}`}
             onClick={() => toggleGroup(item.id)}
           >
             <span className="ico">
@@ -516,27 +179,30 @@ export default function Sidebar() {
           </div>
           {open && (
             <div className="nav-children">
-              {item.children!.map((child) => renderItem(child, depth + 1))}
+              {item.children!.map((child) => renderItem(child, depth + 1, sectionName))}
             </div>
           )}
         </div>
       );
     }
 
+    const badge = badgeValue(item.badge);
+    const testId = sectionName === "Self Service" ? `sidebar-nav-self-${item.id}` : `sidebar-nav-${item.id}`;
     return (
       <div
         key={item.id}
         className={`nav-item ${activePage === item.id ? "active" : ""} ${depth > 0 ? "nav-child" : ""}`}
         title={item.label}
         style={indentStyle}
+        data-testid={testId}
         onClick={() => navigate(item.id)}
       >
         <span className="ico">
           <i className={item.icon} />
         </span>
         <span>{item.label}</span>
-        {item.badge !== undefined && (
-          <span className={`nav-badge ${item.badge > 0 ? "new" : ""}`}>{item.badge}</span>
+        {badge !== undefined && (
+          <span className={`nav-badge ${badge > 0 ? "new" : ""}`}>{badge}</span>
         )}
       </div>
     );
@@ -547,8 +213,8 @@ export default function Sidebar() {
       <div className="logo">
         <div className="logo-img">B</div>
         <div className="logo-text">
-          <div className="name">Boswa CIB SMS</div>
-          <div className="sub">School Management</div>
+          <div className="name">Boswa CIB</div>
+          <div className="sub">{currentArea?.fullName ?? "School Management"}</div>
         </div>
         {/* Sits beside the brand so it is where the eye already is, and stays
             reachable when collapsed — a toggle you cannot find to undo is worse
@@ -564,11 +230,31 @@ export default function Sidebar() {
           <i className={`fa-solid ${collapsed ? "fa-angles-right" : "fa-angles-left"}`} />
         </button>
       </div>
+      {/* Only the menu changes when a tab is clicked; the open page stays. */}
+      {areas.length > 1 && (
+        <div className="area-tabs" role="tablist" aria-label="System area" data-testid="sidebar-area-tablist">
+          {NAV_AREAS.filter((a) => areas.includes(a.id)).map((a) => (
+            <button
+              key={a.id}
+              type="button"
+              role="tab"
+              aria-selected={area === a.id}
+              className={`area-tab${area === a.id ? " active" : ""}`}
+              title={a.fullName}
+              data-testid={`sidebar-area-${a.id}-tab`}
+              onClick={() => chooseArea(a.id)}
+            >
+              <i className={a.icon} />
+              <span>{a.label}</span>
+            </button>
+          ))}
+        </div>
+      )}
       <div className="nav-menu">
         {navConfig.map((sec) => (
           <div key={sec.section}>
             <div className="nav-section">{sec.section}</div>
-            {sec.items.map((item) => renderItem(item, 0))}
+            {sec.items.map((item) => renderItem(item, 0, sec.section))}
           </div>
         ))}
       </div>

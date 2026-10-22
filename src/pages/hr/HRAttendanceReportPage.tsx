@@ -825,7 +825,7 @@ export default function HRAttendanceReportPage() {
       {/* Header */}
       <div className="page-header">
         <div>
-          <div className="page-title">Attendance Report</div>
+          <div className="page-title">{isSelfServiceOnly ? 'My Attendance' : 'Staff Attendance · Attendance Report'}</div>
           <div className="page-sub">HR Management · {periodLabel}</div>
         </div>
         <button className="btn btn-primary btn-sm" onClick={() => void handleExport()} disabled={exporting}>

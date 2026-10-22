@@ -250,7 +250,7 @@ export default function HRLiveAttendancePage() {
     return (
       <>
         <div className="page-header">
-          <div><div className="page-title">Live Dashboard</div></div>
+          <div><div className="page-title">Staff Attendance · Live Dashboard</div></div>
         </div>
         <div className="card" style={{ padding: 32, textAlign: 'center', color: 'var(--text2)' }}>
           You do not have permission to view attendance.
@@ -264,7 +264,7 @@ export default function HRLiveAttendancePage() {
       {/* Header */}
       <div className="page-header">
         <div>
-          <div className="page-title">Live Dashboard</div>
+          <div className="page-title">Staff Attendance · Live Dashboard</div>
           <div className="page-sub">
             <i className="fa-solid fa-database" style={{ marginRight: 4 }} />
             Sourced from Hik-Connect daily reports

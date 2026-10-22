@@ -84,7 +84,7 @@ export default function NotesPage() {
         <div>
           <div className="page-title">
             <i className="fa-solid fa-folder-open" style={{ color: "var(--accent)", marginRight: 8 }} />
-            Module Notes
+            Notes &amp; Materials
           </div>
           <div className="page-sub">{visibleModules.length} module(s)</div>
         </div>

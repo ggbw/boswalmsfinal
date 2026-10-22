@@ -119,7 +119,7 @@ export default function HRAttendanceRecordsPage() {
     return (
       <>
         <div className="page-header">
-          <div><div className="page-title">Raw Punches</div></div>
+          <div><div className="page-title">Staff Attendance · Raw Punches</div></div>
         </div>
         <div className="card" style={{ padding: 32, textAlign: 'center', color: 'var(--text2)' }}>
           You do not have permission to view attendance records.
@@ -133,7 +133,7 @@ export default function HRAttendanceRecordsPage() {
       {/* Header */}
       <div className="page-header">
         <div>
-          <div className="page-title">Raw Punches</div>
+          <div className="page-title">Staff Attendance · Raw Punches</div>
           <div className="page-sub">HR Management · {filtered.length} records</div>
         </div>
         <button className="btn btn-outline btn-sm" onClick={exportCsv}>
