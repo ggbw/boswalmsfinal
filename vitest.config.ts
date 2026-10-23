@@ -11,6 +11,11 @@ export default defineConfig({
     include: ["src/**/*.{test,spec}.{ts,tsx}", "tests/smoke/**/*.{test,spec}.{ts,tsx}"],
   },
   resolve: {
-    alias: { "@": path.resolve(__dirname, "./src") },
+    // Same boswa-live pin as vite.config.ts.
+    alias: [
+      { find: /^@\/integrations\/supabase\/client$/, replacement: path.resolve(__dirname, "./src/lib/backend/client.ts") },
+      { find: /^@\/integrations\/supabase\/types$/, replacement: path.resolve(__dirname, "./src/lib/backend/types.ts") },
+      { find: "@", replacement: path.resolve(__dirname, "./src") },
+    ],
   },
 });

@@ -14,8 +14,13 @@ export default defineConfig(({ mode }) => ({
   },
   plugins: [react(), mode === "development" && componentTagger()].filter(Boolean),
   resolve: {
-    alias: {
-      "@": path.resolve(__dirname, "./src"),
-    },
+    // The first two pin the database to boswa-live: Lovable Cloud regenerates
+    // src/integrations/supabase/{client,types}.ts for its own database, so
+    // those paths resolve to src/lib/backend instead. They must stay above "@".
+    alias: [
+      { find: /^@\/integrations\/supabase\/client$/, replacement: path.resolve(__dirname, "./src/lib/backend/client.ts") },
+      { find: /^@\/integrations\/supabase\/types$/, replacement: path.resolve(__dirname, "./src/lib/backend/types.ts") },
+      { find: "@", replacement: path.resolve(__dirname, "./src") },
+    ],
   },
 }));

@@ -5,9 +5,9 @@
     "noUnusedLocals": false,
     "noUnusedParameters": false,
     "paths": {
-      "@/*": [
-        "./src/*"
-      ]
+      "@/integrations/supabase/client": ["./src/lib/backend/client.ts"],
+      "@/integrations/supabase/types": ["./src/lib/backend/types.ts"],
+      "@/*": ["./src/*"]
     },
     "skipLibCheck": true,
     "strictNullChecks": false
