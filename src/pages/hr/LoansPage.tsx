@@ -255,7 +255,7 @@ export default function LoansPage() {
       ? { current_stage: next }
       : { status: 'Approved', current_stage: null };
 
-    let { error } = await supabase.from('advance_salaries').update(updates).eq('id', a.id);
+    let { error } = await supabase.from('advance_salaries').update(updates as never).eq('id', a.id);
     if (error && isStageColumnMissingError(error)) {
       const legacy = stripStageFields({ status: 'Approved' });
       ({ error } = await supabase.from('advance_salaries').update(legacy).eq('id', a.id));
@@ -319,10 +319,10 @@ export default function LoansPage() {
       status: 'Rejected',
       rejection_reason: reason,
     };
-    let { error } = await supabase.from('advance_salaries').update(payload).eq('id', a.id);
+    let { error } = await supabase.from('advance_salaries').update(payload as never).eq('id', a.id);
     if (error && isStageColumnMissingError(error)) {
       const legacy = stripStageFields(payload);
-      ({ error } = await supabase.from('advance_salaries').update(legacy).eq('id', a.id));
+      ({ error } = await supabase.from('advance_salaries').update(legacy as never).eq('id', a.id));
     }
     if (error) { toast(error.message, 'error'); return; }
 
