@@ -9,6 +9,7 @@ The snapshot was taken on 16 Oct 2026 at 07:56 UTC. The UAT test cohort — `UAT
 | Step | Script | When | Changes data? |
 |---|---|---|---|
 | 1 | `01_take_snapshot.sql` | Once, just before UAT starts | No. It copies the data into a private `uat_snapshot` schema |
+| 1b | `05_protect_hr_data.sql` | Once, any time before step 3 | No. It replaces two functions so the wipe can never change HR or payroll |
 | 2 | `02_check_uat_changes.sql` | Any time; always before step 3 | No |
 | 3 | `03_wipe_uat_data.sql` | Once, at go-live | Yes: LMS tables only, plus UAT logins |
 | 4 | `04_drop_snapshot.sql` | About two weeks after go-live | Drops the snapshot copy |
@@ -17,6 +18,7 @@ The snapshot was taken on 16 Oct 2026 at 07:56 UTC. The UAT test cohort — `UAT
 
 - **LMS tables (29):** they're put back exactly as they were at the snapshot. Rows UAT added are deleted. Live rows UAT edited or deleted are restored. The list is in `uat_snapshot._lms_tables`.
 - **Login accounts created after the snapshot:** deleted, unless they're linked to an employee record or hold an HR or payroll role (`employee`, `hr`, `accountant`). Any other real account can be kept with `keep_emails`.
+- **UAT accounts that HR or payroll rows point at** (for example, a UAT login that approved a leave or created a payslip) are kept with sign-in blocked, not deleted. Deleting them would make Postgres blank or delete those HR rows. This needs `05_protect_hr_data.sql`.
 - **Files uploaded to LMS buckets:** listed by `uat_snapshot.new_files()`. Storage doesn't allow deleting files through SQL, so these are removed by hand.
 
 ## What is never touched
@@ -24,6 +26,10 @@ The snapshot was taken on 16 Oct 2026 at 07:56 UTC. The UAT test cohort — `UAT
 Employees, contracts, payslips, pay components, loans, advances, leave, staff attendance (`attendance_records` and the Hikvision device), workflows, HR notifications and settings.
 
 Existing users' `profiles` and `user_roles` are reported but never changed.
+
+**Enforced, not just intended** (after `05`): the wipe locks every non-LMS table, fingerprints it, and checks it again at the end. If a single HR, payroll or settings row would change, the whole wipe rolls back. Only `profiles`/`user_roles` (the UAT accounts' own rows) and `audit_logs` are exempt.
+
+Anything done in HR or payroll during UAT is real and stays, including what UAT logins do there. Testers should not use the HR and payroll screens.
 
 ## Changes made because of UAT are live and are kept
 

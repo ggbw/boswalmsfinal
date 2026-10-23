@@ -3,6 +3,7 @@
 -- ════════════════════════════════════════════════════════════════════════════
 --
 -- Before running:
+--   0. 05_protect_hr_data.sql must have been run once (it adds the HR guard).
 --   1. Run 02_check_uat_changes.sql and read the results.
 --   2. Make sure nobody is using the LMS (announce a 15-minute window).
 --
