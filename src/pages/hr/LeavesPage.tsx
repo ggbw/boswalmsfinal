@@ -361,7 +361,7 @@ export default function LeavesPage() {
     const updates: Record<string, unknown> = next
       ? { current_stage: next }
       : { status: 'approved', current_stage: null, approved_at: new Date().toISOString(), approved_by: approverEmployeeId, approved_date: new Date().toISOString().slice(0, 10) };
-    let { error } = await supabase.from('leave_requests').update(updates).eq('id', r.id);
+    let { error } = await supabase.from('leave_requests').update(updates as never).eq('id', r.id);
     if (error && isStageColumnMissingError(error)) {
       const legacy = stripStageFields({ status: 'approved', approved_at: new Date().toISOString(), approved_by: approverEmployeeId, approved_date: new Date().toISOString().slice(0, 10) });
       ({ error } = await supabase.from('leave_requests').update(legacy).eq('id', r.id));
@@ -410,8 +410,8 @@ export default function LeavesPage() {
     const currentStage = (r.current_stage ?? null) as ApprovalStage | null;
     if (currentStage && !canActOnStage(currentStage, roleFlags)) { toast(`Only ${stageLabel(currentStage)} can reject this stage.`, 'error'); return; }
     const payload: Record<string, unknown> = { status: 'rejected', approver_comment: reason, rejection_reason: reason, approved_at: new Date().toISOString(), approved_by: approverEmployeeId };
-    let { error } = await supabase.from('leave_requests').update(payload).eq('id', r.id);
-    if (error && isStageColumnMissingError(error)) { ({ error } = await supabase.from('leave_requests').update(stripStageFields(payload)).eq('id', r.id)); }
+    let { error } = await supabase.from('leave_requests').update(payload as never).eq('id', r.id);
+    if (error && isStageColumnMissingError(error)) { ({ error } = await supabase.from('leave_requests').update(stripStageFields(payload) as never).eq('id', r.id)); }
     if (error) { toast(error.message, 'error'); return; }
     await reverseAllocationPending(r);
     void notifyRejected(buildCtx(r), (currentStage ?? 'hr') as ApprovalStage, userId, reason);
