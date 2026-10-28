@@ -108,6 +108,7 @@ export function useDbData() {
         transcript_issuer?: string | null;
         transcript_issuer_title?: string | null;
         transcript_signature?: string | null;
+        grading_system?: string | null;
         offer_letter_signatory?: string | null;
         offer_letter_signatory_title?: string | null;
         offer_letter_signature_url?: string | null;
@@ -143,6 +144,8 @@ export function useDbData() {
           transcriptIssuer: config?.transcript_issuer || "Boisi Dibuile",
           transcriptIssuerTitle: config?.transcript_issuer_title || "Deputy Principal",
           transcriptSignature: config?.transcript_signature || "",
+          // Defaults to the new "boswa" system until the column exists / is set.
+          gradingSystem: config?.grading_system === "legacy" ? "legacy" : "boswa",
           offerLetterSignatory: config?.offer_letter_signatory || "Ms Claudette Latifa Ziteyo",
           offerLetterSignatoryTitle: config?.offer_letter_signatory_title || "School Administration Manager",
           offerLetterSignatureUrl: config?.offer_letter_signature_url || "",

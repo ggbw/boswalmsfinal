@@ -12,6 +12,7 @@ import {
   standingBucket,
   displayGrade,
   gradeScaleDisplay,
+  activeScale,
   STANDING_ORDER,
   PASS_MARK,
 } from "../grading";
@@ -204,6 +205,52 @@ describe("already-finalised results are never regraded under the new system", ()
   it("a result not yet finalised is graded on the current scale", () => {
     expect(displayGrade({ mark: 85 }, "diploma")).toBe("A");
     expect(displayGrade({ mark: 85, finalizedGrade: null }, "certificate")).toBe("D");
+  });
+});
+
+describe("legacy scale — the old system a super-admin can switch back to", () => {
+  const cases: [number, string, number][] = [
+    [86, "A", 4.0],
+    [80, "A-", 3.7],
+    [75, "B+", 3.3],
+    [70, "B", 3.0],
+    [65, "B-", 2.7],
+    [60, "C+", 2.3],
+    [55, "C", 2.0],
+    [50, "C-", 1.7],
+    [49, "F", 0.0],
+  ];
+  it.each(cases)("%i → %s (%f points)", (mark, letter, point) => {
+    expect(letterGrade(mark, "legacy")).toBe(letter);
+    expect(gradePoint(letter, "legacy")).toBe(point);
+  });
+  it("letter order is the full +/- ladder", () => {
+    expect(letterOrder("legacy")).toEqual(["A", "A-", "B+", "B", "B-", "C+", "C", "C-", "F"]);
+  });
+  it("legacy GPA uses the 4.0 points", () => {
+    // 86 → A → 4.0; 70 → B → 3.0
+    expect(computeGpa([{ mark: 86, credits: 10 }, { mark: 70, credits: 10 }], "legacy")).toBe("3.50");
+  });
+});
+
+describe("the grading-system toggle decides the active scale", () => {
+  const diplomaProg = { level: 6 };
+  const certProg = { level: 5 };
+  it("'boswa' uses the per-level scale", () => {
+    expect(activeScale(diplomaProg, "boswa")).toBe("diploma");
+    expect(activeScale(certProg, "boswa")).toBe("certificate");
+  });
+  it("'legacy' forces the old scale for every programme", () => {
+    expect(activeScale(diplomaProg, "legacy")).toBe("legacy");
+    expect(activeScale(certProg, "legacy")).toBe("legacy");
+  });
+  it("defaults to the per-level scale when the system is unset", () => {
+    expect(activeScale(diplomaProg, undefined)).toBe("diploma");
+    expect(activeScale(certProg, null)).toBe("certificate");
+  });
+  it("switching systems changes an 85's letter: A (Boswa Diploma) vs A- (legacy)", () => {
+    expect(letterGrade(85, activeScale(diplomaProg, "boswa"))).toBe("A");
+    expect(letterGrade(85, activeScale(diplomaProg, "legacy"))).toBe("A-");
   });
 });
 

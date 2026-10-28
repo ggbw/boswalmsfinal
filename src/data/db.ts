@@ -257,6 +257,11 @@ export interface DB {
     transcriptIssuer?: string;
     transcriptIssuerTitle?: string;
     transcriptSignature?: string;
+    // Which grading system is in force system-wide: "boswa" (the new per-level
+    // Diploma/Certificate scales, default) or "legacy" (the old A–F 4.0 scale).
+    // A super-admin flips this from the Transcripts page. Stored in
+    // school_config.grading_system.
+    gradingSystem?: "boswa" | "legacy";
     offerLetterSignatory?: string;
     offerLetterSignatoryTitle?: string;
     offerLetterSignatureUrl?: string;

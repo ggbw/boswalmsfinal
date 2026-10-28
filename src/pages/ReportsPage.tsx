@@ -8,7 +8,7 @@ import {
   letterBadgeClass,
   gradeScaleDisplay,
   letterOrder,
-  scaleForProgramme,
+  activeScale,
   standingBucket,
   STANDING_ORDER,
   PASS_MARK,
@@ -158,8 +158,9 @@ export default function ReportsPage() {
     const cwPct = moduleHasPractical ? 40 : 60;
     const students = db.students.filter((s) => s.classId === cls.id);
     const prog = db.config.programmes.find((p) => p.id === cls.programme);
-    // Scale (Diploma vs Certificate) is chosen by the class's programme level.
-    const scaleKey = scaleForProgramme(prog);
+    // Scale is chosen by the class's programme level, unless a super-admin has
+    // switched the whole system back to the legacy scale.
+    const scaleKey = activeScale(prog, db.config.gradingSystem);
 
     // Get all exams and assignments for this class+module
     const classExams = db.exams.filter((e) => e.classId === cls.id && e.moduleId === moduleId);
@@ -902,7 +903,7 @@ export default function ReportsPage() {
               {filteredClasses.map((cls) => {
                 const students = db.students.filter((s) => s.classId === cls.id);
                 const prog = db.config.programmes.find((p) => p.id === cls.programme);
-                const scaleKey = scaleForProgramme(prog);
+                const scaleKey = activeScale(prog, db.config.gradingSystem);
                 // Grade distribution computed from assessment_marks, using the
                 // same weighted module-mark helper as the Class Report so the two
                 // always agree. A student is graded on the average of the module

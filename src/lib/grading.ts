@@ -27,7 +27,14 @@ import { PASS_MARK } from "./progression";
 
 export { PASS_MARK };
 
-export type ScaleKey = "diploma" | "certificate";
+export type ScaleKey = "diploma" | "certificate" | "legacy";
+
+// Which grading system is in force, system-wide. "boswa" = the two award scales
+// chosen by programme level (the new, confirmed system). "legacy" = the old
+// university letter scale (A, A-, B+ … F on 4.0) applied to every programme.
+// A super-admin can switch back to "legacy" from the Transcripts page as a
+// safety net. Stored in school_config.grading_system; defaults to "boswa".
+export type GradingSystem = "boswa" | "legacy";
 
 export interface GradeBand {
   /** Inclusive lower bound, on the ROUNDED whole-number mark. */
@@ -80,9 +87,31 @@ const CERTIFICATE_SCALE: Scale = {
   ],
 };
 
+// The OLD scale, kept so a super-admin can switch the whole system back to it.
+// University letter grades with +/- bands on a 4.0 scale; a module passes at 50%
+// (C-). Standings drive the badge colours exactly as the old letterBadgeClass
+// did (A-family → distinction, B → merit, C → credit, F → fail).
+const LEGACY_SCALE: Scale = {
+  key: "legacy",
+  hasGpa: true,
+  headers: ["Percentage Range", "Letter Grade", "Grade Point Value", "Academic Standing"],
+  bands: [
+    { min: 86, letter: "A", point: 4.0, standing: "Distinction", descriptor: "" },
+    { min: 80, letter: "A-", point: 3.7, standing: "Distinction", descriptor: "" },
+    { min: 75, letter: "B+", point: 3.3, standing: "Merit", descriptor: "" },
+    { min: 70, letter: "B", point: 3.0, standing: "Merit", descriptor: "" },
+    { min: 65, letter: "B-", point: 2.7, standing: "Merit", descriptor: "" },
+    { min: 60, letter: "C+", point: 2.3, standing: "Credit", descriptor: "" },
+    { min: 55, letter: "C", point: 2.0, standing: "Credit", descriptor: "" },
+    { min: 50, letter: "C-", point: 1.7, standing: "Credit", descriptor: "" },
+    { min: 0, letter: "F", point: 0.0, standing: "Fail", descriptor: "" },
+  ],
+};
+
 export const GRADING_SCALES: Record<ScaleKey, Scale> = {
   diploma: DIPLOMA_SCALE,
   certificate: CERTIFICATE_SCALE,
+  legacy: LEGACY_SCALE,
 };
 
 export function getScale(scale: ScaleKey): Scale {
@@ -101,6 +130,19 @@ export function scaleForProgramme(prog?: { level?: number | null; type?: string 
   if (hint.includes("certificate")) return "certificate";
   if (hint.includes("diploma")) return "diploma";
   return "diploma";
+}
+
+/**
+ * The scale actually in force for a programme, honouring the system-wide toggle.
+ * When the super-admin has switched to the legacy system every programme uses the
+ * old letter scale; otherwise the scale is chosen by programme level as above.
+ */
+export function activeScale(
+  prog: { level?: number | null; type?: string | null; name?: string | null } | undefined,
+  system: GradingSystem | undefined | null,
+): ScaleKey {
+  if (system === "legacy") return "legacy";
+  return scaleForProgramme(prog);
 }
 
 // ── Rounding ───────────────────────────────────────────────────────────────────
@@ -224,10 +266,10 @@ export function certificateOverall(moduleMarks: number[]): { mark: number; grade
  * Boswa (the template's GPA cell is blank); credit-weighted is kept as the
  * current behaviour and flagged in the report.
  */
-export function computeGpa(mods: { mark: number; credits: number }[]): string {
+export function computeGpa(mods: { mark: number; credits: number }[], scale: ScaleKey = "diploma"): string {
   const totalCredits = mods.reduce((s, m) => s + m.credits, 0);
   if (!totalCredits) return "—";
-  const weighted = mods.reduce((s, m) => s + gradePoint(letterGrade(m.mark, "diploma"), "diploma") * m.credits, 0);
+  const weighted = mods.reduce((s, m) => s + gradePoint(letterGrade(m.mark, scale), scale) * m.credits, 0);
   return (weighted / totalCredits).toFixed(2);
 }
 

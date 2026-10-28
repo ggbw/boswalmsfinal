@@ -6,11 +6,13 @@ import { categorizeModuleAssessments, computeStudentModuleMark } from "@/lib/mod
 import {
   letterGrade,
   gradeScaleDisplay,
-  scaleForProgramme,
+  activeScale,
+  getScale,
   computeGpa,
   certificateOverall,
   roundMark,
   type ScaleKey,
+  type GradingSystem,
 } from "@/lib/grading";
 
 // Roles permitted to edit the transcript signatory ("admin and above").
@@ -25,9 +27,9 @@ const CAN_EDIT_ISSUER = ["admin", "super_admin"];
 // Σ(credits). Superseded (earlier retake) attempts are excluded — only the
 // latest attempt counts. Diploma only; the Certificate transcript shows a
 // simple-average "Total Marks (%)" instead (see certificateOverall).
-function computeGPA(mods: PassedModule[]): string {
+function computeGPA(mods: PassedModule[], scaleKey: ScaleKey): string {
   const counted = mods.filter((m) => !m.superseded).map((m) => ({ mark: m.mark, credits: m.credits }));
-  return computeGpa(counted);
+  return computeGpa(counted, scaleKey);
 }
 
 function formatDate(dateStr?: string): string {
@@ -130,7 +132,7 @@ async function buildPassedModules(db: any, student: any): Promise<PassedModule[]
   // The award scale (Diploma vs Certificate) comes from the student's programme
   // level, so the grade letters are from the right classification.
   const prog = (db.config?.programmes || []).find((p: { id: string }) => p.id === student.programme);
-  const scaleKey = scaleForProgramme(prog);
+  const scaleKey = activeScale(prog, db.config?.gradingSystem);
   const { data } = await supabase
     .from("assessment_marks")
     .select("module_id,class_id,assessment_id,score")
@@ -272,12 +274,14 @@ function printTranscript(
   prog: any,
   passedModules: PassedModule[],
   transcriptMeta?: { issuer?: string; title?: string; signature?: string },
+  gradingSystem?: GradingSystem,
 ) {
-  const scaleKey: ScaleKey = scaleForProgramme(prog);
+  const scaleKey: ScaleKey = activeScale(prog, gradingSystem);
+  const showGpa = getScale(scaleKey).hasGpa;
   const studyYears = prog?.startYear ? `${prog.startYear}–${prog.startYear + (prog.years || 3)}` : "—";
 
   const totalCredits = passedModules.filter((m) => !m.superseded).reduce((s, m) => s + m.credits, 0);
-  const cumulativeGpa = computeGPA(passedModules);
+  const cumulativeGpa = computeGPA(passedModules, scaleKey);
   // Certificate transcripts show a simple-average "Total Marks (%)" and an
   // overall grade word instead of a GPA.
   const certOverall = certificateOverall(passedModules.filter((m) => !m.superseded).map((m) => m.mark));
@@ -295,7 +299,7 @@ function printTranscript(
 
   const semSections = Object.keys(semGroups)
     .map((semKey) => {
-      const semGpa = computeGPA(semGroups[semKey]);
+      const semGpa = computeGPA(semGroups[semKey], scaleKey);
       const semCredits = semGroups[semKey].filter((m) => !m.superseded).reduce((s, m) => s + m.credits, 0);
       const rows = semGroups[semKey]
         .map(
@@ -328,7 +332,7 @@ function printTranscript(
           <tbody>${rows}</tbody>
         </table>
         <div style="font-size:12px;font-weight:700;display:flex;gap:20px;padding:4px 10px;background:#f4f4f4;border:1px solid #ddd;border-radius:0 0 4px 4px">
-          ${scaleKey === "diploma" ? `<span>Semester GPA = ${semGpa}</span>` : ""}
+          ${showGpa ? `<span>Semester GPA = ${semGpa}</span>` : ""}
           <span>Credits = ${semCredits}</span>
         </div>
       </div>`;
@@ -429,7 +433,7 @@ function printTranscript(
   ${
     passedModules.length === 0
       ? ""
-      : scaleKey === "diploma"
+      : showGpa
       ? `<div style="display:flex;gap:24px;justify-content:flex-end;align-items:center;background:#002060;color:#fff;padding:8px 16px;border-radius:4px;margin-bottom:14px;font-size:13px;font-weight:700">
           <span>Total Credit = ${totalCredits}</span>
           <span style="font-size:14px">GPA = ${cumulativeGpa}</span>
@@ -700,6 +704,87 @@ function IssuerSettingsForm() {
   );
 }
 
+// ── Grading-system switch (super-admin only) ─────────────────────────────────
+// Flips the whole system between the new per-level Boswa scales and the old
+// legacy letter scale. A safety net: nothing is recalculated in the database —
+// the choice only changes how grades are rendered from the same raw marks.
+function GradingSystemForm() {
+  const { db, toast, closeModal, reloadDb } = useApp();
+  const [choice, setChoice] = useState<GradingSystem>(db.config.gradingSystem === "legacy" ? "legacy" : "boswa");
+  const [saving, setSaving] = useState(false);
+
+  const save = async () => {
+    const configId = db.config.id;
+    if (!configId) {
+      toast("Config record not found", "error");
+      return;
+    }
+    setSaving(true);
+    const { error } = await supabase
+      .from("school_config")
+      .update({ grading_system: choice })
+      .eq("id", configId);
+    setSaving(false);
+    if (error) {
+      // The column may not exist on the database yet.
+      const missing = /grading_system|column/i.test(error.message);
+      toast(
+        missing
+          ? "Add the grading_system column to school_config first (see the credits/grading migration), then try again."
+          : error.message,
+        "error",
+      );
+      return;
+    }
+    toast(`Grading system set to ${choice === "legacy" ? "Legacy (old A–F)" : "Boswa (Diploma/Certificate)"}.`, "success");
+    closeModal();
+    reloadDb();
+  };
+
+  const Option = ({ value, title, desc }: { value: GradingSystem; title: string; desc: string }) => (
+    <label
+      style={{
+        display: "flex", gap: 10, alignItems: "flex-start", padding: 12, cursor: "pointer",
+        border: `2px solid ${choice === value ? "#C9A227" : "var(--border)"}`,
+        borderRadius: 8, marginBottom: 10, background: choice === value ? "#fffaf0" : "transparent",
+      }}
+    >
+      <input type="radio" name="gradingSystem" checked={choice === value} onChange={() => setChoice(value)} style={{ marginTop: 3 }} />
+      <span>
+        <span style={{ fontWeight: 700, display: "block" }}>{title}</span>
+        <span style={{ fontSize: 12, color: "var(--text2)" }}>{desc}</span>
+      </span>
+    </label>
+  );
+
+  return (
+    <div>
+      <p style={{ fontSize: 12, color: "var(--text2)", marginBottom: 12 }}>
+        Choose which grading system every report and transcript uses. This changes how grades are
+        <strong> displayed</strong> from the existing marks — no marks or results are altered in the database.
+      </p>
+      <Option
+        value="boswa"
+        title="Boswa scales (recommended)"
+        desc="Diploma (Level 6): A·5.0 / B·4.0 / C·3.0 / D·2.0 / F. Certificate (Level 5): D·M·C·P·F. Chosen per programme level."
+      />
+      <Option
+        value="legacy"
+        title="Legacy letter scale (old)"
+        desc="The previous university scale A, A-, B+, B, B-, C+, C, C-, F on 4.0 points, applied to every programme."
+      />
+      <div style={{ display: "flex", gap: 8, marginTop: 8 }}>
+        <button className="btn btn-primary" disabled={saving} onClick={save}>
+          {saving ? "Saving…" : "Save"}
+        </button>
+        <button className="btn btn-outline" disabled={saving} onClick={closeModal}>
+          Cancel
+        </button>
+      </div>
+    </div>
+  );
+}
+
 export default function TranscriptsPage() {
   const { db, currentUser, showModal } = useApp();
   const [search, setSearch] = useState("");
@@ -737,6 +822,19 @@ export default function TranscriptsPage() {
           >
             <i className="fa-solid fa-pen" style={{ marginRight: 6 }} />
             Issued By / Position
+          </button>
+        )}
+        {role === "super_admin" && (
+          <button
+            className="btn btn-outline btn-sm"
+            onClick={() => showModal("Grading System", <GradingSystemForm />)}
+            title="Switch between the Boswa scales and the old legacy letter scale"
+          >
+            <i className="fa-solid fa-sliders" style={{ marginRight: 6 }} />
+            Grading System
+            {db.config.gradingSystem === "legacy" && (
+              <span style={{ marginLeft: 6, fontSize: 10, color: "#b45309", fontWeight: 700 }}>LEGACY</span>
+            )}
           </button>
         )}
       </div>
@@ -797,7 +895,7 @@ export default function TranscriptsPage() {
                             issuer: db.config.transcriptIssuer,
                             title: db.config.transcriptIssuerTitle,
                             signature: db.config.transcriptSignature,
-                          });
+                          }, db.config.gradingSystem);
                         }}
                       >
                         <i className="fa-solid fa-print" /> Print
@@ -819,7 +917,8 @@ export function TranscriptView({ stu }: { stu: any }) {
   const { db } = useApp();
 
   const prog = db.config.programmes.find((p: any) => p.id === stu.programme);
-  const scaleKey: ScaleKey = scaleForProgramme(prog);
+  const scaleKey: ScaleKey = activeScale(prog, db.config.gradingSystem);
+  const showGpa = getScale(scaleKey).hasGpa;
   const [passedModules, setPassedModules] = useState<PassedModule[]>([]);
   const [loading, setLoading] = useState(true);
 
@@ -837,7 +936,7 @@ export function TranscriptView({ stu }: { stu: any }) {
   }, [db, stu]);
 
   const totalCredits = passedModules.filter((m) => !m.superseded).reduce((s, m) => s + m.credits, 0);
-  const cumulativeGpa = computeGPA(passedModules);
+  const cumulativeGpa = computeGPA(passedModules, scaleKey);
   const certOverall = certificateOverall(passedModules.filter((m) => !m.superseded).map((m) => m.mark));
 
   const semGroups: Record<string, PassedModule[]> = {};
@@ -854,7 +953,7 @@ export function TranscriptView({ stu }: { stu: any }) {
       issuer: db.config.transcriptIssuer,
       title: db.config.transcriptIssuerTitle,
       signature: db.config.transcriptSignature,
-    });
+    }, db.config.gradingSystem);
 
   // ── On-screen preview ──────────────────────────────────────────────────────
   return (
@@ -1013,7 +1112,7 @@ export function TranscriptView({ stu }: { stu: any }) {
                   borderRadius: "0 0 4px 4px",
                 }}
               >
-                {scaleKey === "diploma" && <span>Semester GPA = {computeGPA(semGroups[semKey])}</span>}
+                {showGpa && <span>Semester GPA = {computeGPA(semGroups[semKey], scaleKey)}</span>}
                 <span>Credits = {semGroups[semKey].filter((m) => !m.superseded).reduce((s, m) => s + m.credits, 0)}</span>
               </div>
             </div>
@@ -1037,7 +1136,7 @@ export function TranscriptView({ stu }: { stu: any }) {
             fontWeight: 700,
           }}
         >
-          {scaleKey === "diploma" ? (
+          {showGpa ? (
             <>
               <span>Total Credit = {totalCredits}</span>
               <span style={{ fontSize: 14 }}>GPA = {cumulativeGpa}</span>

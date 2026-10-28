@@ -2208,6 +2208,7 @@ export type Database = {
           current_semester: number
           current_term: number
           current_year: number
+          grading_system: string
           id: string
           school_name: string
           semester_end_date: string | null
@@ -2220,6 +2221,7 @@ export type Database = {
           current_semester?: number
           current_term?: number
           current_year?: number
+          grading_system?: string
           id?: string
           school_name?: string
           semester_end_date?: string | null
@@ -2232,6 +2234,7 @@ export type Database = {
           current_semester?: number
           current_term?: number
           current_year?: number
+          grading_system?: string
           id?: string
           school_name?: string
           semester_end_date?: string | null
