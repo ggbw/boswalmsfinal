@@ -117,9 +117,20 @@ follow-up.
    programmes by level/name — **review the WHERE clauses against your real
    programme rows first**.
 
-Then add `credits` to the `programme_modules` select in
-`src/hooks/useDbData.tsx` (~line 92). Until then the transcript falls back to 10
-credits/module (clearly commented).
+The `credits` column is now included in the `programme_modules` select in
+`src/hooks/useDbData.tsx`, so credits flow through once published (fallback 10 if
+a row's credit is null).
+
+**Run on boswa-live (28 Oct 2026, done):** credits were seeded by **module name**,
+not code — the live module codes differ from the templates (spaces/different
+prefixes, e.g. `BSCASHI 104`, `BOSCFS 107`, `BOSC3220`). Final totals:
+**Certificate = 132** (exact). **Diploma = 385** — the live Diploma curriculum
+differs from the sample transcript: it has 3 extra modules (**Hospitality
+Management**, **Introduction to Hot Kitchen/Savory**, **Introduction to Pastry**)
+left at a **placeholder 10 credits** pending Boswa's real figures, and lacks the
+template's "Introduction to the Hospitality Industry" (5 cr). Two name gotchas
+that are 8 credits: **"Providing Guest Service"** and **"Professional Workplace
+Standards"** (double space).
 
 ---
 

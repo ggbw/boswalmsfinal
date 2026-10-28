@@ -89,7 +89,7 @@ export function useDbData() {
         supabase.from("lecturer_modules").select("id,lecturer_id,module_id,class_id"),
         supabase.from("profiles").select("user_id,name,email,dept,code,student_id,student_ref"),
         supabase.from("user_roles").select("user_id,role"),
-        supabase.from("programme_modules" as any).select("programme_id,module_id,year,semester"),
+        supabase.from("programme_modules" as any).select("programme_id,module_id,year,semester,credits"),
       ]);
 
       const moduleClassMap: Record<string, string[]> = {};
@@ -199,8 +199,8 @@ export function useDbData() {
           id: lm.id, lecturerId: lm.lecturer_id, moduleId: lm.module_id, classId: lm.class_id,
         })),
         programmeModules: take("programme_modules", programmeModulesRes, failed).map((pm: any) => ({
-          // `credits` is undefined until the column exists on programme_modules
-          // AND is added to the select above; the transcript falls back to 10.
+          // `credits` comes from the programme_modules.credits column (seeded on
+          // boswa-live 28 Oct 2026); the transcript falls back to 10 if null.
           programmeId: pm.programme_id, moduleId: pm.module_id, year: pm.year, semester: pm.semester, credits: pm.credits,
         })),
         // placeholders — filled in by background load
