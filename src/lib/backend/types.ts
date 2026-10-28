@@ -2094,6 +2094,7 @@ export type Database = {
       }
       programme_modules: {
         Row: {
+          credits: number | null
           id: string
           module_id: string
           programme_id: string
@@ -2101,6 +2102,7 @@ export type Database = {
           year: number
         }
         Insert: {
+          credits?: number | null
           id?: string
           module_id: string
           programme_id: string
@@ -2108,6 +2110,7 @@ export type Database = {
           year: number
         }
         Update: {
+          credits?: number | null
           id?: string
           module_id?: string
           programme_id?: string

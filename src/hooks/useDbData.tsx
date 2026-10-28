@@ -196,7 +196,9 @@ export function useDbData() {
           id: lm.id, lecturerId: lm.lecturer_id, moduleId: lm.module_id, classId: lm.class_id,
         })),
         programmeModules: take("programme_modules", programmeModulesRes, failed).map((pm: any) => ({
-          programmeId: pm.programme_id, moduleId: pm.module_id, year: pm.year, semester: pm.semester,
+          // `credits` is undefined until the column exists on programme_modules
+          // AND is added to the select above; the transcript falls back to 10.
+          programmeId: pm.programme_id, moduleId: pm.module_id, year: pm.year, semester: pm.semester, credits: pm.credits,
         })),
         // placeholders — filled in by background load
         marks: [], attendance: [], studentModules: [], exams: [],

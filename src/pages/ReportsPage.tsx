@@ -3,11 +3,16 @@ import { useApp } from "@/context/AppContext";
 import { supabase } from "@/integrations/supabase/client";
 import { getLecturerClasses } from "@/lib/lecturerHelpers";
 import { avg, categorizeModuleAssessments, computeStudentModuleMark } from "@/lib/moduleMark";
-import { letterGrade, letterBadgeClass, GRADE_SCALE, LETTER_ORDER, PASS_MARK } from "@/lib/grading";
-
-// Grade-distribution columns use the shared transcript letter scale so the report
-// and the transcript always agree.
-const GRADE_ORDER = LETTER_ORDER;
+import {
+  letterGrade,
+  letterBadgeClass,
+  gradeScaleDisplay,
+  letterOrder,
+  scaleForProgramme,
+  standingBucket,
+  STANDING_ORDER,
+  PASS_MARK,
+} from "@/lib/grading";
 
 interface AssessmentMark {
   student_id: string;
@@ -153,6 +158,8 @@ export default function ReportsPage() {
     const cwPct = moduleHasPractical ? 40 : 60;
     const students = db.students.filter((s) => s.classId === cls.id);
     const prog = db.config.programmes.find((p) => p.id === cls.programme);
+    // Scale (Diploma vs Certificate) is chosen by the class's programme level.
+    const scaleKey = scaleForProgramme(prog);
 
     // Get all exams and assignments for this class+module
     const classExams = db.exams.filter((e) => e.classId === cls.id && e.moduleId === moduleId);
@@ -184,11 +191,11 @@ export default function ReportsPage() {
         cat,
         scoreOf: score,
       });
-      return { s, ...mark, decision: letterGrade(mark.moduleMark) };
+      return { s, ...mark, decision: letterGrade(mark.moduleMark, scaleKey) };
     });
 
     const classAvg = rows.length ? Math.round(avg(rows.map((r) => r.moduleMark))) : null;
-    const gradeCounts: Record<string, number> = Object.fromEntries(LETTER_ORDER.map((g) => [g, 0]));
+    const gradeCounts: Record<string, number> = Object.fromEntries(letterOrder(scaleKey).map((g) => [g, 0]));
     rows.forEach((r) => {
       gradeCounts[r.decision] = (gradeCounts[r.decision] || 0) + 1;
     });
@@ -292,7 +299,7 @@ export default function ReportsPage() {
         [],
         [],
         ["", "", "Grading"],
-        ...GRADE_SCALE.map(([label, range]) => ["", "", `${label}   ${range}`]),
+        ...gradeScaleDisplay(scaleKey).map(([label, range]) => ["", "", `${label}   ${range}`]),
       ];
 
       const ws = XLSX.utils.aoa_to_sheet(wsData);
@@ -368,7 +375,7 @@ export default function ReportsPage() {
                 borderTop: "none",
               }}
             >
-              {GRADE_ORDER.map((g) => (
+              {letterOrder(scaleKey).map((g) => (
                 <div
                   key={g}
                   style={{ flex: 1, textAlign: "center", padding: "8px 4px", borderRight: "1px solid var(--border)" }}
@@ -793,7 +800,7 @@ export default function ReportsPage() {
                         {r.moduleMark}%
                       </td>
                       <td style={{ textAlign: "center" }}>
-                        <span className={`badge ${letterBadgeClass(r.decision)}`}>{r.decision}</span>
+                        <span className={`badge ${letterBadgeClass(r.decision, scaleKey)}`}>{r.decision}</span>
                       </td>
                     </tr>
                   ))}
@@ -806,7 +813,7 @@ export default function ReportsPage() {
                         {classAvg}%
                       </td>
                       <td style={{ textAlign: "center" }}>
-                        <span className={`badge ${letterBadgeClass(letterGrade(classAvg))}`}>{letterGrade(classAvg)}</span>
+                        <span className={`badge ${letterBadgeClass(letterGrade(classAvg, scaleKey), scaleKey)}`}>{letterGrade(classAvg, scaleKey)}</span>
                       </td>
                     </tr>
                   )}
@@ -816,12 +823,12 @@ export default function ReportsPage() {
 
             {/* Grading scale — shared with the transcript */}
             <div style={{ display: "flex", gap: 10, marginTop: 14, flexWrap: "wrap" }}>
-              {GRADE_SCALE.map(([label, range]) => (
+              {gradeScaleDisplay(scaleKey).map(([label, range]) => (
                 <div
                   key={label}
                   style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 12, color: "var(--text2)" }}
                 >
-                  <span className={`badge ${letterBadgeClass(label)}`}>{label}</span> {range}
+                  <span className={`badge ${letterBadgeClass(label, scaleKey)}`}>{label}</span> {range}
                 </div>
               ))}
             </div>
@@ -881,7 +888,7 @@ export default function ReportsPage() {
                 <th>Programme</th>
                 <th style={{ textAlign: "center" }}>Yr/Sem</th>
                 <th>Lecturer</th>
-                {GRADE_ORDER.map((g) => (
+                {STANDING_ORDER.map((g) => (
                   <th key={g} style={{ textAlign: "center" }}>
                     {g}
                   </th>
@@ -895,12 +902,14 @@ export default function ReportsPage() {
               {filteredClasses.map((cls) => {
                 const students = db.students.filter((s) => s.classId === cls.id);
                 const prog = db.config.programmes.find((p) => p.id === cls.programme);
+                const scaleKey = scaleForProgramme(prog);
                 // Grade distribution computed from assessment_marks, using the
                 // same weighted module-mark helper as the Class Report so the two
                 // always agree. A student is graded on the average of the module
-                // marks they actually have marks for in this class.
+                // marks they actually have marks for in this class. Columns are
+                // the shared standings so classes on either scale line up.
                 const clsModuleIds = modulesForClass(cls.id).map((m) => m.id);
-                const counts: Record<string, number> = Object.fromEntries(LETTER_ORDER.map((g) => [g, 0]));
+                const counts: Record<string, number> = Object.fromEntries(STANDING_ORDER.map((g) => [g, 0]));
                 students.forEach((s) => {
                   const moduleMarks: number[] = [];
                   clsModuleIds.forEach((mid) => {
@@ -921,12 +930,12 @@ export default function ReportsPage() {
                     moduleMarks.push(moduleMark);
                   });
                   if (moduleMarks.length) {
-                    const g = letterGrade(Math.round(avg(moduleMarks)));
+                    const g = standingBucket(avg(moduleMarks), scaleKey);
                     if (counts[g] !== undefined) counts[g]++;
                   }
                 });
                 const passPct = students.length
-                  ? Math.round(((students.length - (counts.F || 0)) / students.length) * 100)
+                  ? Math.round(((students.length - (counts.Fail || 0)) / students.length) * 100)
                   : 0;
                 return (
                   <tr key={cls.id}>
@@ -936,7 +945,7 @@ export default function ReportsPage() {
                       Y{cls.year} S{cls.semester}
                     </td>
                     <td style={{ fontSize: 11 }}>{[...new Set(db.lecturerModules.filter(lm => lm.classId === cls.id).map(lm => db.users.find(u => u.id === lm.lecturerId)?.name).filter(Boolean))].join(', ') || "—"}</td>
-                    {GRADE_ORDER.map((g) => (
+                    {STANDING_ORDER.map((g) => (
                       <td
                         key={g}
                         style={{

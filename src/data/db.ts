@@ -238,6 +238,11 @@ export interface ProgrammeModule {
   moduleId: string;
   year: number;
   semester: number;
+  // Credits for this module ON THIS PROGRAMME. The same module can carry
+  // different credits on the Diploma vs the Certificate, so credits live here
+  // (per programme + module), not on the module. Optional until the `credits`
+  // column is added to programme_modules on boswa-live (see migration).
+  credits?: number;
 }
 
 export interface DB {

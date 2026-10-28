@@ -3,23 +3,31 @@ import { useApp } from "@/context/AppContext";
 
 import { supabase } from "@/integrations/supabase/client";
 import { categorizeModuleAssessments, computeStudentModuleMark } from "@/lib/moduleMark";
-import { letterGrade, gradePoint, GRADE_SCALE } from "@/lib/grading";
+import {
+  letterGrade,
+  gradeScaleDisplay,
+  scaleForProgramme,
+  computeGpa,
+  certificateOverall,
+  roundMark,
+  type ScaleKey,
+} from "@/lib/grading";
 
 // Roles permitted to edit the transcript signatory ("admin and above").
 const CAN_EDIT_ISSUER = ["admin", "super_admin"];
 
 // ── Grading ───────────────────────────────────────────────────────────────────
-// The letter-grade scale, grade points and displayed scale live in
-// "@/lib/grading" so the transcript and the class report share one definition.
+// The two award scales (Diploma 5.0 GPA vs Certificate overall average), grade
+// points and the displayed scale all live in "@/lib/grading" so the transcript
+// and the class report share one definition.
 
-// Credit-weighted GPA: Σ(gradePoint × credits) / Σ(credits). Superseded
-// (earlier retake) attempts are excluded — only the latest attempt counts.
+// Credit-weighted GPA on the 5.0 Diploma scale: Σ(gradePoint × credits) /
+// Σ(credits). Superseded (earlier retake) attempts are excluded — only the
+// latest attempt counts. Diploma only; the Certificate transcript shows a
+// simple-average "Total Marks (%)" instead (see certificateOverall).
 function computeGPA(mods: PassedModule[]): string {
-  const counted = mods.filter((m) => !m.superseded);
-  const totalCredits = counted.reduce((s, m) => s + m.credits, 0);
-  if (!totalCredits) return "—";
-  const weighted = counted.reduce((s, m) => s + gradePoint(m.grade) * m.credits, 0);
-  return (weighted / totalCredits).toFixed(2);
+  const counted = mods.filter((m) => !m.superseded).map((m) => ({ mark: m.mark, credits: m.credits }));
+  return computeGpa(counted);
 }
 
 function formatDate(dateStr?: string): string {
@@ -119,6 +127,10 @@ function footerBannerHTML(): string {
 // rows not already covered by assessment data are merged in so historical/retake
 // records are never dropped.
 async function buildPassedModules(db: any, student: any): Promise<PassedModule[]> {
+  // The award scale (Diploma vs Certificate) comes from the student's programme
+  // level, so the grade letters are from the right classification.
+  const prog = (db.config?.programmes || []).find((p: { id: string }) => p.id === student.programme);
+  const scaleKey = scaleForProgramme(prog);
   const { data } = await supabase
     .from("assessment_marks")
     .select("module_id,class_id,assessment_id,score")
@@ -194,7 +206,7 @@ async function buildPassedModules(db: any, student: any): Promise<PassedModule[]
       cat,
       scoreOf,
     });
-    const mark = Math.round(moduleMark);
+    const mark = roundMark(moduleMark);
     const curr = currOf(x.moduleId);
     // Display/grouping period from the curriculum; attempt period from the class
     // (used only to identify/order retakes — unchanged from prior behaviour).
@@ -208,8 +220,12 @@ async function buildPassedModules(db: any, student: any): Promise<PassedModule[]
       name: mod?.name || "(module no longer listed)",
       code: mod?.code || x.moduleId,
       mark,
-      grade: letterGrade(mark),
-      credits: 10,
+      grade: letterGrade(mark, scaleKey),
+      // Credits come from the programme curriculum (per programme + module);
+      // the same module can carry different credits on different programmes.
+      // Falls back to 10 until the `credits` column is present on
+      // programme_modules (see migration + report).
+      credits: curr?.credits ?? 10,
       year,
       semester,
       attemptYear,
@@ -257,10 +273,14 @@ function printTranscript(
   passedModules: PassedModule[],
   transcriptMeta?: { issuer?: string; title?: string; signature?: string },
 ) {
+  const scaleKey: ScaleKey = scaleForProgramme(prog);
   const studyYears = prog?.startYear ? `${prog.startYear}–${prog.startYear + (prog.years || 3)}` : "—";
 
   const totalCredits = passedModules.filter((m) => !m.superseded).reduce((s, m) => s + m.credits, 0);
   const cumulativeGpa = computeGPA(passedModules);
+  // Certificate transcripts show a simple-average "Total Marks (%)" and an
+  // overall grade word instead of a GPA.
+  const certOverall = certificateOverall(passedModules.filter((m) => !m.superseded).map((m) => m.mark));
 
   const semGroups: Record<string, PassedModule[]> = {};
   passedModules.forEach((m) => {
@@ -308,9 +328,8 @@ function printTranscript(
           <tbody>${rows}</tbody>
         </table>
         <div style="font-size:12px;font-weight:700;display:flex;gap:20px;padding:4px 10px;background:#f4f4f4;border:1px solid #ddd;border-radius:0 0 4px 4px">
-          <span>Semester GPA = ${semGpa}</span>
-          <span>Credit Hours = ${semCredits * 10} hrs</span>
-          <span>Credit Points = ${semCredits} Cr</span>
+          ${scaleKey === "diploma" ? `<span>Semester GPA = ${semGpa}</span>` : ""}
+          <span>Credits = ${semCredits}</span>
         </div>
       </div>`;
     })
@@ -410,10 +429,15 @@ function printTranscript(
   ${
     passedModules.length === 0
       ? ""
+      : scaleKey === "diploma"
+      ? `<div style="display:flex;gap:24px;justify-content:flex-end;align-items:center;background:#002060;color:#fff;padding:8px 16px;border-radius:4px;margin-bottom:14px;font-size:13px;font-weight:700">
+          <span>Total Credit = ${totalCredits}</span>
+          <span style="font-size:14px">GPA = ${cumulativeGpa}</span>
+        </div>`
       : `<div style="display:flex;gap:24px;justify-content:flex-end;align-items:center;background:#002060;color:#fff;padding:8px 16px;border-radius:4px;margin-bottom:14px;font-size:13px;font-weight:700">
-          <span>Total Credit Points = ${totalCredits} Cr</span>
-          <span>Total Credit Hours = ${totalCredits * 10} hrs</span>
-          <span style="font-size:14px">Cumulative GPA = ${cumulativeGpa}</span>
+          <span>Total Marks (%) = ${certOverall.mark}</span>
+          <span>Credits = ${totalCredits}</span>
+          <span style="font-size:14px">Grade = ${certOverall.grade}</span>
         </div>`
   }
 
@@ -434,12 +458,14 @@ function printTranscript(
   <!-- Grading scale — its own page (no footer). -->
   <div class="page2">
     <div style="border-top:1px solid #ccc;padding-top:10px;margin-bottom:6px">
-      <div style="font-size:11px;font-weight:700;color:#002060;margin-bottom:6px">Grading Scale</div>
+      <div style="font-size:11px;font-weight:700;color:#002060;margin-bottom:6px">Award Classification</div>
       <div style="display:flex;gap:6px;flex-wrap:wrap">
-        ${GRADE_SCALE.map(
-          ([r, d]) =>
-            `<div style="font-size:10px;background:#f0f0f0;border:1px solid #ddd;border-radius:4px;padding:3px 10px"><strong>${r}</strong> — ${d}</div>`,
-        ).join("")}
+        ${gradeScaleDisplay(scaleKey)
+          .map(
+            ([r, d]) =>
+              `<div style="font-size:10px;background:#f0f0f0;border:1px solid #ddd;border-radius:4px;padding:3px 10px"><strong>${r}</strong> — ${d}</div>`,
+          )
+          .join("")}
       </div>
     </div>
   </div>
@@ -793,6 +819,7 @@ export function TranscriptView({ stu }: { stu: any }) {
   const { db } = useApp();
 
   const prog = db.config.programmes.find((p: any) => p.id === stu.programme);
+  const scaleKey: ScaleKey = scaleForProgramme(prog);
   const [passedModules, setPassedModules] = useState<PassedModule[]>([]);
   const [loading, setLoading] = useState(true);
 
@@ -811,6 +838,7 @@ export function TranscriptView({ stu }: { stu: any }) {
 
   const totalCredits = passedModules.filter((m) => !m.superseded).reduce((s, m) => s + m.credits, 0);
   const cumulativeGpa = computeGPA(passedModules);
+  const certOverall = certificateOverall(passedModules.filter((m) => !m.superseded).map((m) => m.mark));
 
   const semGroups: Record<string, PassedModule[]> = {};
   passedModules.forEach((m) => {
@@ -985,9 +1013,8 @@ export function TranscriptView({ stu }: { stu: any }) {
                   borderRadius: "0 0 4px 4px",
                 }}
               >
-                <span>Semester GPA = {computeGPA(semGroups[semKey])}</span>
-                <span>Credit Hours = {semGroups[semKey].filter((m) => !m.superseded).reduce((s, m) => s + m.credits, 0) * 10} hrs</span>
-                <span>Credit Points = {semGroups[semKey].filter((m) => !m.superseded).reduce((s, m) => s + m.credits, 0)} Cr</span>
+                {scaleKey === "diploma" && <span>Semester GPA = {computeGPA(semGroups[semKey])}</span>}
+                <span>Credits = {semGroups[semKey].filter((m) => !m.superseded).reduce((s, m) => s + m.credits, 0)}</span>
               </div>
             </div>
           ))
@@ -1010,9 +1037,18 @@ export function TranscriptView({ stu }: { stu: any }) {
             fontWeight: 700,
           }}
         >
-          <span>Total Credit Points = {totalCredits} Cr</span>
-          <span>Total Credit Hours = {totalCredits * 10} hrs</span>
-          <span style={{ fontSize: 14 }}>Cumulative GPA = {cumulativeGpa}</span>
+          {scaleKey === "diploma" ? (
+            <>
+              <span>Total Credit = {totalCredits}</span>
+              <span style={{ fontSize: 14 }}>GPA = {cumulativeGpa}</span>
+            </>
+          ) : (
+            <>
+              <span>Total Marks (%) = {certOverall.mark}</span>
+              <span>Credits = {totalCredits}</span>
+              <span style={{ fontSize: 14 }}>Grade = {certOverall.grade}</span>
+            </>
+          )}
         </div>
       )}
 
@@ -1035,9 +1071,9 @@ export function TranscriptView({ stu }: { stu: any }) {
 
       {/* Grading key */}
       <div style={{ borderTop: "1px solid #ccc", paddingTop: 10, marginBottom: 14 }}>
-        <div style={{ fontSize: 11, fontWeight: 700, color: "#002060", marginBottom: 6 }}>Grading Scale</div>
+        <div style={{ fontSize: 11, fontWeight: 700, color: "#002060", marginBottom: 6 }}>Award Classification</div>
         <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
-          {GRADE_SCALE.map(([r, d]) => (
+          {gradeScaleDisplay(scaleKey).map(([r, d]) => (
             <div
               key={r}
               style={{
