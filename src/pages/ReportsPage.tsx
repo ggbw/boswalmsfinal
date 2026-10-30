@@ -2,6 +2,7 @@ import { useState, useEffect, useCallback, useMemo } from "react";
 import { useApp } from "@/context/AppContext";
 import { supabase } from "@/integrations/supabase/client";
 import { getLecturerClasses } from "@/lib/lecturerHelpers";
+import { getScopedClasses } from "@/lib/scope";
 import { avg, categorizeModuleAssessments, computeStudentModuleMark } from "@/lib/moduleMark";
 import {
   letterGrade,
@@ -23,9 +24,18 @@ interface AssessmentMark {
 export default function ReportsPage() {
   const { db, currentUser } = useApp();
   const role = currentUser?.role;
-  const visibleClasses = role === "lecturer"
-    ? getLecturerClasses(db.lecturerModules, db.classes, currentUser?.id || '')
-    : db.classes;
+  // R1: a HOD sees the reports for THEIR department, not every class. Scoped via
+  // getScopedClasses (department modules → classes). If the department can't be
+  // resolved it returns [], so we fall back to all classes rather than leave the
+  // HOD with no reports at all — the original "HOD does not have any reports"
+  // complaint. Lecturers keep their own classes; admin/HOA/principal see all.
+  const hodClasses = role === "hod" ? getScopedClasses(db, currentUser) : null;
+  const visibleClasses =
+    role === "lecturer"
+      ? getLecturerClasses(db.lecturerModules, db.classes, currentUser?.id || '')
+      : role === "hod" && hodClasses && hodClasses.length > 0
+        ? hodClasses
+        : db.classes;
 
   const [view, setView] = useState<"overview" | "detail">("overview");
   const [selClassId, setSelClassId] = useState(visibleClasses[0]?.id || "");
