@@ -11,6 +11,8 @@
 //   • Practical mark itself:  Practical CW (+ recipes) 70% + Final Practical 20%
 //                             + Final Practical Theory 10%
 
+import { roundMark } from "./grading";
+
 // Exam type → which section of the report it feeds.
 export const THEORY_TYPES = ["Written Exam", "Oral Exam"];
 export const FINAL_THEORY = "Final Theory Exam";
@@ -79,7 +81,15 @@ export interface StudentModuleMark {
   finalPracT10: number | null;
   practicalMark: number | null;
   prac20: number | null;
+  /**
+   * The module mark, rounded to a WHOLE number half up (69.5 → 70, 49.5 → 50).
+   * This is the one figure every screen shows, grades and judges pass/fail on,
+   * so the transcript, class report, student results and progression always
+   * agree (UAT R1/M1). Rounded here, once, rather than by each caller.
+   */
   moduleMark: number;
+  /** The unrounded (2 dp) sum of the parts — for breakdown columns only. */
+  rawModuleMark: number;
 }
 
 // Compute one student's full module-mark breakdown. `scoreOf` returns the
@@ -133,7 +143,8 @@ export function computeStudentModuleMark(opts: {
   const prac20 = hasPractical && practicalMark !== null ? r2(practicalMark * 0.2) : null;
 
   // Module mark — always calculated, missing parts treated as 0.
-  const moduleMark = r2((theory40 ?? 0) + (prac20 ?? 0) + (final40 ?? 0));
+  const rawModuleMark = r2((theory40 ?? 0) + (prac20 ?? 0) + (final40 ?? 0));
+  const moduleMark = roundMark(rawModuleMark);
 
   return {
     theoryCWAvg,
@@ -151,5 +162,6 @@ export function computeStudentModuleMark(opts: {
     practicalMark,
     prac20,
     moduleMark,
+    rawModuleMark,
   };
 }

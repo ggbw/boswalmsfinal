@@ -280,7 +280,7 @@ describe("module mark reproduces the theory spreadsheet", () => {
       cat,
       scoreOf: scorer({ t1: 85, t2: 77, ia: 64, ga: 60, fe: 80 }),
     });
-    expect(mk.moduleMark).toBeCloseTo(74.9, 2);
+    expect(mk.rawModuleMark).toBeCloseTo(74.9, 2);
     expect(roundMark(mk.moduleMark)).toBe(75);
     expect(letterGrade(mk.moduleMark, "diploma")).toBe("B"); // 75 → Merit
   });
@@ -302,7 +302,7 @@ describe("module mark reproduces the theory spreadsheet", () => {
       cat,
       scoreOf: scorer({ t1: 85, t2: 60, ia: 58, fe: 73 }),
     });
-    expect(mk.moduleMark).toBeCloseTo(69.8, 2);
+    expect(mk.rawModuleMark).toBeCloseTo(69.8, 2);
     expect(roundMark(mk.moduleMark)).toBe(70); // 69.8 → 70 → Merit
   });
 });
@@ -333,7 +333,7 @@ describe("module mark reproduces the Hot Kitchen practical spreadsheet", () => {
       }),
     });
     expect(mk.practicalMark).toBeCloseTo(81.83, 1);
-    expect(mk.moduleMark).toBeCloseTo(74.45, 1);
+    expect(mk.rawModuleMark).toBeCloseTo(74.45, 1);
     expect(roundMark(mk.moduleMark)).toBe(74);
   });
 });

@@ -64,7 +64,9 @@ export async function recordClassOutcomes(db: DB, classId: string, decidedBy: st
   for (const student of students) {
     const registered = await loadRegisteredModuleIds(student);
     const progress = buildStudentProgress(db, student, scoreOf, registered);
-    if (!progress.settled) continue;
+    // Record as soon as every module has an outcome — a pending supplementary
+    // must be recorded (and announced), not held back until it is sat.
+    if (!progress.allDecided) continue;
     result.studentsSettled++;
     const res = await recordOutcomes({
       student,

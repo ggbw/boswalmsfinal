@@ -15,6 +15,7 @@ import {
   computeStudentModuleMark,
   type StudentModuleMark,
 } from './moduleMark';
+import { SUPP_EXAM_TYPE } from './progression';
 
 export interface StudentModuleResult {
   module: Module;
@@ -37,6 +38,13 @@ export interface StudentModuleResult {
   /** How many of this module's assessments have a mark, and how many exist. */
   markedCount: number;
   assessmentCount: number;
+  /**
+   * True when the module's Final Theory Exam has been set up. Until it is, the
+   * module cannot have an outcome: judging on coursework alone told students
+   * "retake" mid-semester, then flipped to "supplementary" once the exam was
+   * marked (UAT M3 / dashboard accuracy).
+   */
+  finalExamSet: boolean;
 }
 
 /**
@@ -115,7 +123,13 @@ export function studentModuleResults(
       // actually attends for THIS module — their own, or another cohort's when
       // they are retaking.
       const classId = classForModule(db, student, moduleId);
-      const exams = db.exams.filter(e => e.classId === classId && e.moduleId === moduleId);
+      // A supplementary exam is NOT one of the module's ordinary assessments: it
+      // is sat only by the students who were offered it, and is applied
+      // separately (outcomeAfterSupp). Counting it here made every classmate
+      // without a supp mark read as "not fully marked" the moment one was set.
+      const exams = db.exams.filter(
+        e => e.classId === classId && e.moduleId === moduleId && e.type !== SUPP_EXAM_TYPE,
+      );
       const assignments = db.assignments.filter(
         a => a.classId === classId && a.moduleId === moduleId,
       );
@@ -136,9 +150,12 @@ export function studentModuleResults(
         unmarked: markedCount === 0,
         // A module with no assessments at all is not "fully marked" — there is
         // nothing to have marked, so it cannot produce a result.
-        fullyMarked: all.length > 0 && markedCount === all.length,
+        // …and the Final Theory Exam must exist (and so be marked): no outcome
+        // is decided on coursework alone.
+        fullyMarked: all.length > 0 && markedCount === all.length && !!cat.finalTheoryExam,
         markedCount,
         assessmentCount: all.length,
+        finalExamSet: !!cat.finalTheoryExam,
       };
     })
     .filter((r): r is StudentModuleResult => r !== null)

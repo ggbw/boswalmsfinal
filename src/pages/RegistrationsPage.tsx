@@ -13,7 +13,7 @@
 
 import { useCallback, useEffect, useState } from 'react';
 import { useApp } from '@/context/AppContext';
-import { needsAcademicReview, MAX_SEMESTER_ATTEMPTS } from '@/lib/progression';
+import { needsAcademicReview, MAX_SEMESTER_ATTEMPTS, isAllowedPeriodMove } from '@/lib/progression';
 import { supabase } from '@/integrations/supabase/client';
 
 interface RegModule {
@@ -94,6 +94,13 @@ export default function RegistrationsPage() {
     const missing = retakes.filter(m => !(retakeClass[m.id] || m.class_id));
     if (missing.length) {
       toast(`Choose which class will run: ${missing.map(m => moduleName(m.module_id)).join(', ')}`, 'error');
+      return;
+    }
+
+    // One semester forward at most — never skip semesters (UAT 6.2).
+    const semsPerYear = db.config.programmes.find(p => p.id === student.programme)?.semesters || 2;
+    if (!isAllowedPeriodMove({ year: student.year, semester: student.semester }, { year: r.year, semester: r.semester }, semsPerYear)) {
+      toast(`${student.name} is in Year ${student.year} Semester ${student.semester} — a registration for Year ${r.year} Semester ${r.semester} would skip semesters. Reject it and ask the student to register for the next semester.`, 'error');
       return;
     }
 

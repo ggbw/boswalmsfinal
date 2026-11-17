@@ -581,10 +581,16 @@ export function LecturerDashboard() {
                 )}
                 {s.unmarked_assessments > 0 && (
                   <div className="info-row">
-                    <span className="info-label">Assessments set with no marks entered</span>
-                    <span className="info-val">
-                      <button className="btn btn-outline btn-sm" onClick={() => navigate('exams')}>
+                    <span className="info-label">Assignments and exams with no marks entered</span>
+                    {/* Opens Assignments, as Boswa asked (UAT open issue 4): it
+                        used to open Exams. The count covers both, so Exams has
+                        its own button beside it. */}
+                    <span className="info-val" style={{ display: 'flex', gap: 6 }}>
+                      <button className="btn btn-outline btn-sm" data-testid="dash-unmarked-assignments" onClick={() => navigate('assignments')}>
                         {s.unmarked_assessments} outstanding
+                      </button>
+                      <button className="btn btn-outline btn-sm" data-testid="dash-unmarked-exams" onClick={() => navigate('exams')}>
+                        Exams
                       </button>
                     </span>
                   </div>

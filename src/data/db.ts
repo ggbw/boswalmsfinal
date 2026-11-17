@@ -1,3 +1,5 @@
+import { roundMark } from "@/lib/grading";
+
 export interface Student {
   id: string;
   studentId: string;
@@ -1684,7 +1686,10 @@ export function calcModuleMark(m: Mark, hasPractical: boolean = true): number {
   return Math.round(cwAvg * 0.4 + m.practical * 0.2 + m.finalExam * 0.4);
 }
 
-export function grade(pct: number): string {
+// Rounds half up FIRST (49.5 → 50 = Pass), exactly as the transcript does, so a
+// student is never "Fail" on one screen and "Pass" on another (UAT R1/M1).
+export function grade(mark: number): string {
+  const pct = roundMark(mark);
   if (pct < 50) return "Fail";
   if (pct < 60) return "Pass";
   if (pct < 70) return "Credit";

@@ -33,7 +33,9 @@ function StudentResults({ stu, db }: { stu: Student; db: DB }) {
             <thead><tr><th>Module</th><th style={{textAlign:'center'}}>Coursework</th><th style={{textAlign:'center'}}>Practical</th><th style={{textAlign:'center'}}>Final Exam</th><th style={{textAlign:'center'}}>Total</th><th>Grade</th></tr></thead>
             <tbody>{marked.map(({ module, mark }) => {
               const g = grade(mark.moduleMark);
-              const pct = (v: number | null) => v === null ? '—' : `${Math.round(v)}%`;
+              // Parts to one decimal — rounding each part to a whole number made them add up
+              // to a different figure than the total (24 + 10 + 16 shown beside 49.6).
+              const pct = (v: number | null) => v === null ? '—' : `${v.toFixed(1)}%`;
               return (
                 <tr key={module.id}>
                   <td className="td-name">{module.name}</td>

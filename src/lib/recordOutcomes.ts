@@ -80,7 +80,7 @@ export async function recordOutcomes(opts: {
       class_id: student.classId,
       year: student.year,
       semester: student.semester,
-      module_mark: s.result.mark.moduleMark,
+      module_mark: s.moduleMark,
       exam_mark: s.examMark,
       outcome: s.outcome,
       supp_mark: s.suppMark,

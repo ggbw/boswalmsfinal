@@ -3,6 +3,8 @@ import { useApp } from "@/context/AppContext";
 
 import { supabase } from "@/integrations/supabase/client";
 import { categorizeModuleAssessments, computeStudentModuleMark } from "@/lib/moduleMark";
+import { moduleOutcome, outcomeAfterSupp, SUPP_EXAM_TYPE } from "@/lib/progression";
+import { flagSuperseded } from "@/lib/transcriptAttempts";
 import {
   letterGrade,
   gradeScaleDisplay,
@@ -58,20 +60,15 @@ interface PassedModule {
   // latest retake can be picked; NOT used for display.
   attemptYear?: number;
   attemptSem?: number;
+  /**
+   * True for the attempt the student is enrolled to RETAKE with another class
+   * (student_modules). That is always the latest attempt, whatever the class
+   * periods say — see flagSuperseded.
+   */
+  retakeAttempt?: boolean;
   superseded?: boolean;
 }
 
-// When a module was taken more than once (a retake), only the latest attempt
-// (highest calendar year, then semester) counts toward GPA/credits; earlier
-// attempts are flagged "superseded" so they still display but don't count.
-function flagSuperseded(mods: PassedModule[]): PassedModule[] {
-  const latestRank: Record<string, number> = {};
-  mods.forEach((m) => {
-    const r = (m.attemptYear ?? m.year) * 100 + (m.attemptSem ?? m.semester);
-    if (latestRank[m.moduleId] === undefined || r > latestRank[m.moduleId]) latestRank[m.moduleId] = r;
-  });
-  return mods.map((m) => ({ ...m, superseded: (m.attemptYear ?? m.year) * 100 + (m.attemptSem ?? m.semester) < latestRank[m.moduleId] }));
-}
 
 // School contact details shown on the transcript (kept in sync with the
 // acceptance/welcome letters in ApplicantPortal).
@@ -202,13 +199,28 @@ async function buildPassedModules(db: any, student: any): Promise<PassedModule[]
     const classExams = db.exams.filter((e: any) => e.classId === x.classId && e.moduleId === x.moduleId);
     const classAssignments = db.assignments.filter((a: any) => a.classId === x.classId && a.moduleId === x.moduleId);
     const cat = categorizeModuleAssessments(classExams, classAssignments);
-    const { moduleMark } = computeStudentModuleMark({
+    const hasPractical = mod?.hasPractical !== false;
+    const markParts = computeStudentModuleMark({
       studentId: student.studentId,
-      hasPractical: mod?.hasPractical !== false,
+      hasPractical,
       cat,
       scoreOf,
     });
-    const mark = roundMark(moduleMark);
+    let mark = roundMark(markParts.moduleMark);
+    // Confirmed rule (UAT Sheet A): "A passed supplementary is recorded as 50%."
+    // The transcript ignored the supplementary exam and printed the original
+    // failing mark. Same rule as the dashboard (progression.ts).
+    const suppExam = (classExams as { id: string; type?: string }[]).find((e) => e.type === SUPP_EXAM_TYPE);
+    const suppScore = suppExam ? scoreOf(student.studentId, suppExam.id) : null;
+    if (suppScore !== null
+        && moduleOutcome(mark, markParts.finalTheory) === "supp") {
+      mark = outcomeAfterSupp(markParts, suppScore, hasPractical).moduleMark;
+    }
+    // Enrolled to retake this module with this (other) class → latest attempt.
+    const retakeAttempt = x.classId !== student.classId && (db.studentModules || []).some(
+      (sm: { studentId: string; moduleId: string; classId?: string }) =>
+        sm.studentId === student.id && sm.moduleId === x.moduleId && sm.classId === x.classId,
+    );
     const curr = currOf(x.moduleId);
     // Display/grouping period from the curriculum; attempt period from the class
     // (used only to identify/order retakes — unchanged from prior behaviour).
@@ -232,6 +244,7 @@ async function buildPassedModules(db: any, student: any): Promise<PassedModule[]
       semester,
       attemptYear,
       attemptSem,
+      retakeAttempt,
     });
   });
 

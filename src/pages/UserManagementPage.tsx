@@ -335,6 +335,14 @@ export default function UserManagementPage({ scope = 'all' }: { scope?: UserMana
 
   const handleCreate = () => {
     let name = '', email = '', role = studentsOnly ? 'student' : 'lecturer', dept = '';
+    // The students record a Student-role login belongs to. Without it the
+    // account had the Student role but no student record, so it appeared
+    // nowhere as a student (UAT S1). Only records with no login are offered.
+    let studentRecordId = '';
+    const linkedRefs = new Set(users.map(u => u.studentRecordId).filter(Boolean));
+    const unlinkedStudents = db.students
+      .filter(s => !linkedRefs.has(s.id))
+      .sort((a, b) => a.name.localeCompare(b.name));
     // Left empty until submit so it can follow the role the admin picks. A
     // defaultValue set now would keep the staff password even if they chose
     // Student, and hand out the wrong credential.
@@ -379,13 +387,29 @@ export default function UserManagementPage({ scope = 'all' }: { scope?: UserMana
               {db.departments.map(d => <option key={d.id} value={d.name}>{d.name}</option>)}
             </select>
           </div>
+          <div className="form-group"><label>Student record (Student role only)</label>
+            <select className="form-select" defaultValue="" data-testid="create-user-student-record"
+              onChange={e => studentRecordId = e.target.value}>
+              <option value="">— Select the student —</option>
+              {unlinkedStudents.map(s => <option key={s.id} value={s.id}>{s.name} · {s.studentId}</option>)}
+            </select>
+            <div style={{ fontSize: 11, color: 'var(--text2)', marginTop: 4 }}>
+              Add the student on the Students page first; then pick them here.
+            </div>
+          </div>
         </div>
         <button className="btn btn-primary" style={{ marginTop: 12 }} onClick={async () => {
           if (!name || !email) { toast('Name and email required', 'error'); return; }
+          const studentRec = role === 'student' ? db.students.find(s => s.id === studentRecordId) : undefined;
+          if (role === 'student' && !studentRec) {
+            toast('Choose the student record this login belongs to. If the student is not listed, add them on the Students page first.', 'error');
+            return;
+          }
           // Blank means "use the standard password for this role" — resolved
           // here rather than in the field, so it follows the role chosen.
           const { data, error } = await invokeFn<{ password_applied?: boolean; temp_password?: string }>('create-user',
-            { email, password: password.trim() || defaultPasswordFor(role), name, role, dept });
+            { email, password: password.trim() || defaultPasswordFor(role), name, role, dept,
+              ...(studentRec ? { student_ref: studentRec.id, student_id: studentRec.studentId } : {}) });
           if (error) { toast(error, 'error'); return; }
           loadUsers(); reloadDb();
           // Show the credential rather than just a toast: this is the only

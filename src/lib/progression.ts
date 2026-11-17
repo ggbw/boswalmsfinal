@@ -25,6 +25,12 @@
 
 import type { StudentModuleMark } from './moduleMark';
 
+/** Half-up whole-number rounding — same rule as grading.ts roundMark (kept
+ *  local because grading.ts imports PASS_MARK from here). */
+function roundHalfUp(mark: number): number {
+  return Math.floor(Math.round(mark * 1e6) / 1e6 + 0.5);
+}
+
 /** A module is passed at 50%. */
 export const PASS_MARK = 50;
 
@@ -65,6 +71,24 @@ export const MAX_SEMESTER_ATTEMPTS = 3;
  */
 export function needsAcademicReview(attempts: number): boolean {
   return MAX_SEMESTER_ATTEMPTS > 0 && attempts >= MAX_SEMESTER_ATTEMPTS;
+}
+
+/**
+ * May a student be moved from one study period to another?
+ *
+ * Forward moves are allowed ONE semester at a time — Year 1 Semester 1 may go
+ * to Year 1 Semester 2, never straight to Year 3 Semester 1 (UAT 6.2: enrolment
+ * skipped intermediate semesters). Staying put or moving back (a repeat or a
+ * correction) is always allowed. `semestersPerYear` comes from the programme.
+ */
+export function isAllowedPeriodMove(
+  from: { year: number; semester: number },
+  to: { year: number; semester: number },
+  semestersPerYear: number,
+): boolean {
+  const per = semestersPerYear > 0 ? semestersPerYear : 2;
+  const idx = (p: { year: number; semester: number }) => (Number(p.year) - 1) * per + (Number(p.semester) - 1);
+  return idx(to) <= idx(from) + 1;
 }
 
 /** The exams.type value that marks an assessment as a supplementary. */
@@ -116,7 +140,7 @@ export function outcomeAfterSupp(
   const pracPart = hasPractical && mark.practicalMark !== null ? mark.practicalMark * 0.2 : 0;
   const examPart = SUPP_CAPPED_MARK * 0.4;
 
-  const recalculated = Math.round(cwPart + pracPart + examPart);
+  const recalculated = roundHalfUp(cwPart + pracPart + examPart);
   return {
     moduleMark: recalculated,
     outcome: recalculated >= PASS_MARK ? 'passed' : 'retake',

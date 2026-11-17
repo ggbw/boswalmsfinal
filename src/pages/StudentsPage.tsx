@@ -3,6 +3,7 @@ import { useApp } from "@/context/AppContext";
 import { grade, gradeColor } from "@/data/db";
 import { supabase } from "@/integrations/supabase/client";
 import { cleanStudentId } from "@/lib/studentId";
+import { isAllowedPeriodMove } from "@/lib/progression";
 import { getScopedStudents, isAdminRole } from '@/lib/scope';
 import { useAssessmentMarks } from "@/hooks/useAssessmentMarks";
 import { studentModuleResults } from "@/lib/studentMarks";
@@ -226,6 +227,22 @@ export default function StudentsPage() {
               return;
             }
             const cls = db.classes.find((c) => c.id === classId);
+            // Year/semester follow the class ONLY when the class is changed.
+            // Copying them on every save silently undid a promotion approved on
+            // the Progression page (UAT M4 / 6.2).
+            const classChanged = (classId || null) !== (s.classId || null);
+            const newYear = classChanged && cls ? cls.year : s.year;
+            const newSemester = classChanged && cls ? cls.semester : s.semester;
+            // And a class change may not jump the student ahead more than one
+            // semester (e.g. Year 1 Sem 1 straight into a Year 3 class).
+            // (A move to another programme is a transfer, not progression.)
+            if (classChanged && cls && cls.programme === s.programme) {
+              const semsPerYear = db.config.programmes.find((p) => p.id === cls.programme)?.semesters || 2;
+              if (!isAllowedPeriodMove({ year: s.year, semester: s.semester }, { year: cls.year, semester: cls.semester }, semsPerYear)) {
+                toast(`${s.name} is in Year ${s.year} Semester ${s.semester}. ${cls.name} is Year ${cls.year} Semester ${cls.semester} — that skips semesters. Move them one semester at a time (use Progression).`, "error");
+                return;
+              }
+            }
             // Auto-set completion date when marking as graduated
             const wasGraduated = s.status === "graduated";
             const nowGraduated = status === "graduated";
@@ -248,8 +265,8 @@ export default function StudentsPage() {
                 guardian_mobile: guardianMobile,
                 class_id: classId || null,
                 programme: cls?.programme || s.programme,
-                year: cls?.year || s.year,
-                semester: cls?.semester || s.semester,
+                year: newYear,
+                semester: newSemester,
                 status,
                 enrolment_date: enrolmentDate || null,
                 completion_date: completionDate,

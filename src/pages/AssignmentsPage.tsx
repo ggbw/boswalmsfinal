@@ -3,6 +3,7 @@ import { useApp } from '@/context/AppContext';
 import { supabase } from '@/integrations/supabase/client';
 import { getScopedClassIds, getScopedModuleIds, isUnrestricted, canManageAcademics } from '@/lib/scope';
 import { assignmentsForStudent } from '@/lib/studentMarks';
+import { useAssessmentMarks } from '@/hooks/useAssessmentMarks';
 import { ACCEPT_DOCUMENTS, MAX_ASSIGNMENT_BYTES, checkUpload } from '@/lib/uploads';
 
 const BUCKET = 'assignment-files';
@@ -238,6 +239,13 @@ export default function AssignmentsPage() {
     ? db.students.find(s => s.studentId === currentUser?.studentId)
     : null;
 
+  // The student's own assignment marks. Marks typed in through "Enter Marks"
+  // are saved to assessment_marks, not to the submission, so a student looking
+  // only at submissions.grade never saw them (UAT 6.1 / open issue 5).
+  const { scoreOf: myScoreOf } = useAssessmentMarks({
+    studentNumbers: currentStudent ? [currentStudent.studentId] : [],
+  });
+
   // A student whose record cannot be found must see NOTHING, not everything.
   // Previously the filter block below was simply skipped when currentStudent was
   // null, so a broken profile link showed that student every assignment in the
@@ -326,16 +334,37 @@ export default function AssignmentsPage() {
       return;
     }
 
-    const marksMap: Record<string, number> = {};
+    // Soft-copy assignments are marked only for students who actually handed
+    // something in (UAT 6.1 / open issue 6). Hard-copy and practical work has
+    // no upload, so it stays open. submissions.student_id holds students.id.
+    const needsSubmission = (a.submissionType || 'softcopy') === 'softcopy';
+    let submitted = new Set<string>();
+    if (needsSubmission) {
+      const { data: subs, error: subErr } = await supabase
+        .from('submissions').select('student_id').eq('assignment_id', a.id);
+      if (subErr) { toast('Could not load submissions — please try again.', 'error'); return; }
+      submitted = new Set(((subs || []) as { student_id: string }[]).map(x => x.student_id));
+    }
+    const canMark = (s: typeof students[0]) => !needsSubmission || submitted.has(s.id);
+
+    // Existing marks are shown as the score OUT OF the assignment total; a
+    // student with no mark starts BLANK. It used to pre-fill 0 for everyone and
+    // save every row, so one save wrote a real 0 for each student the lecturer
+    // had not got to yet.
+    const marksMap: Record<string, number | null> = {};
     students.forEach(s => {
       const ex = (existing || []).find((x: any) => x.student_id === s.studentId);
-      marksMap[s.studentId] = ex ? Number(ex.score) : 0;
+      marksMap[s.studentId] = ex
+        ? (a.marks > 0 ? Math.round((Number(ex.score) / 100) * a.marks * 100) / 100 : Number(ex.score))
+        : null;
     });
 
     showModal(`Enter Marks — ${a.title}`, (
       <div>
         <div style={{ background: 'var(--bg2)', borderRadius: 8, padding: '8px 14px', marginBottom: 12, fontSize: 12, color: 'var(--text2)' }}>
           Assignment · Out of <strong>{a.marks}</strong> · {students.length} student(s)
+          {needsSubmission && <> · soft-copy: only students who submitted can be marked</>}
+          <div style={{ marginTop: 4 }}>Leave a box blank for "not marked yet" — blanks are not saved as 0.</div>
         </div>
         <div className="table-wrap" style={{ maxHeight: 400, overflowY: 'auto' }}>
           <table>
@@ -346,9 +375,14 @@ export default function AssignmentsPage() {
                   <td className="td-name">{s.name}</td>
                   <td style={{ fontFamily: "'JetBrains Mono',monospace", fontSize: 11 }}>{s.studentId}</td>
                   <td>
-                    <input className="form-input" type="number" min={0} max={a.marks}
-                      defaultValue={marksMap[s.studentId] ?? 0} style={{ width: 80 }}
-                      onChange={e => { marksMap[s.studentId] = Number(e.target.value); }} />
+                    {canMark(s) ? (
+                      <input className="form-input" type="number" min={0} max={a.marks}
+                        defaultValue={marksMap[s.studentId] ?? ''} placeholder="—" style={{ width: 80 }}
+                        data-testid="assignment-mark-input"
+                        onChange={e => { marksMap[s.studentId] = e.target.value.trim() === '' ? null : Number(e.target.value); }} />
+                    ) : (
+                      <span style={{ fontSize: 11, color: 'var(--text2)' }} data-testid="assignment-mark-no-submission">No submission</span>
+                    )}
                   </td>
                 </tr>
               ))}
@@ -366,8 +400,9 @@ export default function AssignmentsPage() {
           // the spinner arrows and nothing else. Typing 500 or -20 goes
           // straight through Number() into the database, which is how
           // impossible marks were being stored.
-          const bad = students
-            .map(s => ({ name: s.name, v: marksMap[s.studentId] ?? 0 }))
+          const entered = students.filter(s => canMark(s) && marksMap[s.studentId] !== null && marksMap[s.studentId] !== undefined);
+          const bad = entered
+            .map(s => ({ name: s.name, v: marksMap[s.studentId] as number }))
             .filter(x => !Number.isFinite(x.v) || x.v < 0 || x.v > a.marks);
           if (bad.length > 0) {
             toast(
@@ -379,10 +414,15 @@ export default function AssignmentsPage() {
             return;
           }
 
-          const rows = students.map(s => {
-            const score = marksMap[s.studentId] ?? 0;
-            // Normalise to 0-100
-            const normalised = a.marks > 0 ? Math.round((score / a.marks) * 100) : score;
+          if (entered.length === 0) { toast('No marks entered.', 'error'); return; }
+
+          // Only the marks actually typed are saved.
+          const rows = entered.map(s => {
+            const score = marksMap[s.studentId] as number;
+            // Normalise to 0-100, kept to 2 decimals. Rounding each assignment
+            // to a whole number before it was averaged made the module mark
+            // drift from the academic office's manual figures (UAT M1).
+            const normalised = a.marks > 0 ? Math.round((score / a.marks) * 10000) / 100 : score;
             return {
               id: existingById[s.studentId] || ('am_' + Date.now() + '_' + s.studentId),
               student_id: s.studentId, assessment_id: a.id, assessment_type: 'assignment',
@@ -741,6 +781,21 @@ export default function AssignmentsPage() {
               </div>
             </div>
           )}
+
+          {/* A mark entered by the lecturer (Enter Marks), shown when the
+              submission itself carries no grade — or when there is no
+              submission at all (hard-copy / practical work). */}
+          {role === 'student' && currentStudent && (mySubmission?.grade === null || mySubmission?.grade === undefined) && (() => {
+            const pct = myScoreOf(currentStudent.studentId, a.id);
+            if (pct === null) return null;
+            const outOf = a.marks > 0 ? Math.round((pct / 100) * a.marks * 100) / 100 : pct;
+            return (
+              <div className="info-row" style={{ marginTop: 12 }} data-testid="assignment-my-mark">
+                <span className="info-label">Mark</span>
+                <span className="info-val">{outOf}/{a.marks} ({Math.round(pct * 100) / 100}%)</span>
+              </div>
+            );
+          })()}
 
           {/* Submit button for students */}
           {role === 'student' && a.submissionType === 'softcopy' && !mySubmission && a.status === 'active' && (

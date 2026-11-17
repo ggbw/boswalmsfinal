@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useRef } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import type { DB } from "@/data/db";
 
@@ -217,7 +217,18 @@ export function useDbData() {
         })),
       };
 
-      setDb(initialDb);
+      // On a RELOAD (after a save), keep the background tables already on
+      // screen until their fresh copies arrive. Replacing them with the empty
+      // placeholders made every page blank out — exams, assignments,
+      // submissions, attendance — for the seconds the background batch took,
+      // after every save (UAT 6.1 "slow / lags when registering updates").
+      setDb((prev) => prev ? {
+        ...initialDb,
+        marks: prev.marks, attendance: prev.attendance,
+        studentModules: prev.studentModules, exams: prev.exams,
+        assignments: prev.assignments, submissions: prev.submissions,
+        timetable: prev.timetable, admissionEnquiries: prev.admissionEnquiries,
+      } : initialDb);
       setLoading(false); // ← show UI immediately
 
       // ── BACKGROUND BATCH: heavy data loaded after UI is visible ───────────
@@ -237,7 +248,10 @@ export function useDbData() {
         // add ~1,400 rows a week once registers are being taken. fetchAll pages
         // through them in a stable order; a plain select() would silently stop
         // at 1,000 rows and return a different subset each time.
-        fetchAll("marks"),
+        // The legacy `marks` table is no longer read by any screen — every one
+        // moved to assessment_marks (see useAssessmentMarks). Paging through it
+        // on every load and every save was pure cost, so it is skipped.
+        Promise.resolve({ data: [], error: null }),
         fetchAll("attendance"),
         fetchAll("student_modules", "student_id,module_id,class_id,added_by,added_at"),
         supabase.from("exams").select("*"),
@@ -326,9 +340,27 @@ export function useDbData() {
     }
   }, []);
 
-  useEffect(() => {
-    loadData();
+  // Coalesce reloads. Many screens call reloadDb() after each save (and bulk
+  // actions after each item); without this, each call started another full
+  // load in parallel. Now a call during a load just asks for ONE more pass.
+  const inFlight = useRef<Promise<void> | null>(null);
+  const again = useRef(false);
+  const reload = useCallback((): Promise<void> => {
+    if (inFlight.current) { again.current = true; return inFlight.current; }
+    const run = (async () => {
+      try {
+        do { again.current = false; await loadData(); } while (again.current);
+      } finally {
+        inFlight.current = null;
+      }
+    })();
+    inFlight.current = run;
+    return run;
   }, [loadData]);
 
-  return { db, loading, failures, reload: loadData, setDb };
+  useEffect(() => {
+    reload();
+  }, [reload]);
+
+  return { db, loading, failures, reload, setDb };
 }

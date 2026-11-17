@@ -22,7 +22,7 @@ import type { DB, Student } from '@/data/db';
 import { useAssessmentMarks } from './useAssessmentMarks';
 import { studentModuleResults, classForModule, type StudentModuleResult } from '@/lib/studentMarks';
 import {
-  moduleOutcome, semesterIsSettled, semesterVerdict,
+  moduleOutcome, outcomeAfterSupp, semesterIsSettled, semesterVerdict,
   SUPP_EXAM_TYPE, type Outcome, type SemesterVerdict,
 } from '@/lib/progression';
 
@@ -41,6 +41,11 @@ export interface ModuleStanding {
   /** True when a supplementary assessment exists for this module. */
   suppOffered: boolean;
   suppMark: number | null;
+  /**
+   * The module mark that stands: the ordinary mark, or — once a supplementary
+   * has been sat — the mark recalculated with the supp (capped at 50).
+   */
+  moduleMark: number;
 }
 
 export interface StudentProgress {
@@ -52,6 +57,13 @@ export interface StudentProgress {
   settled: boolean;
   settledReason: string;
   verdict: SemesterVerdict | null;
+  /**
+   * Every module this semester has an outcome (pass, supp or retake). Outcomes
+   * are RECORDED from this point — including supplementaries, which used to be
+   * held back until the semester "settled", and a pending supp stops it settling,
+   * so a supp was never recorded and its notice never sent (UAT M3).
+   */
+  allDecided: boolean;
 }
 
 export function useStudentProgress(db: DB, student: Student | null): StudentProgress {
@@ -74,7 +86,7 @@ export function useStudentProgress(db: DB, student: Student | null): StudentProg
     if (!student || loading) {
       return {
         loading, error, standings: [], owed: [],
-        settled: false, settledReason: 'Loading…', verdict: null,
+        settled: false, settledReason: 'Loading…', verdict: null, allDecided: false,
       };
     }
     return { loading, error, ...buildStudentProgress(db, student, scoreOf, registeredModuleIds) };
@@ -124,10 +136,25 @@ export function buildStudentProgress(
   registeredModuleIds: string[] | null,
 ): Omit<StudentProgress, 'loading' | 'error'> {
   const all = studentModuleResults(db, student, scoreOf);
-  // Narrow to what they registered for, when we know it.
+  // Narrow to what they registered for, when we know it. Otherwise narrow to
+  // their CURRENT semester's curriculum (programme_modules year/semester), plus
+  // any module they are retaking with another class. Without this a student was
+  // judged on every module their class has ever had — so after an approved
+  // progression the dashboard kept showing last semester's retake (UAT M4 / 6.2).
+  // Falls back to the whole class list only if the curriculum has no slot.
+  const currentSemesterIds = new Set(
+    (db.programmeModules || [])
+      .filter(pm => pm.programmeId === student.programme
+        && Number(pm.year) === Number(student.year)
+        && Number(pm.semester) === Number(student.semester))
+      .map(pm => pm.moduleId),
+  );
   const results = registeredModuleIds
     ? all.filter(r => registeredModuleIds.includes(r.module.id))
-    : all;
+    : currentSemesterIds.size > 0
+      ? all.filter(r => currentSemesterIds.has(r.module.id)
+          || classForModule(db, student, r.module.id) !== student.classId)
+      : all;
 
   const standings: ModuleStanding[] = results.map(result => {
     // ONLY the Final Theory Exam can be supplemented.
@@ -158,18 +185,31 @@ export function buildStudentProgress(
     // they sit that module with a different cohort.
     const isRetake = moduleClassId !== student.classId;
 
+    // No outcome until EVERY assessment is marked, including the Final Theory
+    // Exam. computeStudentModuleMark treats a missing component as zero, so a
+    // part-marked module scores far below what the student has actually earned
+    // — 80% coursework with no final exam yet reads as 32%. Deciding an outcome
+    // from that would tell a mid-semester cohort they had failed.
+    let outcome: Outcome | null = result.fullyMarked ? moduleOutcome(result.mark.moduleMark, examMark) : null;
+    let moduleMark = result.mark.moduleMark;
+
+    // A supplementary that has been SAT now decides the module (UAT M3: the
+    // supp mark used to be stored and then ignored). Passed → the exam counts
+    // as 50 and the module is recalculated; failed → retake.
+    if (outcome === 'supp' && suppMark !== null) {
+      const after = outcomeAfterSupp(result.mark, suppMark, result.module.hasPractical !== false);
+      outcome = after.outcome;
+      moduleMark = after.moduleMark;
+    }
+
     return {
       result,
       isRetake,
-      // No outcome until EVERY assessment is marked. computeStudentModuleMark
-      // treats a missing component as zero, so a part-marked module scores far
-      // below what the student has actually earned — 80% coursework with no
-      // final exam yet reads as 32%. Deciding an outcome from that would tell
-      // a mid-semester cohort they had failed.
-      outcome: result.fullyMarked ? moduleOutcome(result.mark.moduleMark, examMark) : null,
+      outcome,
       examMark,
       suppOffered: !!supp,
       suppMark,
+      moduleMark,
     };
   });
 
@@ -205,5 +245,6 @@ export function buildStudentProgress(
     settledReason: settledCheck.reason,
     // Only meaningful once settled — a verdict mid-marking would be wrong.
     verdict: settledCheck.settled ? semesterVerdict(decided, carriedDecided) : null,
+    allDecided: thisSemester.length > 0 && decided.length === thisSemester.length,
   };
 }

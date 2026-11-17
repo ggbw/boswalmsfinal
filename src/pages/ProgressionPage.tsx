@@ -2,7 +2,7 @@ import { useState } from 'react';
 import { useApp } from '@/context/AppContext';
 import { supabase } from '@/integrations/supabase/client';
 import { useAssessmentMarks } from '@/hooks/useAssessmentMarks';
-import { studentModuleResults } from '@/lib/studentMarks';
+import { buildStudentProgress } from '@/hooks/useStudentProgress';
 import { recordClassOutcomes } from '@/lib/recordClassOutcomes';
 import { isReadOnlyOversight } from '@/lib/scope';
 
@@ -52,17 +52,18 @@ export default function ProgressionPage() {
         return false;
       }
 
-      // Validate: student must have marks recorded and no failing modules.
-      const results = studentModuleResults(db, student, scoreOf);
-      const marked = results.filter(r => !r.unmarked);
-      if (marked.length === 0) {
-        toast(`${student.name} has no marks recorded. Cannot approve progression.`, 'error');
+      // Judge with the SAME rules the student's dashboard uses
+      // (buildStudentProgress → progression.ts), so staff and student can never
+      // see different answers (UAT M3/M4). Approval needs this semester's
+      // results settled (every module marked, final exam included, no
+      // supplementary outstanding) and the progression rule met.
+      const progress = buildStudentProgress(db, student, scoreOf, null);
+      if (!progress.settled || !progress.verdict) {
+        toast(`${student.name}: ${progress.settledReason} Cannot approve yet.`, 'error');
         return false;
       }
-      const failing = marked.filter(r => r.mark.moduleMark < 50);
-      if (failing.length > 0) {
-        const modNames = failing.map(r => r.module.name).join(', ');
-        toast(`${student.name} has failing modules: ${modNames}. Cannot approve.`, 'error');
+      if (!progress.verdict.mayProgress) {
+        toast(`${student.name}: ${progress.verdict.reason}`, 'error');
         return false;
       }
 
@@ -182,10 +183,17 @@ export default function ProgressionPage() {
                 </div>
                 <div className="table-wrap">
                   <table>
-                    <thead><tr><th style={{ width: 30 }}></th><th>Name</th><th>Student ID</th><th>Year</th><th>Sem</th><th>Status</th><th>Action</th></tr></thead>
+                    <thead><tr><th style={{ width: 30 }}></th><th>Name</th><th>Student ID</th><th>Year</th><th>Sem</th><th>Results</th><th>Status</th><th>Action</th></tr></thead>
                     <tbody>
                       {students.map(s => {
                         const pStatus = (s as any).progressionStatus || 'pending';
+                        // Outcomes for staff — these used to be visible only on
+                        // the student's own dashboard (UAT M3).
+                        const pr = marksLoading ? null : buildStudentProgress(db, s, scoreOf, null);
+                        const nPass = pr?.standings.filter(x => x.outcome === 'passed').length ?? 0;
+                        const supps = pr?.standings.filter(x => x.outcome === 'supp') ?? [];
+                        const retakes = pr?.standings.filter(x => x.outcome === 'retake') ?? [];
+                        const nPending = pr?.standings.filter(x => x.outcome === null).length ?? 0;
                         return (
                           <tr key={s.id}>
                             <td>
@@ -195,6 +203,14 @@ export default function ProgressionPage() {
                             <td style={{ fontFamily: "'JetBrains Mono',monospace", fontSize: 11 }}>{s.studentId}</td>
                             <td>{s.year}</td>
                             <td>{s.semester}</td>
+                            <td style={{ fontSize: 11, lineHeight: 1.6 }} data-testid="progression-outcomes">
+                              {!pr ? '…' : pr.standings.length === 0 ? <span style={{ color: 'var(--text2)' }}>No modules</span> : (<>
+                                {nPass > 0 && <span className="badge badge-pass" style={{ marginRight: 4 }}>{nPass} passed</span>}
+                                {supps.length > 0 && <span className="badge badge-active" style={{ marginRight: 4 }} title={supps.map(x => x.result.module.name).join(', ')}>{supps.length} supp</span>}
+                                {retakes.length > 0 && <span className="badge badge-fail" style={{ marginRight: 4 }} title={retakes.map(x => x.result.module.name).join(', ')}>{retakes.length} retake</span>}
+                                {nPending > 0 && <span className="badge badge-pending" title="Not every assessment (including the final exam) is marked yet">{nPending} pending</span>}
+                              </>)}
+                            </td>
                             <td>
                               <span className={`badge ${pStatus === 'approved' ? 'badge-active' : pStatus === 'rejected' ? 'badge-fail' : 'badge-pending'}`}>
                                 {pStatus.charAt(0).toUpperCase() + pStatus.slice(1)}

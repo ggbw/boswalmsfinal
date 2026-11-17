@@ -50,11 +50,11 @@ export default function StudentRegistrationPanel({ student }: { student: Student
   //
   // recordOutcomes only writes where the outcome CHANGED, so this is cheap on
   // every visit and cannot re-notify about the same supplementary twice.
-  const settledKey = progress.settled
+  const settledKey = progress.allDecided
     ? progress.standings.map(s => `${s.result.module.id}:${s.outcome}`).join('|')
     : '';
   useEffect(() => {
-    if (!settledKey || !progress.settled) return;
+    if (!settledKey || !progress.allDecided) return;
     let cancelled = false;
     (async () => {
       const res = await recordOutcomes({
