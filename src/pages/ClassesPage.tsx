@@ -462,7 +462,7 @@ export default function ClassesPage() {
                     <tr>
                       <td className="td-name">{cls.name}</td>
                       <td>{prog?.type}</td>
-                      <td>Year {cls.year} · Sem {cls.semester}</td>
+                      <td>Year {cls.year} · Semester {cls.semester}</td>
                       <td>{cls.calYear}</td>
                       <td style={{ fontSize: 12 }}>{classLecturers.length > 0 ? classLecturers.join(", ") : <span style={{ color: "var(--text3)" }}>—</span>}</td>
                       <td style={{ fontFamily: "'JetBrains Mono',monospace" }}>{studCount}</td>

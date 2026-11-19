@@ -1,8 +1,9 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { useRowSelection } from '@/lib/useRowSelection';
 import { useApp } from '@/context/AppContext';
 import { canManageAcademics } from '@/lib/scope';
 import { SUPP_EXAM_TYPE } from '@/lib/progression';
+import { studentsForClassModule } from '@/lib/studentMarks';
 import { supabase } from '@/integrations/supabase/client';
 import { getLecturerClassIds, getLecturerModulesList } from '@/lib/lecturerHelpers';
 import { recordClassOutcomes } from '@/lib/recordClassOutcomes';
@@ -431,7 +432,7 @@ export type ExamsPageMode = 'all' | 'practical';
  * entered in either appears in both.
  */
 export default function ExamsPage({ mode = 'all' }: { mode?: ExamsPageMode }) {
-  const { db, currentUser, showModal, closeModal, toast, reloadDb } = useApp();
+  const { db, currentUser, showModal, closeModal, toast, reloadDb, pageParams } = useApp();
   const isPracticalView = mode === 'practical';
   const role = currentUser?.role;
   const [search, setSearch] = useState('');
@@ -516,7 +517,8 @@ export default function ExamsPage({ mode = 'all' }: { mode?: ExamsPageMode }) {
 
   const handleEnterMarks = async (exam: typeof exams[0]) => {
     const cls = db.classes.find(c => c.id === exam.classId);
-    const students = db.students.filter(s => s.classId === exam.classId);
+    // Includes students retaking this module with the class (correction 9).
+    const students = studentsForClassModule(db, exam.classId, exam.moduleId);
     if (students.length === 0) { toast('No students found for this class', 'error'); return; }
 
     // Load existing assessment_marks for this exam. We MUST surface a load
@@ -550,6 +552,18 @@ export default function ExamsPage({ mode = 'all' }: { mode?: ExamsPageMode }) {
     ), 'large');
   };
 
+  // Dashboard deep link: open this exam's Enter Marks (UAT retest correction 14).
+  const [pendingExam, setPendingExam] = useState<string | null>(
+    typeof pageParams?.openMarksFor === 'string' ? pageParams.openMarksFor : null,
+  );
+  useEffect(() => {
+    if (!pendingExam) return;
+    const exam = db.exams.find(e => e.id === pendingExam);
+    if (!exam) return;
+    setPendingExam(null);
+    void handleEnterMarks(exam);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [pendingExam, db.exams.length]);
   return (<>
     <div className="page-header">
       {isPracticalView ? (

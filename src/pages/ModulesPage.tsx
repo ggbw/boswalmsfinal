@@ -2,6 +2,8 @@ import { useApp } from "@/context/AppContext";
 import { isAdminRole, getScopedModuleIds, getScopedClassIds } from '@/lib/scope';
 import { getLecturersForModuleClass } from '@/lib/lecturerHelpers';
 import { supabase } from "@/integrations/supabase/client";
+import { ClassChecklist, CourseworkItemsField } from "@/components/modules/ModuleFormParts";
+import { saveModuleClasses, updateModuleRow } from "@/lib/moduleSave";
 
 export default function ModulesPage() {
   const { db, currentUser, toast, showModal, closeModal, reloadDb } = useApp();
@@ -40,8 +42,10 @@ export default function ModulesPage() {
     let code = mod.code,
       name = mod.name,
       dept = mod.dept;
+    const originalClasses = [...mod.classes];
     let selectedClasses = [...mod.classes];
     let hasPractical = mod.hasPractical !== false;
+    let courseworkItems: number | null | undefined = mod.courseworkItems;
 
     showModal(
       "Edit Module",
@@ -67,23 +71,10 @@ export default function ModulesPage() {
           </select>
         </div>
         <div className="form-group">
-          <label>Assigned Classes (hold Ctrl/Cmd to select multiple)</label>
-          <select
-            className="form-input"
-            multiple
-            style={{ height: 120 }}
-            defaultValue={selectedClasses}
-            onChange={(e) => {
-              selectedClasses = Array.from(e.target.selectedOptions).map((o) => o.value);
-            }}
-          >
-            {db.classes.map((c) => (
-              <option key={c.id} value={c.id}>
-                {c.name}
-              </option>
-            ))}
-          </select>
+          <label>Assigned Classes</label>
+          <ClassChecklist classes={db.classes} initial={originalClasses} onChange={(ids) => (selectedClasses = ids)} />
         </div>
+        <CourseworkItemsField initial={courseworkItems} onChange={(n) => (courseworkItems = n)} />
         <div className="form-group">
           <label style={{ display: "flex", gap: 8, alignItems: "center", fontWeight: 400, cursor: "pointer" }}>
             <input type="checkbox" defaultChecked={hasPractical} onChange={(e) => (hasPractical = e.target.checked)} />
@@ -101,21 +92,18 @@ export default function ModulesPage() {
               toast("Module name is required", "error");
               return;
             }
-            const { error: modErr } = await supabase.from("modules").update({ code, name, dept, has_practical: hasPractical }).eq("id", modId);
+            const { error: modErr, warning } = await updateModuleRow(
+              modId, { code, name, dept, has_practical: hasPractical }, courseworkItems, mod.courseworkItems);
             if (modErr) {
-              toast(modErr.message, "error");
+              toast(modErr, "error");
               return;
             }
-            await supabase.from("module_classes").delete().eq("module_id", modId);
-            if (selectedClasses.length > 0) {
-              const inserts = selectedClasses.map((cid) => ({ module_id: modId, class_id: cid }));
-              const { error: mcErr } = await supabase.from("module_classes").insert(inserts);
-              if (mcErr) {
-                toast(mcErr.message, "error");
-                return;
-              }
+            const mcErr = await saveModuleClasses(modId, originalClasses, selectedClasses);
+            if (mcErr) {
+              toast(mcErr, "error");
+              return;
             }
-            toast("Module updated successfully!", "success");
+            toast(warning || "Module updated successfully!", warning ? "info" : "success");
             closeModal();
             reloadDb();
           }}
@@ -145,6 +133,7 @@ export default function ModulesPage() {
       dept = db.departments[0]?.id || "";
     let selectedClasses: string[] = [];
     let hasPractical = true;
+    let courseworkItems: number | null = 4;
 
     showModal(
       "Add New Module",
@@ -170,22 +159,10 @@ export default function ModulesPage() {
           </select>
         </div>
         <div className="form-group">
-          <label>Assigned Classes (hold Ctrl/Cmd to select multiple)</label>
-          <select
-            className="form-input"
-            multiple
-            style={{ height: 120 }}
-            onChange={(e) => {
-              selectedClasses = Array.from(e.target.selectedOptions).map((o) => o.value);
-            }}
-          >
-            {db.classes.map((c) => (
-              <option key={c.id} value={c.id}>
-                {c.name}
-              </option>
-            ))}
-          </select>
+          <label>Assigned Classes</label>
+          <ClassChecklist classes={db.classes} initial={[]} onChange={(ids) => (selectedClasses = ids)} />
         </div>
+        <CourseworkItemsField initial={4} onChange={(n) => (courseworkItems = n)} />
         <div className="form-group">
           <label style={{ display: "flex", gap: 8, alignItems: "center", fontWeight: 400, cursor: "pointer" }}>
             <input type="checkbox" defaultChecked={hasPractical} onChange={(e) => (hasPractical = e.target.checked)} />
@@ -209,10 +186,12 @@ export default function ModulesPage() {
               toast(modErr.message, "error");
               return;
             }
-            if (selectedClasses.length > 0) {
-              const inserts = selectedClasses.map((cid) => ({ module_id: newId, class_id: cid }));
-              await supabase.from("module_classes").insert(inserts);
+            if ((courseworkItems ?? 4) !== 4) {
+              const r = await updateModuleRow(newId, {}, courseworkItems, 4);
+              if (r.error || r.warning) toast(r.error || r.warning || "", r.error ? "error" : "info");
             }
+            const mcErr = await saveModuleClasses(newId, [], selectedClasses);
+            if (mcErr) toast(mcErr, "error");
             toast("Module added successfully!", "success");
             closeModal();
             reloadDb();

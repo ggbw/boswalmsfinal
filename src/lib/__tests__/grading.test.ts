@@ -301,6 +301,8 @@ describe("module mark reproduces the theory spreadsheet", () => {
       hasPractical: false,
       cat,
       scoreOf: scorer({ t1: 85, t2: 60, ia: 58, fe: 73 }),
+      // Food Safety is set up with three coursework assessments (each 20%).
+      courseworkSlots: 3,
     });
     expect(mk.rawModuleMark).toBeCloseTo(69.8, 2);
     expect(roundMark(mk.moduleMark)).toBe(70); // 69.8 → 70 → Merit
@@ -371,8 +373,8 @@ describe("Pastry practical — same as Hot Kitchen but NO final practical (confi
   });
 });
 
-describe("absent is not zero; a real 0 counts, a blank is skipped", () => {
-  it("a skipped (blank) coursework item is left out of the average", () => {
+describe("coursework slots: an unmarked slot counts as 0, like the academic office's sheet", () => {
+  it("a blank coursework item contributes nothing; a real 0 contributes nothing either", () => {
     const cat: ModuleAssessments = {
       theoryCWExams: [{ id: "a" }, { id: "b" }],
       finalTheoryExam: undefined,
@@ -382,16 +384,20 @@ describe("absent is not zero; a real 0 counts, a blank is skipped", () => {
       finalPracTheo: undefined,
       assignments: [],
     };
-    // a blank (null) → skipped, average is just 60
+    // Two coursework assessments set up as the module's two slots.
     const blank = computeStudentModuleMark({
-      studentId: "s", hasPractical: false, cat, scoreOf: scorer({ a: null, b: 60 }),
+      studentId: "s", hasPractical: false, cat, scoreOf: scorer({ a: null, b: 60 }), courseworkSlots: 2,
     });
-    expect(blank.theoryCWAvg).toBe(60);
-    // a real 0 → counts, dragging the average to 30
+    expect(blank.theoryCWAvg).toBe(30);
     const zero = computeStudentModuleMark({
-      studentId: "s", hasPractical: false, cat, scoreOf: scorer({ a: 0, b: 60 }),
+      studentId: "s", hasPractical: false, cat, scoreOf: scorer({ a: 0, b: 60 }), courseworkSlots: 2,
     });
     expect(zero.theoryCWAvg).toBe(30);
+    // Default is four slots: 60 alone is 15 of the coursework average.
+    const four = computeStudentModuleMark({
+      studentId: "s", hasPractical: false, cat, scoreOf: scorer({ a: null, b: 60 }),
+    });
+    expect(four.theoryCWAvg).toBe(15);
   });
 });
 

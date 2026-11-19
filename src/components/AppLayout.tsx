@@ -270,7 +270,7 @@ export default function AppLayout() {
             <span className="current">{crumb.label}</span>
           </div>
           <div className="topbar-right" style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
-            <span className="tb-badge">{db.config.currentYear} · Semester {db.config.currentSemester}</span>
+            <span className="tb-badge" title="Current academic calendar">Academic year {db.config.currentYear} · Semester {db.config.currentSemester}</span>
             <NotificationBell />
           </div>
         </div>

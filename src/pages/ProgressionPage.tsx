@@ -93,6 +93,50 @@ export default function ProgressionPage() {
     return true;
   };
 
+  /**
+   * Move the class to the semester most of its students are now in, so the
+   * class follows the cohort (UAT retest correction 13). Uses the
+   * sync_class_period database function (HOD/HOA may call it); if that has not
+   * been created yet, admins fall back to a direct update.
+   */
+  const syncClassPeriod = async (classId: string) => {
+    const { data, error } = await supabase.rpc('sync_class_period', { _class_id: classId });
+    if (!error) {
+      const row = (data as { year: number; semester: number }[] | null)?.[0];
+      const cls = db.classes.find(c => c.id === classId);
+      if (row && cls && (row.year !== cls.year || row.semester !== cls.semester)) {
+        toast(`${cls.name} moved to Year ${row.year} · Semester ${row.semester} with its students.`, 'info');
+      }
+      return;
+    }
+    // Only fall back when the database function has not been created yet.
+    const missing = error.code === 'PGRST202' || error.code === '42883' || /could not find the function|does not exist/i.test(error.message);
+    if (!missing) {
+      toast(`Students approved, but the class could not be moved: ${error.message}`, 'error');
+      return;
+    }
+    // Function not there yet: work it out here (works for admins).
+    const { data: rows } = await supabase.from('students').select('year,semester,status').eq('class_id', classId);
+    const counts = new Map<string, { year: number; semester: number; n: number }>();
+    ((rows || []) as { year: number; semester: number; status: string | null }[])
+      .filter(r => (r.status || 'active') === 'active')
+      .forEach(r => {
+        const k = `${r.year}|${r.semester}`;
+        const c = counts.get(k) || { year: r.year, semester: r.semester, n: 0 };
+        c.n++; counts.set(k, c);
+      });
+    const top = [...counts.values()].sort((a, b) => b.n - a.n || b.year - a.year || b.semester - a.semester)[0];
+    const cls = db.classes.find(c => c.id === classId);
+    if (!top || !cls) return;
+    if (top.year > cls.year || (top.year === cls.year && top.semester > cls.semester)) {
+      const { data: upd, error: upErr } = await supabase.from('classes')
+        .update({ year: top.year, semester: top.semester }).eq('id', classId).select('id');
+      // Row security can silently update nothing (non-admins): treat that as a failure.
+      if (upErr || !upd || upd.length === 0) toast(`Students approved, but ${cls.name} could not be moved to their semester — ask an administrator.`, 'error');
+      else toast(`${cls.name} moved to Year ${top.year} · Semester ${top.semester} with its students.`, 'info');
+    }
+  };
+
   const handleBulkAction = async (classId: string, action: 'approved' | 'rejected') => {
     const sel = selected[classId];
     if (!sel || sel.size === 0) { toast('No students selected', 'error'); return; }
@@ -103,6 +147,7 @@ export default function ProgressionPage() {
       if (ok) count++;
     }
     toast(`${count} student(s) ${action}`, 'success');
+    if (action === 'approved' && count > 0) await syncClassPeriod(classId);
     setSelected(prev => ({ ...prev, [classId]: new Set() }));
     setProcessing(false);
     reloadDb();
@@ -128,6 +173,7 @@ export default function ProgressionPage() {
     setProcessing(true);
     const ok = await progressStudent(studentId, classId, action);
     if (ok) toast(`Student ${action}`, 'success');
+    if (ok && action === 'approved') await syncClassPeriod(classId);
     setProcessing(false);
     reloadDb();
   };
@@ -142,7 +188,7 @@ export default function ProgressionPage() {
       {db.classes.map(cls => {
         const students = db.students.filter(s => s.classId === cls.id);
         const prog = db.config.programmes.find(p => p.id === cls.programme);
-        const nextSem = cls.semester < (prog?.semesters || 2) ? `Semester ${cls.semester + 1}` : `Year ${cls.year + 1} Semester 1`;
+        const nextSem = cls.semester < (prog?.semesters || 2) ? `Year ${cls.year} · Semester ${cls.semester + 1}` : `Year ${cls.year + 1} · Semester 1`;
         const isExpanded = expanded[cls.id];
         const sel = selected[cls.id] || new Set();
         const pendingStudents = students.filter(s => (s as any).progressionStatus !== 'approved');
@@ -154,7 +200,7 @@ export default function ProgressionPage() {
                 <div style={{ fontWeight: 700, fontSize: 14 }}>
                   <i className="fa-solid fa-school" /> {cls.name}
                   <span style={{ fontSize: 11, color: 'var(--text2)', fontWeight: 400, marginLeft: 8 }}>
-                    {prog?.type} · Year {cls.year} Sem {cls.semester} → {nextSem}
+                    {prog?.type} · Year {cls.year} · Semester {cls.semester} → {nextSem}
                   </span>
                 </div>
                 <div style={{ fontSize: 11, color: 'var(--text2)', marginTop: 3 }}>{students.length} students</div>
@@ -183,7 +229,7 @@ export default function ProgressionPage() {
                 </div>
                 <div className="table-wrap">
                   <table>
-                    <thead><tr><th style={{ width: 30 }}></th><th>Name</th><th>Student ID</th><th>Year</th><th>Sem</th><th>Results</th><th>Status</th><th>Action</th></tr></thead>
+                    <thead><tr><th style={{ width: 30 }}></th><th>Name</th><th>Student ID</th><th>Year</th><th>Semester</th><th>Results</th><th>Status</th><th>Action</th></tr></thead>
                     <tbody>
                       {students.map(s => {
                         const pStatus = (s as any).progressionStatus || 'pending';

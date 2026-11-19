@@ -1878,6 +1878,7 @@ export type Database = {
       modules: {
         Row: {
           code: string
+          coursework_items: number | null
           dept: string | null
           has_practical: boolean
           id: string
@@ -1885,6 +1886,7 @@ export type Database = {
         }
         Insert: {
           code: string
+          coursework_items?: number | null
           dept?: string | null
           has_practical?: boolean
           id: string
@@ -1892,6 +1894,7 @@ export type Database = {
         }
         Update: {
           code?: string
+          coursework_items?: number | null
           dept?: string | null
           has_practical?: boolean
           id?: string
@@ -2988,6 +2991,10 @@ export type Database = {
     Functions: {
       activate_student_account: { Args: { p_user_id?: string }; Returns: Json }
       active_contract_employee_ids: { Args: never; Returns: string[] }
+      sync_class_period: {
+        Args: { _class_id: string }
+        Returns: { semester: number; year: number }[]
+      }
       backup_clear_table: { Args: { _table: string }; Returns: number }
       backup_health: { Args: never; Returns: Json }
       backup_row_counts: {

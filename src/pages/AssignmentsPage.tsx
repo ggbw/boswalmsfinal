@@ -1,8 +1,8 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { useApp } from '@/context/AppContext';
 import { supabase } from '@/integrations/supabase/client';
 import { getScopedClassIds, getScopedModuleIds, isUnrestricted, canManageAcademics } from '@/lib/scope';
-import { assignmentsForStudent } from '@/lib/studentMarks';
+import { assignmentsForStudent, studentsForClassModule } from '@/lib/studentMarks';
 import { useAssessmentMarks } from '@/hooks/useAssessmentMarks';
 import { ACCEPT_DOCUMENTS, MAX_ASSIGNMENT_BYTES, checkUpload } from '@/lib/uploads';
 
@@ -118,6 +118,8 @@ function AssignmentFormModal({
 
   const handleSave = async () => {
     if (!title || !moduleId) { toast('Title and module are required', 'error'); return; }
+    // A due date is required (UAT retest issue A: assignments were listed as active with none).
+    if (!dueDate) { toast('Choose a due date for the assignment', 'error'); return; }
     if (attachmentFile && attachmentFile.size > MAX_ASSIGNMENT_BYTES) { toast('Attachment must be under 10MB', 'error'); return; }
     setSaving(true);
 
@@ -174,7 +176,7 @@ function AssignmentFormModal({
         </div>
       </div>
       <div className="form-row cols2">
-        <div className="form-group"><label>Due Date</label><input className="form-input" type="date" value={dueDate} onChange={e => setDueDate(e.target.value)} /></div>
+        <div className="form-group"><label>Due Date *</label><input className="form-input" type="date" required data-testid="assignment-due-date" value={dueDate} onChange={e => setDueDate(e.target.value)} /></div>
         <div className="form-group"><label>Total Marks</label><input className="form-input" type="number" value={marks} onChange={e => setMarks(Number(e.target.value))} /></div>
       </div>
       <div className="form-group"><label>Submission Type *</label>
@@ -204,9 +206,15 @@ function AssignmentFormModal({
 }
 
 export default function AssignmentsPage() {
-  const { db, currentUser, showModal, closeModal, toast, reloadDb } = useApp();
+  const { db, currentUser, showModal, closeModal, toast, reloadDb, pageParams } = useApp();
   const role = currentUser?.role;
-  const [selectedAssignment, setSelectedAssignment] = useState<string | null>(null);
+  const [selectedAssignment, setSelectedAssignment] = useState<string | null>(
+    typeof pageParams?.openAssignment === 'string' ? pageParams.openAssignment : null,
+  );
+  // Opened from the dashboard for a specific assignment's marks (correction 14).
+  const [pendingMarksFor, setPendingMarksFor] = useState<string | null>(
+    pageParams?.openMarks && typeof pageParams?.openAssignment === 'string' ? pageParams.openAssignment : null,
+  );
   const [search, setSearch] = useState('');
 
   // Who may CREATE and DELETE — not merely who may see everything. A principal
@@ -321,7 +329,8 @@ export default function AssignmentsPage() {
   };
 
   const handleEnterMarks = async (a: typeof assignments[0]) => {
-    const students = db.students.filter(s => s.classId === a.classId);
+    // Includes students retaking this module with the class (correction 9).
+    const students = studentsForClassModule(db, a.classId, a.moduleId);
     if (students.length === 0) { toast('No students in this class', 'error'); return; }
 
     // Surface a load failure: a silent empty result would pre-fill 0 for every
@@ -605,6 +614,15 @@ export default function AssignmentsPage() {
           .some(v => (v || '').toLowerCase().includes(q));
       });
 
+  // Dashboard deep link: open this assignment's Enter Marks once it is loaded.
+  useEffect(() => {
+    if (!pendingMarksFor) return;
+    const a = assignments.find(x => x.id === pendingMarksFor);
+    if (!a) return;
+    setPendingMarksFor(null);
+    void handleEnterMarks(a);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [pendingMarksFor, assignments.length]);
   return (<>
     <div className="page-header">
       <div><div className="page-title"><i className="fa-solid fa-list-check" style={{color:'var(--accent)',marginRight:8}}/>Assignments</div><div className="page-sub">{filteredAssignments.length} of {assignments.length} assignment(s)</div></div>

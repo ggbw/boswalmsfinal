@@ -1,5 +1,6 @@
 import { useApp } from '@/context/AppContext';
-import { grade, gradeColor, type DB, type Student } from '@/data/db';
+import { type DB, type Student } from '@/data/db';
+import { resultDisplay } from '@/lib/resultStatus';
 import { getScopedStudents } from '@/lib/scope';
 import { useAssessmentMarks } from '@/hooks/useAssessmentMarks';
 import { studentModuleResults } from '@/lib/studentMarks';
@@ -30,20 +31,22 @@ function StudentResults({ stu, db }: { stu: Student; db: DB }) {
       : marked.length === 0
         ? <div className="card" style={{textAlign:'center',padding:40,color:'var(--text2)'}}>No results available yet. Results will appear here once your lecturer has entered marks.</div>
         : <div className="card"><div className="table-wrap"><table>
-            <thead><tr><th>Module</th><th style={{textAlign:'center'}}>Coursework</th><th style={{textAlign:'center'}}>Practical</th><th style={{textAlign:'center'}}>Final Exam</th><th style={{textAlign:'center'}}>Total</th><th>Grade</th></tr></thead>
-            <tbody>{marked.map(({ module, mark }) => {
-              const g = grade(mark.moduleMark);
+            <thead><tr><th>Module</th><th style={{textAlign:'center'}}>Coursework</th><th style={{textAlign:'center'}}>Practical</th><th style={{textAlign:'center'}}>Final Exam</th><th style={{textAlign:'center'}}>Supplementary</th><th style={{textAlign:'center'}}>Total</th><th>Grade</th></tr></thead>
+            <tbody>{marked.map((r) => {
+              const { module, mark } = r;
+              const d = resultDisplay(r);
               // Parts to one decimal — rounding each part to a whole number made them add up
               // to a different figure than the total (24 + 10 + 16 shown beside 49.6).
               const pct = (v: number | null) => v === null ? '—' : `${v.toFixed(1)}%`;
               return (
                 <tr key={module.id}>
-                  <td className="td-name">{module.name}</td>
+                  <td className="td-name">{module.name}{d.note && <div style={{fontSize:10.5,color:'var(--text2)',fontWeight:400}}>{d.note}</div>}</td>
                   <td style={{fontFamily:"'JetBrains Mono',monospace",textAlign:'center'}}>{pct(mark.theory40)}</td>
                   <td style={{fontFamily:"'JetBrains Mono',monospace",textAlign:'center'}}>{pct(mark.prac20)}</td>
                   <td style={{fontFamily:"'JetBrains Mono',monospace",textAlign:'center'}}>{pct(mark.final40)}</td>
+                  <td style={{fontFamily:"'JetBrains Mono',monospace",textAlign:'center'}} data-testid="results-supp">{mark.suppScore === null ? '—' : `${mark.suppScore}%`}</td>
                   <td style={{fontFamily:"'JetBrains Mono',monospace",fontWeight:700,textAlign:'center'}}>{mark.moduleMark}%</td>
-                  <td><span className={`badge ${gradeColor(g)}`}>{g}</span></td>
+                  <td><span className={`badge ${d.badgeClass}`}>{d.label}</span></td>
                 </tr>
               );
             })}</tbody>
@@ -87,7 +90,7 @@ function StaffResults() {
   const rows = loading ? [] : students.flatMap(s =>
     studentModuleResults(db, s, scoreOf)
       .filter(r => !r.unmarked)
-      .map(r => ({ student: s, module: r.module, mark: r.mark.moduleMark })),
+      .map(r => ({ student: s, module: r.module, mark: r.mark.moduleMark, supp: r.mark.suppScore, d: resultDisplay(r) })),
   );
 
   return (<>
@@ -107,21 +110,21 @@ function StaffResults() {
     )}
     <div className="card"><div className="table-wrap">
       <table>
-        <thead><tr><th>Student</th><th>ID</th><th>Module</th><th style={{textAlign:'center'}}>Mark</th><th>Grade</th></tr></thead>
+        <thead><tr><th>Student</th><th>ID</th><th>Module</th><th style={{textAlign:'center'}}>Supplementary</th><th style={{textAlign:'center'}}>Mark</th><th>Grade</th></tr></thead>
         <tbody>
           {loading
-            ? <tr><td colSpan={5} style={{textAlign:'center',padding:28,color:'var(--text2)'}}>Loading…</td></tr>
+            ? <tr><td colSpan={6} style={{textAlign:'center',padding:28,color:'var(--text2)'}}>Loading…</td></tr>
             : rows.length === 0
-              ? <tr><td colSpan={5} style={{textAlign:'center',padding:28,color:'var(--text2)'}}>No marks recorded yet.</td></tr>
+              ? <tr><td colSpan={6} style={{textAlign:'center',padding:28,color:'var(--text2)'}}>No marks recorded yet.</td></tr>
               : rows.map((r, i) => {
-                  const g = grade(r.mark);
                   return (
                     <tr key={`${r.student.id}-${r.module.id}-${i}`}>
                       <td className="td-name">{r.student.name}</td>
                       <td style={{fontFamily:"'JetBrains Mono',monospace",fontSize:11}}>{r.student.studentId}</td>
-                      <td>{r.module.name}</td>
+                      <td>{r.module.name}{r.d.note && <div style={{fontSize:10.5,color:'var(--text2)'}}>{r.d.note}</div>}</td>
+                      <td style={{fontFamily:"'JetBrains Mono',monospace",textAlign:'center'}}>{r.supp === null ? '—' : `${r.supp}%`}</td>
                       <td style={{fontFamily:"'JetBrains Mono',monospace",fontWeight:700,textAlign:'center'}}>{r.mark}%</td>
-                      <td><span className={`badge ${gradeColor(g)}`}>{g}</span></td>
+                      <td><span className={`badge ${r.d.badgeClass}`}>{r.d.label}</span></td>
                     </tr>
                   );
                 })}

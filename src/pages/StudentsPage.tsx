@@ -1,12 +1,12 @@
 import { useEffect, useState } from "react";
 import { useApp } from "@/context/AppContext";
-import { grade, gradeColor } from "@/data/db";
 import { supabase } from "@/integrations/supabase/client";
 import { cleanStudentId } from "@/lib/studentId";
 import { isAllowedPeriodMove } from "@/lib/progression";
 import { getScopedStudents, isAdminRole } from '@/lib/scope';
 import { useAssessmentMarks } from "@/hooks/useAssessmentMarks";
 import { studentModuleResults } from "@/lib/studentMarks";
+import { resultDisplay } from "@/lib/resultStatus";
 import { StudentImportDialog, StudentPhotoUploadDialog } from "@/components/students/StudentBulkTools";
 import { StudentPhoto } from "@/components/students/StudentPhoto";
 
@@ -546,7 +546,7 @@ export default function StudentsPage() {
                         </td>
                         <td style={{ fontFamily: "'JetBrains Mono',monospace", fontSize: 11 }}>{s.studentId}</td>
                         <td>{cls?.name || <span style={{ color: "#f59e0b" }}>Unassigned</span>}</td>
-                        <td>{prog?.type ? `${prog.type} Yr${s.year}` : "—"}</td>
+                        <td>{prog?.type ? `${prog.type} · Year ${s.year} · Semester ${s.semester}` : `Year ${s.year} · Semester ${s.semester}`}</td>
                         <td>
                           <span
                             className={`badge ${s.status === "active" ? "badge-active" : s.status === "graduated" ? "badge-pass" : "badge-fail"}`}
@@ -671,9 +671,9 @@ function StudentProfilePanel({ student: s, db, role, onClose, onEdit }: any) {
   // nothing: every module showed "In progress" regardless of what was marked.
   const { scoreOf, loading: marksLoading } = useAssessmentMarks({ studentNumbers: [s.studentId] });
   const results = marksLoading ? [] : studentModuleResults(db, s, scoreOf);
-  const markFor = (moduleId: string) => {
+  const resultFor = (moduleId: string) => {
     const r = results.find((x) => x.module.id === moduleId);
-    return r && !r.unmarked ? r.mark.moduleMark : null;
+    return r && !r.unmarked ? r : null;
   };
 
   // Modules the student is currently enrolled in: their class's modules plus any
@@ -788,16 +788,16 @@ function StudentProfilePanel({ student: s, db, role, onClose, onEdit }: any) {
             <tbody>
               {enrolledMods.map((m: any) => {
                 // Already weighted by computeStudentModuleMark.
-                const mm = markFor(m.id);
-                const g = mm !== null ? grade(mm) : null;
+                const res = resultFor(m.id);
+                const d = res ? resultDisplay(res) : null;
                 return (
                   <tr key={m.id}>
                     <td style={{ fontSize: 12 }}>{m.name}</td>
                     <td style={{ fontFamily: "'JetBrains Mono',monospace", fontSize: 11 }}>{m.code}</td>
                     <td>
-                      {g ? (
-                        <span className={`badge ${gradeColor(g)}`}>
-                          {g} · {mm}%
+                      {res && d ? (
+                        <span className={`badge ${d.badgeClass}`} title={d.note ?? undefined}>
+                          {d.label} · {res.mark.moduleMark}%
                         </span>
                       ) : (
                         <span className="badge badge-inactive">

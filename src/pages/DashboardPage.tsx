@@ -1,7 +1,8 @@
 import { useApp } from '@/context/AppContext';
-import { grade, gradeColor, type DB, type Student } from '@/data/db';
+import { type DB, type Student } from '@/data/db';
 import { useAssessmentMarks } from '@/hooks/useAssessmentMarks';
 import { studentModuleResults, assignmentsForStudent } from '@/lib/studentMarks';
+import { resultDisplay } from '@/lib/resultStatus';
 import { PrincipalDashboard, HodDashboard, LecturerDashboard } from '@/pages/RoleDashboards';
 import StudentRegistrationPanel from '@/components/StudentRegistrationPanel';
 import { StudentPhoto } from '@/components/students/StudentPhoto';
@@ -29,7 +30,7 @@ function StudentDashboard({ stu, db }: { stu: Student; db: DB }) {
 
   return (
     <>
-      <div className="page-header"><div style={{ display: 'flex', alignItems: 'center', gap: 14 }}><StudentPhoto studentRef={stu.id} name={stu.name} gender={stu.gender} size={64} fallback /><div><div className="page-title">Welcome, {stu.name.split(' ')[0]}</div><div className="page-sub">{cls?.name} · {prog?.name} · Year {stu.year} Semester {stu.semester}</div></div></div></div>
+      <div className="page-header"><div style={{ display: 'flex', alignItems: 'center', gap: 14 }}><StudentPhoto studentRef={stu.id} name={stu.name} gender={stu.gender} size={64} fallback /><div><div className="page-title">Welcome, {stu.name.split(' ')[0]}</div><div className="page-sub">{cls?.name} · {prog?.name} · Year {stu.year} · Semester {stu.semester}</div></div></div></div>
       <div className="stat-grid">
         <div className="stat-card"><div className="stat-icon" style={{ background: '#fff3cc' }}><i className="fa-solid fa-book-open-reader" style={{ color: '#d4920a' }} /></div><div><div className="stat-val">{results.length}</div><div className="stat-label">Modules</div></div></div>
         <div className="stat-card"><div className="stat-icon" style={{ background: '#dafbe1' }}><i className="fa-solid fa-circle-check" style={{ color: '#1a7f37' }} /></div><div><div className="stat-val">{attPct2}%</div><div className="stat-label">My Attendance</div></div></div>
@@ -48,15 +49,27 @@ function StudentDashboard({ stu, db }: { stu: Student; db: DB }) {
                       need work reads instantly, where a column of numbers does
                       not. Pass/fail is STATUS colour, never a data series. */}
                   <ModuleMarksChart
-                    data={marked.map(({ module, mark }) => ({
-                      name: module.name.length > 22 ? module.name.slice(0, 21) + '…' : module.name,
-                      mark: mark.moduleMark,
+                    data={marked.map((r) => ({
+                      name: r.module.name.length > 22 ? r.module.name.slice(0, 21) + '…' : r.module.name,
+                      mark: r.mark.moduleMark,
+                      final: r.fullyMarked,
                     }))}
                   />
                   <div style={{ marginTop: 10 }}>
-                    {marked.map(({ module, mark }) => {
-                      const g = grade(mark.moduleMark);
-                      return <div key={module.id} className="info-row"><span className="info-label">{module.name}</span><div style={{ display: 'flex', gap: 6, alignItems: 'center' }}><span style={{ fontWeight: 700, fontFamily: "'JetBrains Mono', monospace" }}>{mark.moduleMark}%</span><span className={`badge ${gradeColor(g)}`}>{g}</span></div></div>;
+                    {marked.map((r) => {
+                      const d = resultDisplay(r);
+                      return (
+                        <div key={r.module.id} className="info-row" data-testid="dash-module-row">
+                          <span className="info-label">
+                            {r.module.name}
+                            {d.note && <span style={{ display: 'block', fontSize: 10.5, color: 'var(--text2)' }}>{d.note}</span>}
+                          </span>
+                          <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
+                            <span style={{ fontWeight: 700, fontFamily: "'JetBrains Mono', monospace" }}>{r.mark.moduleMark}%</span>
+                            <span className={`badge ${d.badgeClass}`}>{d.label}</span>
+                          </div>
+                        </div>
+                      );
                     })}
                   </div>
                 </>
@@ -133,7 +146,7 @@ export default function DashboardPage() {
       )}
       <div style={{ marginBottom: 20 }}>
         <div className="card-title" style={{ fontSize: 15, fontWeight: 700, marginBottom: 14 }}>
-          Active Classes — {db.config.currentYear} · Semester {db.config.currentSemester}
+          Active Classes — Academic year {db.config.currentYear} · Semester {db.config.currentSemester}
         </div>
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill,minmax(280px,1fr))', gap: 12 }}>
           {(() => {
@@ -141,7 +154,7 @@ export default function DashboardPage() {
             if (activeClasses.length === 0) {
               return (
                 <div style={{ color: 'var(--text2)', fontSize: 13, padding: '20px 0' }}>
-                  No classes found for Year {db.config.currentYear} · Semester {db.config.currentSemester}. Update the Academic Year Settings in Configuration.
+                  No classes found for academic year {db.config.currentYear} · Semester {db.config.currentSemester}. Update the Academic Year Settings in Configuration.
                 </div>
               );
             }

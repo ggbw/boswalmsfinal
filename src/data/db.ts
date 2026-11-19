@@ -55,6 +55,12 @@ export interface Module {
   // modules use CW 40% + Practical 20% + Final Exam 40%; non-practical modules
   // use CW 60% + Final Exam 40%. Treated as `true` when undefined (legacy).
   hasPractical?: boolean;
+  /**
+   * How many coursework assessments the module is designed to have (Test 1,
+   * Test 2, Individual and Group Assignment = 4). Each is an equal share of the
+   * coursework; one not yet marked counts as 0. modules.coursework_items.
+   */
+  courseworkItems?: number | null;
 }
 export interface Mark {
   studentId: string;

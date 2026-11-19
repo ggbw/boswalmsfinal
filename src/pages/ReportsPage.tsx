@@ -1,5 +1,6 @@
 import { useState, useEffect, useCallback, useMemo } from "react";
 import { fetchAssessmentMarks } from "@/hooks/useAssessmentMarks";
+import { studentsForClassModule } from "@/lib/studentMarks";
 import { useApp } from "@/context/AppContext";
 import { supabase } from "@/integrations/supabase/client";
 import { getLecturerClasses } from "@/lib/lecturerHelpers";
@@ -165,7 +166,8 @@ export default function ReportsPage() {
     // (no practical section); practical modules stay CW 40% + Prac 20% + Exam 40%.
     const moduleHasPractical = mod?.hasPractical !== false;
     const cwPct = moduleHasPractical ? 40 : 60;
-    const students = db.students.filter((s) => s.classId === cls.id);
+    // Includes students retaking this module with the class (correction 9).
+    const students = studentsForClassModule(db, cls.id, moduleId);
     const prog = db.config.programmes.find((p) => p.id === cls.programme);
     // Scale is chosen by the class's programme level, unless a super-admin has
     // switched the whole system back to the legacy scale.
@@ -181,39 +183,45 @@ export default function ReportsPage() {
       return m ? m.score : null;
     };
 
-    // Drop assignment columns (the yellow ones) that have no marks at all —
-    // stale/left-over assessments from an old mapping otherwise show as empty
-    // columns and drag the coursework average down. A column is kept only if at
-    // least one student has a recorded mark for it.
-    const classAssignments = allClassAssignments.filter((a) =>
-      students.some((s) => score(s.studentId, a.id) != null),
-    );
+    // Every assignment set for the class counts, exactly as on the student's
+    // dashboard and transcript: coursework is equal slots and one with no mark
+    // yet is 0 (UAT retest correction 1). Dropping unmarked assignments here
+    // used to make this report weight coursework differently from them.
+    const classAssignments = allClassAssignments;
 
     // Categorise into the buckets the weighting needs (shared with the transcript).
     const cat = categorizeModuleAssessments(classExams, classAssignments);
     const { theoryCWExams, finalTheoryExam, practicalCWExams, recipeExams, finalPracExam, finalPracTheo } = cat;
 
     // Build rows using the shared weighted computation.
+    // A student's result is final only when every assessment (final exam
+    // included) is marked; until then the decision reads "In progress".
+    const assessedIds = [...classExams.filter((e) => e.type !== "Supplementary Exam"), ...classAssignments].map((a) => a.id);
     const rows = students.map((s) => {
+      const complete = !!cat.finalTheoryExam && assessedIds.every((id) => score(s.studentId, id) !== null);
       const mark = computeStudentModuleMark({
         studentId: s.studentId,
         hasPractical: moduleHasPractical,
+        courseworkSlots: mod?.courseworkItems,
         cat,
         scoreOf: score,
       });
-      return { s, ...mark, decision: letterGrade(mark.moduleMark, scaleKey) };
+      return { s, ...mark, complete, decision: complete ? letterGrade(mark.moduleMark, scaleKey) : "In progress" };
     });
 
-    const classAvg = rows.length ? Math.round(avg(rows.map((r) => r.moduleMark))) : null;
+    // Averages, grade counts and the pass rate use completed results only.
+    const completeRows = rows.filter((r) => r.complete);
+    const classAvg = completeRows.length ? Math.round(avg(completeRows.map((r) => r.moduleMark))) : null;
     const gradeCounts: Record<string, number> = Object.fromEntries(letterOrder(scaleKey).map((g) => [g, 0]));
-    rows.forEach((r) => {
+    completeRows.forEach((r) => {
       gradeCounts[r.decision] = (gradeCounts[r.decision] || 0) + 1;
     });
     // Pass rate uses the shared pass mark (50%): a fail is any mark below it.
-    const failCount = rows.filter((r) => r.moduleMark < PASS_MARK).length;
-    const passPct = students.length
-      ? Math.round(((students.length - failCount) / students.length) * 100)
+    const failCount = completeRows.filter((r) => r.moduleMark < PASS_MARK).length;
+    const passPct = completeRows.length
+      ? Math.round(((completeRows.length - failCount) / completeRows.length) * 100)
       : 0;
+    const hasSupp = rows.some((r) => r.suppScore !== null);
 
     const hasTheory = theoryCWExams.length > 0 || classAssignments.length > 0 || finalTheoryExam;
     const hasPractical =
@@ -231,7 +239,7 @@ export default function ReportsPage() {
         });
       }
       const XLSX = (window as any).XLSX;
-      const title = `${mod?.name || "Module"} — ${cls.name} · Year ${cls.year} Sem ${cls.semester}`;
+      const title = `${mod?.name || "Module"} — ${cls.name} · Year ${cls.year} · Semester ${cls.semester}`;
 
       // Theory headers
       const thHeaders = [...theoryCWExams.map((e) => e.name), ...classAssignments.map((a) => a.title)];
@@ -769,6 +777,7 @@ export default function ReportsPage() {
                       <th style={{ background: "#7f3f00", color: "#ffd580", textAlign: "center" }}>20% Practical</th>
                     )}
                     <th style={{ background: "#3d0000", color: "#fff", textAlign: "center" }}>40% Final Exam</th>
+                    {hasSupp && <th style={{ background: "#5b2c6f", color: "#fff", textAlign: "center" }}>Supplementary</th>}
                     <th style={{ background: "#002060", color: "#fff", textAlign: "center", fontWeight: 800 }}>
                       Module Mark
                     </th>
@@ -798,25 +807,33 @@ export default function ReportsPage() {
                       >
                         {r.final40 ?? 0}
                       </td>
+                      {hasSupp && (
+                        <td style={{ textAlign: "center", fontFamily: "'JetBrains Mono',monospace" }}
+                            title={r.suppScore !== null ? `Supplementary ${r.suppScore}% — counted as 50%. Mark before: ${r.originalModuleMark}%` : undefined}>
+                          {r.suppScore === null ? "—" : `${r.suppScore}%`}
+                        </td>
+                      )}
                       <td
                         style={{
                           textAlign: "center",
                           fontFamily: "'JetBrains Mono',monospace",
                           fontSize: 14,
                           fontWeight: 800,
-                          background: r.moduleMark >= 80 ? "#dcfce7" : r.moduleMark >= 50 ? "#eff6ff" : "#fef2f2",
+                          background: !r.complete ? "var(--bg2)" : r.moduleMark >= 80 ? "#dcfce7" : r.moduleMark >= 50 ? "#eff6ff" : "#fef2f2",
                         }}
                       >
                         {r.moduleMark}%
                       </td>
                       <td style={{ textAlign: "center" }}>
-                        <span className={`badge ${letterBadgeClass(r.decision, scaleKey)}`}>{r.decision}</span>
+                        {r.complete
+                          ? <span className={`badge ${letterBadgeClass(r.decision, scaleKey)}`}>{r.decision}</span>
+                          : <span className="badge badge-pending" title="Not every assessment (final exam included) is marked yet">In progress</span>}
                       </td>
                     </tr>
                   ))}
                   {classAvg !== null && (
                     <tr style={{ background: "#002060", color: "#fff", fontWeight: 700 }}>
-                      <td colSpan={moduleHasPractical ? 6 : 5} style={{ textAlign: "right", paddingRight: 12, fontSize: 11, color: "#C9A227" }}>
+                      <td colSpan={(moduleHasPractical ? 6 : 5) + (hasSupp ? 1 : 0)} style={{ textAlign: "right", paddingRight: 12, fontSize: 11, color: "#C9A227" }}>
                         CLASS AVERAGE
                       </td>
                       <td style={{ textAlign: "center", fontFamily: "'JetBrains Mono',monospace", fontSize: 14 }}>
@@ -926,14 +943,15 @@ export default function ReportsPage() {
                     const mod = db.modules.find((mo) => mo.id === mid);
                     const classExams = db.exams.filter((e) => e.classId === cls.id && e.moduleId === mid);
                     const classAssignments = db.assignments.filter((a) => a.classId === cls.id && a.moduleId === mid);
-                    const hasAny = [...classExams, ...classAssignments].some(
-                      (a) => ovScoreOf(s.studentId, a.id) !== null,
-                    );
-                    if (!hasAny) return;
+                    // Completed modules only — a part-marked module is not a result yet.
                     const cat = categorizeModuleAssessments(classExams, classAssignments);
+                    const complete = !!cat.finalTheoryExam && [...classExams.filter((e) => e.type !== "Supplementary Exam"), ...classAssignments]
+                      .every((a) => ovScoreOf(s.studentId, a.id) !== null);
+                    if (!complete) return;
                     const { moduleMark } = computeStudentModuleMark({
                       studentId: s.studentId,
                       hasPractical: mod?.hasPractical !== false,
+                      courseworkSlots: mod?.courseworkItems,
                       cat,
                       scoreOf: ovScoreOf,
                     });
@@ -1003,7 +1021,7 @@ export default function ReportsPage() {
             {currentUser?.role === "hod" ? "HOD Reports" : "Academic Reports"}
           </div>
           <div className="page-sub">
-            {db.config.currentYear} · Semester {db.config.currentSemester}
+            Academic year {db.config.currentYear} · Semester {db.config.currentSemester}
           </div>
         </div>
         <div style={{ display: "flex", gap: 6 }}>

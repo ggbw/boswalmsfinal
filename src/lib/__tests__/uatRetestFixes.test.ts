@@ -20,6 +20,7 @@ describe('R1/M1 — one rounded module mark everywhere', () => {
   const mk = computeStudentModuleMark({
     studentId: 'S1', hasPractical: false, cat,
     scoreOf: scoresFrom({ cw1: 60, cw2: 65, fin: 30 }),
+    courseworkSlots: 2,
   });
 
   it('keeps the unrounded figure for breakdowns', () => {
@@ -41,9 +42,10 @@ describe('M3 — supplementary applied, capped at 50', () => {
     cat: categorizeModuleAssessments(
       [{ id: 'cw', type: 'Written Exam' }, { id: 'fin', type: 'Final Theory Exam' }], []),
     scoreOf: scoresFrom({ cw: 70, fin: 30 }),       // 70×.6 = 42 + 30×.4 = 12 → 54
+    courseworkSlots: 1,
   });
   it('a passed supp recalculates the module with the exam at 50', () => {
-    const weak = { ...base, theoryCWAvg: 60 };        // 60×.6 = 36 + 50×.4 = 20 → 56
+    const weak = { ...base, theory40: 36 };           // 36 + 50×.4 = 20 → 56
     expect(outcomeAfterSupp(weak, 90, false)).toEqual({ moduleMark: 56, outcome: 'passed' });
   });
   it('a failed supp means retake', () => {
@@ -61,8 +63,8 @@ function school(exams: { id: string; type: string }[], opts: { year?: number; se
     students: [student],
     classes: [{ id: 'c1', programme: 'p1', year: 1, semester: 1 }],
     modules: [
-      { id: 'm1', name: 'Module One', classes: ['c1'], hasPractical: false },
-      { id: 'm2', name: 'Module Two (Sem 2)', classes: ['c1'], hasPractical: false },
+      { id: 'm1', name: 'Module One', classes: ['c1'], hasPractical: false, courseworkItems: 1 },
+      { id: 'm2', name: 'Module Two (Sem 2)', classes: ['c1'], hasPractical: false, courseworkItems: 1 },
     ],
     programmeModules: [
       { programmeId: 'p1', moduleId: 'm1', year: 1, semester: 1 },
@@ -151,5 +153,52 @@ describe('Sheet A — "Retake: the latest attempt counts" (transcript)', () => {
       { moduleId: 'm1', mark: 52, year: 1, semester: 1, attemptYear: 1, attemptSem: 2 },
     ]);
     expect(out.map(m => m.superseded)).toEqual([true, false]);
+  });
+});
+
+describe('UAT retest 18 Nov — Boswa figures', () => {
+  it('Figure 13: Amos Kleen, Understand Food Commodities → 58 (four 15% slots, group assignment not yet marked)', () => {
+    const cat = categorizeModuleAssessments(
+      [{ id: 't1', type: 'Written Exam' }, { id: 't2', type: 'Written Exam' }, { id: 'fin', type: 'Final Theory Exam' }],
+      [{ id: 'ia' }],
+    );
+    const mk = computeStudentModuleMark({
+      studentId: 'BCI2026-9708', hasPractical: false, cat,
+      scoreOf: scoresFrom({ t1: 79, t2: 45, ia: 66, fin: 73 }),
+    });
+    expect(mk.theory40).toBeCloseTo(28.5, 2);   // 11.85 + 6.75 + 9.9
+    expect(mk.final40).toBeCloseTo(29.2, 2);
+    expect(mk.moduleMark).toBe(58);
+  });
+
+  it('a sat supplementary is part of the module mark itself, so every screen agrees', () => {
+    const cat = categorizeModuleAssessments(
+      [{ id: 'cw', type: 'Written Exam' }, { id: 'fin', type: 'Final Theory Exam' }, { id: 'sup', type: SUPP_EXAM_TYPE }],
+      [],
+    );
+    const base = { studentId: 's', hasPractical: false, cat, courseworkSlots: 1 } as const;
+    const before = computeStudentModuleMark({ ...base, scoreOf: scoresFrom({ cw: 60, fin: 30 }) });
+    expect(before.moduleMark).toBe(48);
+    expect(before.suppOutcome).toBeNull();
+    const passed = computeStudentModuleMark({ ...base, scoreOf: scoresFrom({ cw: 60, fin: 30, sup: 75 }) });
+    expect(passed.moduleMark).toBe(56);          // exam counted as 50, not 75
+    expect(passed.originalModuleMark).toBe(48);
+    expect(passed.suppScore).toBe(75);
+    expect(passed.suppOutcome).toBe('passed');
+    const failed = computeStudentModuleMark({ ...base, scoreOf: scoresFrom({ cw: 60, fin: 30, sup: 40 }) });
+    expect(failed.moduleMark).toBe(48);
+    expect(failed.suppOutcome).toBe('retake');
+    // a supp mark is ignored when the module was not a supplementary case
+    const notSupp = computeStudentModuleMark({ ...base, scoreOf: scoresFrom({ cw: 60, fin: 60, sup: 90 }) });
+    expect(notSupp.moduleMark).toBe(60);
+    expect(notSupp.suppOutcome).toBeNull();
+  });
+
+  it('module-mark constants agree with progression.ts', async () => {
+    const p = await import('../progression');
+    expect(p.PASS_MARK).toBe(50);
+    expect(p.SUPP_TRIGGER).toBe(45);
+    expect(p.SUPP_CAPPED_MARK).toBe(50);
+    expect(p.SUPP_EXAM_TYPE).toBe('Supplementary Exam');
   });
 });

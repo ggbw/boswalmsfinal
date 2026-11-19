@@ -466,7 +466,7 @@ function AssignedModules({ lecturerId }: { lecturerId: string }) {
               >
                 <div style={{ fontWeight: 600 }}>{c.name}</div>
                 <div style={{ color: "var(--text2)", fontSize: 11, marginTop: 2 }}>
-                  {prog?.name || "—"} · Year {c.year} · Sem {c.semester}
+                  {prog?.name || "—"} · Year {c.year} · Semester {c.semester}
                 </div>
               </div>
             );

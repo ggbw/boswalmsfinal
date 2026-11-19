@@ -14,6 +14,9 @@ export interface LoadFailure { table: string; message: string }
  *
  * This pages through explicitly, ordered, so the result is complete and stable.
  */
+/** Fired after every full data load; useAssessmentMarks listens for it. */
+export const DATA_RELOADED_EVENT = "lms:data-reloaded";
+
 const PAGE = 1000;
 const HARD_CAP = 100_000; // stop runaway paging rather than hang the browser
 
@@ -81,7 +84,9 @@ export function useDbData() {
         supabase.from("programmes").select("*"),
         supabase.from("departments").select("*"),
         supabase.from("classes").select("*"),
-        supabase.from("modules").select("id,code,name,dept,has_practical"),
+        // "*" so the optional coursework_items column is picked up once it exists,
+        // without breaking the load before the migration has been run.
+        supabase.from("modules").select("*"),
         supabase.from("module_classes").select("module_id,class_id"),
         supabase.from("students").select("id,student_id,name,gender,dob,mobile,class_id,guardian,programme,year,semester,status,email,progression_status,national_id,nationality,guardian_email,guardian_mobile,enrolment_date,completion_date"),
         supabase.from("notifications").select("*").order("date", { ascending: false }).limit(50),
@@ -183,6 +188,7 @@ export function useDbData() {
           id: m.id, code: m.code, name: m.name, dept: m.dept || "",
           classes: moduleClassMap[m.id] || [],
           hasPractical: m.has_practical ?? true,
+          courseworkItems: m.coursework_items ?? null,
         })),
         students: take("students", studentsRes, failed).map((s: any) => ({
           id: s.id, studentId: s.student_id, name: s.name,
@@ -254,11 +260,11 @@ export function useDbData() {
         Promise.resolve({ data: [], error: null }),
         fetchAll("attendance"),
         fetchAll("student_modules", "student_id,module_id,class_id,added_by,added_at"),
-        supabase.from("exams").select("*"),
+        fetchAll("exams"),
         // attachment_data / file_data are deliberately NOT selected: they hold
         // base64 file contents and would bloat this bulk load. The paths are
         // cheap, and the detail view fetches legacy base64 one row at a time.
-        supabase.from("assignments").select("id,title,module_id,class_id,due_date,marks,status,description,instructions,attachment_name,attachment_path,uploaded_by,uploaded_date,submission_type,created_by"),
+        fetchAll("assignments", "id,title,module_id,class_id,due_date,marks,status,description,instructions,attachment_name,attachment_path,uploaded_by,uploaded_date,submission_type,created_by"),
         fetchAll("submissions", "id,assignment_id,student_id,submitted_date,submitted_time,file_name,file_path,file_size,notes,status,grade,feedback"),
         fetchAll("timetable"),
         supabase.from("admission_enquiries").select("*"),
@@ -329,6 +335,10 @@ export function useDbData() {
       // Report anything that failed. An empty list clears a previous warning,
       // so a successful retry removes the banner.
       setFailures(failed);
+      // Screens that fetch marks themselves (useAssessmentMarks) refresh now,
+      // so a mark saved elsewhere — e.g. a supplementary — shows without a
+      // manual page reload.
+      if (typeof window !== "undefined") window.dispatchEvent(new Event(DATA_RELOADED_EVENT));
       if (failed.length) {
         console.error("Some data could not be loaded:", failed);
       }

@@ -1,6 +1,8 @@
 import { useState, useEffect } from "react";
 import { useApp } from "@/context/AppContext";
 import { supabase } from "@/integrations/supabase/client";
+import { ClassChecklist, CourseworkItemsField } from "@/components/modules/ModuleFormParts";
+import { saveModuleClasses, updateModuleRow } from "@/lib/moduleSave";
 
 const ALL_MODULES = [
   "Introduction to Pastry",
@@ -420,6 +422,7 @@ export default function ConfigPage() {
     let customName = "";
     let useCustom = false;
     let hasPractical = true;
+    let addCourseworkItems: number | null = 4;
     let selectedClasses: string[] = [];
     showModal(
       "Add Module",
@@ -478,25 +481,13 @@ export default function ConfigPage() {
           </div>
         </div>
         <div className="form-group">
-          <label>Assigned Classes (hold Ctrl/Cmd to select multiple)</label>
-          <select
-            className="form-select"
-            multiple
-            style={{ height: 120 }}
-            onChange={(e) => {
-              selectedClasses = Array.from(e.target.selectedOptions).map((o) => o.value);
-            }}
-          >
-            {db.classes.map((c) => (
-              <option key={c.id} value={c.id}>
-                {c.name}
-              </option>
-            ))}
-          </select>
+          <label>Assigned Classes</label>
+          <ClassChecklist classes={db.classes} initial={[]} onChange={(ids) => (selectedClasses = ids)} />
           <div style={{ fontSize: 11, color: "var(--text2)", marginTop: 4 }}>
             A module only appears in a class's attendance, exams, marks and student views once it's assigned to that class.
           </div>
         </div>
+        <CourseworkItemsField initial={4} onChange={(n) => (addCourseworkItems = n)} />
         <button
           className="btn btn-primary"
           style={{ marginTop: 12 }}
@@ -512,14 +503,14 @@ export default function ConfigPage() {
               toast(error.message, "error");
               return;
             }
-            if (selectedClasses.length > 0) {
-              const { error: mcErr } = await supabase
-                .from("module_classes")
-                .insert(selectedClasses.map((cid) => ({ module_id: id, class_id: cid })));
-              if (mcErr) {
-                toast(mcErr.message, "error");
-                return;
-              }
+            if ((addCourseworkItems ?? 4) !== 4) {
+              const r = await updateModuleRow(id, {}, addCourseworkItems, 4);
+              if (r.error || r.warning) toast(r.error || r.warning || "", r.error ? "error" : "info");
+            }
+            const mcErr = await saveModuleClasses(id, [], selectedClasses);
+            if (mcErr) {
+              toast(mcErr, "error");
+              return;
             }
             toast("Module added!", "success");
             closeModal();
@@ -537,7 +528,9 @@ export default function ConfigPage() {
       code = mod.code,
       dept = mod.dept || "";
     let hasPractical = mod.hasPractical !== false;
-    let selectedClasses: string[] = [...(mod.classes || [])];
+    const originalClasses: string[] = [...(mod.classes || [])];
+    let selectedClasses: string[] = [...originalClasses];
+    let courseworkItems: number | null | undefined = mod.courseworkItems;
     showModal(
       "Edit Module",
       <div>
@@ -572,26 +565,13 @@ export default function ConfigPage() {
           </div>
         </div>
         <div className="form-group">
-          <label>Assigned Classes (hold Ctrl/Cmd to select multiple)</label>
-          <select
-            className="form-select"
-            multiple
-            style={{ height: 120 }}
-            defaultValue={selectedClasses}
-            onChange={(e) => {
-              selectedClasses = Array.from(e.target.selectedOptions).map((o) => o.value);
-            }}
-          >
-            {db.classes.map((c) => (
-              <option key={c.id} value={c.id}>
-                {c.name}
-              </option>
-            ))}
-          </select>
+          <label>Assigned Classes</label>
+          <ClassChecklist classes={db.classes} initial={originalClasses} onChange={(ids) => (selectedClasses = ids)} />
           <div style={{ fontSize: 11, color: "var(--text2)", marginTop: 4 }}>
             A module only appears in a class's attendance, exams, marks and student views once it's assigned to that class.
           </div>
         </div>
+        <CourseworkItemsField initial={courseworkItems} onChange={(n) => (courseworkItems = n)} />
         <div style={{ display: "flex", gap: 8, marginTop: 12 }}>
           <button
             className="btn btn-primary"
@@ -600,26 +580,19 @@ export default function ConfigPage() {
                 toast("Name and code are required", "error");
                 return;
               }
-              const { error } = await supabase
-                .from("modules")
-                .update({ name, code, dept: dept || null, has_practical: hasPractical })
-                .eq("id", mod.id);
+              const { error, warning } = await updateModuleRow(
+                mod.id, { name, code, dept: dept || null, has_practical: hasPractical }, courseworkItems, mod.courseworkItems);
               if (error) {
-                toast(error.message, "error");
+                toast(error, "error");
                 return;
               }
-              // Replace the module's class assignments with the current selection.
-              await supabase.from("module_classes").delete().eq("module_id", mod.id);
-              if (selectedClasses.length > 0) {
-                const { error: mcErr } = await supabase
-                  .from("module_classes")
-                  .insert(selectedClasses.map((cid) => ({ module_id: mod.id, class_id: cid })));
-                if (mcErr) {
-                  toast(mcErr.message, "error");
-                  return;
-                }
+              // Only the classes that were ticked or unticked change.
+              const mcErr = await saveModuleClasses(mod.id, originalClasses, selectedClasses);
+              if (mcErr) {
+                toast(mcErr, "error");
+                return;
               }
-              toast("Module updated!", "success");
+              toast(warning || "Module updated!", warning ? "info" : "success");
               closeModal();
               reloadDb();
             }}
@@ -1314,7 +1287,7 @@ function ProgrammeModuleMapper({ prog, db, toast, closeModal, reloadDb }: any) {
             className={`btn btn-sm ${selectedSlot.year === sl.year && selectedSlot.sem === sl.sem ? "btn-primary" : "btn-outline"}`}
             onClick={() => setSelectedSlot(sl)}
           >
-            Year {sl.year} · Sem {sl.sem}
+            Year {sl.year} · Semester {sl.sem}
             {(moduleSelections[`${sl.year}_${sl.sem}`]?.size || 0) > 0 && (
               <span
                 style={{

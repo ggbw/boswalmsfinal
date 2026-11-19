@@ -1,4 +1,5 @@
 import { useState, useEffect, useMemo } from 'react';
+import { studentsForClassModule } from '@/lib/studentMarks';
 import { useApp } from '@/context/AppContext';
 import { supabase } from '@/integrations/supabase/client';
 import { getScopedClasses, isReadOnlyOversight } from '@/lib/scope';
@@ -31,7 +32,8 @@ export default function AttendancePage() {
   const [attSession, setAttSession] = useState<Session>('start');
   const [attState, setAttState] = useState<Record<string, string>>({});
 
-  const students = db.students.filter(s => s.classId === attClass);
+  // Includes students retaking the chosen module with this class.
+  const students = studentsForClassModule(db, attClass, attModule);
   const classModules = db.modules.filter(m => m.classes.includes(attClass));
 
   // Prefill the register from any attendance already saved for this exact
@@ -52,7 +54,7 @@ export default function AttendancePage() {
     });
     setAttState(next);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [attClass, attModule, attDate, attSession, db.attendance, db.students]);
+  }, [attClass, attModule, attDate, attSession, db.attendance, db.students, db.studentModules]);
 
   const present = Object.values(attState).filter(v => v === 'present').length;
   const absent  = Object.values(attState).filter(v => v === 'absent').length;

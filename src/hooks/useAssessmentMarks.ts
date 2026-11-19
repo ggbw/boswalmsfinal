@@ -21,7 +21,7 @@
  * `student.studentId` here, never `student.id`.
  */
 
-import { useState, useEffect, useMemo, useCallback } from 'react';
+import { useState, useEffect, useMemo, useCallback, useRef } from 'react';
 import { supabase } from '@/integrations/supabase/client';
 
 interface Row { student_id: string; assessment_id: string; score: number }
@@ -72,6 +72,19 @@ export function useAssessmentMarks(filter: { classIds?: string[]; studentNumbers
   // Arrays are new objects on every render, so depend on their contents.
   const classKey = (filter.classIds || []).join(',');
   const studentKey = (filter.studentNumbers || []).join(',');
+  // Bumped after a data reload (a save anywhere) and when the window regains
+  // focus, so marks entered by someone else appear without a page refresh.
+  const [refreshTick, setRefreshTick] = useState(0);
+  const lastKey = useRef<string | null>(null);
+  useEffect(() => {
+    const bump = () => setRefreshTick(t => t + 1);
+    window.addEventListener('lms:data-reloaded', bump);
+    window.addEventListener('focus', bump);
+    return () => {
+      window.removeEventListener('lms:data-reloaded', bump);
+      window.removeEventListener('focus', bump);
+    };
+  }, []);
 
   useEffect(() => {
     // Nothing to scope by means nothing to fetch — avoids accidentally
@@ -79,12 +92,17 @@ export function useAssessmentMarks(filter: { classIds?: string[]; studentNumbers
     if (!classKey && !studentKey) {
       setRows([]);
       setLoading(false);
+      lastKey.current = null;   // so the next real selection shows loading
       return;
     }
 
     let cancelled = false;
     (async () => {
-      setLoading(true);
+      // A background refresh keeps the current marks on screen; only a new
+      // class / student selection shows the loading state.
+      const key = classKey + '#' + studentKey;
+      if (lastKey.current !== key) setLoading(true);
+      lastKey.current = key;
       const { data, error: err } = await fetchAssessmentMarks({
         classIds: classKey ? classKey.split(',') : undefined,
         studentNumbers: studentKey ? studentKey.split(',') : undefined,
@@ -97,7 +115,7 @@ export function useAssessmentMarks(filter: { classIds?: string[]; studentNumbers
       setLoading(false);
     })();
     return () => { cancelled = true; };
-  }, [classKey, studentKey]);
+  }, [classKey, studentKey, refreshTick]);
 
   const scoreMap = useMemo(() => {
     const m = new Map<string, number>();

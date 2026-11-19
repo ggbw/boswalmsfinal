@@ -1,8 +1,9 @@
 import { useApp } from "@/context/AppContext";
-import { grade, gradeColor, type DB, type Student } from "@/data/db";
+import { type DB, type Student } from "@/data/db";
 import { getLecturersForModuleClass } from "@/lib/lecturerHelpers";
 import { useAssessmentMarks } from "@/hooks/useAssessmentMarks";
 import { studentModuleResults, studentAverage } from "@/lib/studentMarks";
+import { resultDisplay } from "@/lib/resultStatus";
 
 export default function MyModulesPage() {
   const { db, currentUser } = useApp();
@@ -41,8 +42,7 @@ function MyModulesInner({ stu, db }: { stu: Student; db: DB }) {
   const { scoreOf, loading: marksLoading } = useAssessmentMarks({ studentNumbers: [stu.studentId] });
   const results = marksLoading ? [] : studentModuleResults(db, stu, scoreOf);
   const markedResults = results.filter((r) => !r.unmarked);
-  const markOf = (moduleId: string) =>
-    markedResults.find((r) => r.module.id === moduleId)?.mark ?? null;
+  const resultOf = (moduleId: string) => markedResults.find((r) => r.module.id === moduleId) ?? null;
 
   // Past modules: marked modules that are not in the current class — i.e.
   // carried over from an earlier semester or year.
@@ -52,8 +52,9 @@ function MyModulesInner({ stu, db }: { stu: Student; db: DB }) {
 
   const allModsWithMarks = markedResults.length;
   const currentMods = [...currentClassMods, ...overrideMods];
+  // Only modules with a final result count as passing — not ones still being marked.
   const passingCurrent = markedResults.filter(
-    (r) => currentModIds.has(r.module.id) && r.mark.moduleMark >= 50,
+    (r) => currentModIds.has(r.module.id) && resultDisplay(r).kind === "passed",
   ).length;
   const avgMark = studentAverage(results);
 
@@ -74,19 +75,21 @@ function MyModulesInner({ stu, db }: { stu: Student; db: DB }) {
 
   const renderModuleCard = (m: (typeof currentMods)[0], isPast: boolean) => {
     // Already weighted by computeStudentModuleMark — no second calculation here.
-    const mark = markOf(m.id);
+    const result = resultOf(m.id);
+    const mark = result?.mark ?? null;
     const mm = mark ? mark.moduleMark : null;
-    const g = mm !== null ? grade(mm) : null;
-    const passed = mm !== null && mm >= 50;
+    const disp = result ? resultDisplay(result) : null;
+    const inProgress = disp?.kind === "in-progress";
+    const passed = disp?.kind === "passed";
     const dept = db.departments.find((d) => d.id === m.dept);
     const lecturer = getLecturer(m);
 
     // Colours
     let barColor: string;
     if (isPast) {
-      barColor = passed ? "#27ae60" : mm !== null ? "var(--danger)" : "var(--border)";
+      barColor = passed ? "#27ae60" : mm !== null && !inProgress ? "var(--danger)" : "var(--border)";
     } else {
-      barColor = mm === null ? "var(--accent)" : mm >= 80 ? "#27ae60" : mm >= 50 ? "var(--accent2)" : "var(--danger)";
+      barColor = mm === null || inProgress ? "var(--text3)" : !passed ? "var(--danger)" : mm >= 80 ? "#27ae60" : "var(--accent2)";
     }
 
     // Status badge
@@ -98,7 +101,7 @@ function MyModulesInner({ stu, db }: { stu: Student; db: DB }) {
             Passed
           </span>
         );
-      } else if (mm !== null) {
+      } else if (mm !== null && !inProgress) {
         statusBadge = (
           <span className="badge badge-fail" style={{ opacity: 0.8 }}>
             Failed
@@ -116,7 +119,7 @@ function MyModulesInner({ stu, db }: { stu: Student; db: DB }) {
     }
 
     // Semester/year info from the mark record
-    const semInfo = mark ? `Year ${stu.year} · Sem ${stu.semester}` : null;
+    const semInfo = mark ? `Year ${stu.year} · Semester ${stu.semester}` : null;
 
     return (
       <div
@@ -164,9 +167,9 @@ function MyModulesInner({ stu, db }: { stu: Student; db: DB }) {
             </div>
             <div style={{ display: "flex", flexDirection: "column", alignItems: "flex-end", gap: 4, flexShrink: 0 }}>
               {statusBadge}
-              {g && (
-                <span className={`badge ${gradeColor(g)}`} style={{ fontSize: 10 }}>
-                  {g}
+              {disp && (
+                <span className={`badge ${disp.badgeClass}`} style={{ fontSize: 10 }} data-testid="module-card-status">
+                  {disp.label}
                 </span>
               )}
             </div>
@@ -202,7 +205,7 @@ function MyModulesInner({ stu, db }: { stu: Student; db: DB }) {
                 marginBottom: 4,
               }}
             >
-              <span>{isPast ? "Final mark" : "Overall mark"}</span>
+              <span>{inProgress ? "Mark so far" : isPast ? "Final mark" : "Overall mark"}</span>
               <span style={{ fontFamily: "'JetBrains Mono',monospace", fontWeight: 700, color: barColor }}>
                 {mm !== null ? mm + "%" : isPast ? "—" : "Pending"}
               </span>
@@ -218,6 +221,9 @@ function MyModulesInner({ stu, db }: { stu: Student; db: DB }) {
                 }}
               />
             </div>
+            {disp?.note && (
+              <div style={{ fontSize: 10.5, color: "var(--text2)", marginTop: 5 }}>{disp.note}</div>
+            )}
           </div>
         </div>
       </div>

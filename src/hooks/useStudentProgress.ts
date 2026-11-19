@@ -22,7 +22,7 @@ import type { DB, Student } from '@/data/db';
 import { useAssessmentMarks } from './useAssessmentMarks';
 import { studentModuleResults, classForModule, type StudentModuleResult } from '@/lib/studentMarks';
 import {
-  moduleOutcome, outcomeAfterSupp, semesterIsSettled, semesterVerdict,
+  moduleOutcome, semesterIsSettled, semesterVerdict,
   SUPP_EXAM_TYPE, type Outcome, type SemesterVerdict,
 } from '@/lib/progression';
 
@@ -179,7 +179,7 @@ export function buildStudentProgress(
         && e.classId === moduleClassId
         && e.type === SUPP_EXAM_TYPE,
     );
-    const suppMark = supp ? scoreOf(student.studentId, supp.id) : null;
+    const suppMark = result.mark.suppScore ?? (supp ? scoreOf(student.studentId, supp.id) : null);
 
     // A retake is an enrolment carrying a class other than the student's own —
     // they sit that module with a different cohort.
@@ -190,17 +190,12 @@ export function buildStudentProgress(
     // part-marked module scores far below what the student has actually earned
     // — 80% coursework with no final exam yet reads as 32%. Deciding an outcome
     // from that would tell a mid-semester cohort they had failed.
-    let outcome: Outcome | null = result.fullyMarked ? moduleOutcome(result.mark.moduleMark, examMark) : null;
-    let moduleMark = result.mark.moduleMark;
-
-    // A supplementary that has been SAT now decides the module (UAT M3: the
-    // supp mark used to be stored and then ignored). Passed → the exam counts
-    // as 50 and the module is recalculated; failed → retake.
-    if (outcome === 'supp' && suppMark !== null) {
-      const after = outcomeAfterSupp(result.mark, suppMark, result.module.hasPractical !== false);
-      outcome = after.outcome;
-      moduleMark = after.moduleMark;
-    }
+    // A sat supplementary is already applied in the module mark
+    // (computeStudentModuleMark): passed → exam counted as 50; failed → retake.
+    const outcome: Outcome | null = !result.fullyMarked
+      ? null
+      : result.mark.suppOutcome ?? moduleOutcome(result.mark.moduleMark, examMark);
+    const moduleMark = result.mark.moduleMark;
 
     return {
       result,

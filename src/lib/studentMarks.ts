@@ -91,6 +91,24 @@ export function assignmentsForStudent<T extends { moduleId: string; classId?: st
       : mine.has(a.moduleId));
 }
 
+/**
+ * Students to list when marking (or taking a register for) one class's module:
+ * the class's own students PLUS anyone enrolled to take that module with this
+ * class — retake students keep their own class but sit the module here. They
+ * were missing from these lists, so their marks could not be entered
+ * (UAT retest 18 Nov, correction 9 / issue B). Without a module, the class only.
+ */
+export function studentsForClassModule(db: DB, classId: string, moduleId?: string | null): Student[] {
+  const own = db.students.filter(s => s.classId === classId);
+  if (!moduleId) return own;
+  const ownIds = new Set(own.map(s => s.id));
+  const retakeIds = new Set((db.studentModules || [])
+    .filter(sm => sm.moduleId === moduleId && sm.classId === classId && !ownIds.has(sm.studentId))
+    .map(sm => sm.studentId));
+  const retakers = db.students.filter(s => retakeIds.has(s.id));
+  return [...own, ...retakers.sort((a, b) => a.name.localeCompare(b.name))];
+}
+
 /** Modules a student takes: their class's linked modules, plus any per-student override. */
 export function studentModuleIds(db: DB, student: Student): string[] {
   return [...new Set([
@@ -127,17 +145,19 @@ export function studentModuleResults(
       // is sat only by the students who were offered it, and is applied
       // separately (outcomeAfterSupp). Counting it here made every classmate
       // without a supp mark read as "not fully marked" the moment one was set.
-      const exams = db.exams.filter(
-        e => e.classId === classId && e.moduleId === moduleId && e.type !== SUPP_EXAM_TYPE,
-      );
+      const moduleExams = db.exams.filter(e => e.classId === classId && e.moduleId === moduleId);
+      const exams = moduleExams.filter(e => e.type !== SUPP_EXAM_TYPE);
       const assignments = db.assignments.filter(
         a => a.classId === classId && a.moduleId === moduleId,
       );
 
-      const cat = categorizeModuleAssessments(exams, assignments);
+      // The supplementary is categorised (so a sat supp is applied to the mark)
+      // but is not counted below as one of the module's assessments.
+      const cat = categorizeModuleAssessments(moduleExams, assignments);
       const mark = computeStudentModuleMark({
         studentId: student.studentId,
         hasPractical: module.hasPractical !== false,
+        courseworkSlots: module.courseworkItems,
         cat,
         scoreOf,
       });
@@ -162,9 +182,13 @@ export function studentModuleResults(
     .sort((a, b) => a.module.name.localeCompare(b.module.name));
 }
 
-/** Average module mark across everything marked. Null when nothing is. */
+/**
+ * Average module mark across modules with a FINAL result (every assessment,
+ * final exam included, marked). Part-marked modules are not results yet.
+ * Null when there are none.
+ */
 export function studentAverage(results: StudentModuleResult[]): number | null {
-  const marked = results.filter(r => !r.unmarked);
+  const marked = results.filter(r => r.fullyMarked);
   if (marked.length === 0) return null;
   return Math.round(marked.reduce((sum, r) => sum + r.mark.moduleMark, 0) / marked.length);
 }

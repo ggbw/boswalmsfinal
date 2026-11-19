@@ -175,7 +175,8 @@ export function BreakdownDonut({ data, suffix = '' }: {
 
 // ── A student's module marks against the pass line ──────────────────────────
 
-export function ModuleMarksChart({ data }: { data: { name: string; mark: number }[] }) {
+/** `final: false` = still being marked: drawn neutral, never as a fail. */
+export function ModuleMarksChart({ data }: { data: { name: string; mark: number; final?: boolean }[] }) {
   if (!data.length) return <Empty text="No marks recorded yet." />;
 
   return (
@@ -194,7 +195,7 @@ export function ModuleMarksChart({ data }: { data: { name: string; mark: number 
             and are never mistaken for two data series. */}
         <Bar dataKey="mark" radius={[0, 4, 4, 0]} maxBarSize={16}>
           {data.map((d, i) => (
-            <Cell key={i} fill={d.mark >= 50 ? 'var(--viz-good)' : 'var(--viz-bad)'} />
+            <Cell key={i} fill={d.final === false ? 'var(--viz-grid, #cbd5e1)' : d.mark >= 50 ? 'var(--viz-good)' : 'var(--viz-bad)'} />
           ))}
           <LabelList dataKey="mark" position="right" formatter={(v: number) => `${v}%`}
                      style={{ fontSize: 11, fill: 'var(--text2)', fontWeight: 600 }} />

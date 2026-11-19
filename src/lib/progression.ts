@@ -132,12 +132,10 @@ export function outcomeAfterSupp(
     return { moduleMark: mark.moduleMark, outcome: 'retake' };
   }
 
-  // Recalculate with the capped exam mark. Coursework weight is 40% when the
-  // module has a practical component and 60% when it does not; the exam is
-  // always 40%, and the practical the remaining 20%.
-  const cwWeight = hasPractical ? 0.4 : 0.6;
-  const cwPart = mark.theoryCWAvg === null ? 0 : mark.theoryCWAvg * cwWeight;
-  const pracPart = hasPractical && mark.practicalMark !== null ? mark.practicalMark * 0.2 : 0;
+  // Recalculate with the capped exam mark, keeping the coursework and practical
+  // contributions exactly as computeStudentModuleMark weighted them.
+  const cwPart = mark.theory40 ?? 0;
+  const pracPart = hasPractical ? (mark.prac20 ?? 0) : 0;
   const examPart = SUPP_CAPPED_MARK * 0.4;
 
   const recalculated = roundHalfUp(cwPart + pracPart + examPart);

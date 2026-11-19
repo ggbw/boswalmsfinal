@@ -3,7 +3,6 @@ import { useApp } from "@/context/AppContext";
 
 import { supabase } from "@/integrations/supabase/client";
 import { categorizeModuleAssessments, computeStudentModuleMark } from "@/lib/moduleMark";
-import { moduleOutcome, outcomeAfterSupp, SUPP_EXAM_TYPE } from "@/lib/progression";
 import { flagSuperseded } from "@/lib/transcriptAttempts";
 import {
   letterGrade,
@@ -12,7 +11,6 @@ import {
   getScale,
   computeGpa,
   certificateOverall,
-  roundMark,
   type ScaleKey,
   type GradingSystem,
 } from "@/lib/grading";
@@ -30,7 +28,7 @@ const CAN_EDIT_ISSUER = ["admin", "super_admin"];
 // latest attempt counts. Diploma only; the Certificate transcript shows a
 // simple-average "Total Marks (%)" instead (see certificateOverall).
 function computeGPA(mods: PassedModule[], scaleKey: ScaleKey): string {
-  const counted = mods.filter((m) => !m.superseded).map((m) => ({ mark: m.mark, credits: m.credits }));
+  const counted = mods.filter(counts).map((m) => ({ mark: m.mark, credits: m.credits }));
   return computeGpa(counted, scaleKey);
 }
 
@@ -66,7 +64,31 @@ interface PassedModule {
    * periods say — see flagSuperseded.
    */
   retakeAttempt?: boolean;
+  /**
+   * Not every assessment (final exam included) is marked yet. Shown as "In
+   * progress" with no mark, and not counted in credits, GPA or the overall —
+   * a part-marked module is not a result (UAT retest corrections 4 and 8).
+   */
+  inProgress?: boolean;
   superseded?: boolean;
+}
+
+/** Counts toward credits / GPA / overall: the latest attempt, and complete. */
+const counts = (m: PassedModule) => !m.superseded && !m.inProgress;
+
+/**
+ * Years of study for the certification line, from the STUDENT's record: the
+ * admission (enrolment) year to the completion year, or to the admission year
+ * plus the programme length while still studying. It used to come from the
+ * programme's start year, printing "2020–2023" for a student admitted in 2026
+ * (UAT retest issue C / open item 13).
+ */
+function studyPeriod(student: { enrolmentDate?: string; completionDate?: string }, prog?: { years?: number; startYear?: number }): string {
+  const yearOf = (d?: string) => { const y = d ? new Date(d).getFullYear() : NaN; return Number.isFinite(y) ? y : null; };
+  const start = yearOf(student.enrolmentDate) ?? prog?.startYear ?? null;
+  if (!start) return "—";
+  const end = yearOf(student.completionDate) ?? start + (prog?.years || 3);
+  return `${start}–${end}`;
 }
 
 
@@ -114,7 +136,7 @@ function footerBannerHTML(): string {
     item(ICONS.envelope, SCHOOL_CONTACT.pobox) +
     `</div>` +
     `<div style="text-align:center;margin-top:12px;font-weight:700;font-size:13px;letter-spacing:.3px;color:#fff">` +
-    `<span style="color:#f2882d">${SCHOOL_CONTACT.web}</span>&nbsp;&nbsp;Bosswa Culinary Institute of Botswana</div>` +
+    `<span style="color:#f2882d">${SCHOOL_CONTACT.web}</span>&nbsp;&nbsp;Boswa Culinary Institute of Botswana</div>` +
     `</div>`
   );
 }
@@ -201,21 +223,20 @@ async function buildPassedModules(db: any, student: any): Promise<PassedModule[]
     const cat = categorizeModuleAssessments(classExams, classAssignments);
     const hasPractical = mod?.hasPractical !== false;
     const markParts = computeStudentModuleMark({
+      courseworkSlots: mod?.courseworkItems,
       studentId: student.studentId,
       hasPractical,
       cat,
       scoreOf,
     });
-    let mark = roundMark(markParts.moduleMark);
-    // Confirmed rule (UAT Sheet A): "A passed supplementary is recorded as 50%."
-    // The transcript ignored the supplementary exam and printed the original
-    // failing mark. Same rule as the dashboard (progression.ts).
-    const suppExam = (classExams as { id: string; type?: string }[]).find((e) => e.type === SUPP_EXAM_TYPE);
-    const suppScore = suppExam ? scoreOf(student.studentId, suppExam.id) : null;
-    if (suppScore !== null
-        && moduleOutcome(mark, markParts.finalTheory) === "supp") {
-      mark = outcomeAfterSupp(markParts, suppScore, hasPractical).moduleMark;
-    }
+    // moduleMark already includes a sat supplementary (exam counted as 50).
+    const mark = markParts.moduleMark;
+    // Complete only when every assessment (not the supplementary) has a mark,
+    // and the final theory exam has been set — the same rule as the dashboard.
+    const assessed: { id: string; type?: string }[] = [...classExams, ...classAssignments];
+    const inProgress = !cat.finalTheoryExam || assessed
+      .filter((x) => x.type !== "Supplementary Exam")
+      .some((x) => scoreOf(student.studentId, x.id) === null);
     // Enrolled to retake this module with this (other) class → latest attempt.
     const retakeAttempt = x.classId !== student.classId && (db.studentModules || []).some(
       (sm: { studentId: string; moduleId: string; classId?: string }) =>
@@ -245,6 +266,7 @@ async function buildPassedModules(db: any, student: any): Promise<PassedModule[]
       attemptYear,
       attemptSem,
       retakeAttempt,
+      inProgress,
     });
   });
 
@@ -291,13 +313,13 @@ function printTranscript(
 ) {
   const scaleKey: ScaleKey = activeScale(prog, gradingSystem);
   const showGpa = getScale(scaleKey).hasGpa;
-  const studyYears = prog?.startYear ? `${prog.startYear}–${prog.startYear + (prog.years || 3)}` : "—";
+  const studyYears = studyPeriod(student, prog);
 
-  const totalCredits = passedModules.filter((m) => !m.superseded).reduce((s, m) => s + m.credits, 0);
+  const totalCredits = passedModules.filter(counts).reduce((s, m) => s + m.credits, 0);
   const cumulativeGpa = computeGPA(passedModules, scaleKey);
   // Certificate transcripts show a simple-average "Total Marks (%)" and an
   // overall grade word instead of a GPA.
-  const certOverall = certificateOverall(passedModules.filter((m) => !m.superseded).map((m) => m.mark));
+  const certOverall = certificateOverall(passedModules.filter(counts).map((m) => m.mark));
 
   const semGroups: Record<string, PassedModule[]> = {};
   passedModules.forEach((m) => {
@@ -313,16 +335,16 @@ function printTranscript(
   const semSections = Object.keys(semGroups)
     .map((semKey) => {
       const semGpa = computeGPA(semGroups[semKey], scaleKey);
-      const semCredits = semGroups[semKey].filter((m) => !m.superseded).reduce((s, m) => s + m.credits, 0);
+      const semCredits = semGroups[semKey].filter(counts).reduce((s, m) => s + m.credits, 0);
       const rows = semGroups[semKey]
         .map(
           (m, i) => `
       <tr style="background:${i % 2 === 0 ? "#D9D9D9" : "#fff"};${m.superseded ? "color:#999;text-decoration:line-through" : ""}">
         <td style="padding:3px 10px">${m.name}${m.superseded ? ' <span style="font-size:9px;font-style:italic;text-decoration:none">(superseded by retake)</span>' : ""}</td>
         <td style="padding:3px 10px;text-align:center;font-family:monospace;font-size:11px">${m.code}</td>
-        <td style="padding:3px 10px;text-align:center;font-weight:700">${m.mark}%</td>
-        <td style="padding:3px 10px;text-align:center;font-weight:700">${m.grade}</td>
-        <td style="padding:3px 10px;text-align:center">${m.superseded ? "—" : m.credits}</td>
+        <td style="padding:3px 10px;text-align:center;font-weight:700">${m.inProgress ? "—" : m.mark + "%"}</td>
+        <td style="padding:3px 10px;text-align:center;font-weight:700">${m.inProgress ? '<span style="font-weight:400;font-style:italic">In progress</span>' : m.grade}</td>
+        <td style="padding:3px 10px;text-align:center">${counts(m) ? m.credits : "—"}</td>
       </tr>`,
         )
         .join("");
@@ -415,7 +437,7 @@ function printTranscript(
   <!-- Header (logo lockup) -->
   <div style="text-align:center;padding:0 0 5px;border-bottom:2px solid #C9A227;margin-bottom:6px">
     <img src="${logoUrl}" style="height:80px;max-width:100%;object-fit:contain;display:block;margin:0 auto" onerror="this.style.display='none'" />
-    <div style="font-size:13px;color:#16233f;margin-top:4px;font-weight:600;letter-spacing:.3px">Bosswa Culinary Institute of Botswana</div>
+    <div style="font-size:13px;color:#16233f;margin-top:4px;font-weight:600;letter-spacing:.3px">Boswa Culinary Institute of Botswana</div>
   </div>
 
   <!-- Address / contact line -->
@@ -460,8 +482,8 @@ function printTranscript(
 
   <!-- Certification -->
   <p style="font-size:12px;color:#555;font-style:italic;margin:8px 0 6px">
-    I do hereby self-certify and affirm that this is the official transcript and record of
-    <strong>${student.name}</strong> in the academic studies of ${studyYears}.
+    This is to certify that this is the official academic transcript and record of
+    <strong>${student.name}</strong> for the period of study ${studyYears}.
   </p>
 
   <!-- Signatory (signature + issued by / position) — stays on page 1 -->
@@ -948,9 +970,9 @@ export function TranscriptView({ stu }: { stu: any }) {
     };
   }, [db, stu]);
 
-  const totalCredits = passedModules.filter((m) => !m.superseded).reduce((s, m) => s + m.credits, 0);
+  const totalCredits = passedModules.filter(counts).reduce((s, m) => s + m.credits, 0);
   const cumulativeGpa = computeGPA(passedModules, scaleKey);
-  const certOverall = certificateOverall(passedModules.filter((m) => !m.superseded).map((m) => m.mark));
+  const certOverall = certificateOverall(passedModules.filter(counts).map((m) => m.mark));
 
   const semGroups: Record<string, PassedModule[]> = {};
   passedModules.forEach((m) => {
@@ -959,7 +981,7 @@ export function TranscriptView({ stu }: { stu: any }) {
     semGroups[k].push(m);
   });
 
-  const studyYears = prog?.startYear ? `${prog.startYear}–${prog.startYear + (prog.years || 3)}` : "—";
+  const studyYears = studyPeriod(stu, prog);
 
   const handlePrint = () =>
     printTranscript(stu, prog, passedModules, {
@@ -999,7 +1021,7 @@ export function TranscriptView({ stu }: { stu: any }) {
           style={{ height: 120, maxWidth: "100%", objectFit: "contain", display: "block", margin: "0 auto" }}
         />
         <div style={{ fontSize: 14, color: "#16233f", marginTop: 6, fontWeight: 600, letterSpacing: 0.3 }}>
-          Bosswa Culinary Institute of Botswana
+          Boswa Culinary Institute of Botswana
         </div>
       </div>
 
@@ -1106,9 +1128,9 @@ export function TranscriptView({ stu }: { stu: any }) {
                       <td style={{ padding: "5px 10px", textAlign: "center", fontFamily: "monospace", fontSize: 11 }}>
                         {m.code}
                       </td>
-                      <td style={{ padding: "5px 10px", textAlign: "center", fontWeight: 700 }}>{m.mark}%</td>
-                      <td style={{ padding: "5px 10px", textAlign: "center", fontWeight: 700 }}>{m.grade}</td>
-                      <td style={{ padding: "5px 10px", textAlign: "center" }}>{m.superseded ? "—" : m.credits}</td>
+                      <td style={{ padding: "5px 10px", textAlign: "center", fontWeight: 700 }}>{m.inProgress ? "—" : `${m.mark}%`}</td>
+                      <td style={{ padding: "5px 10px", textAlign: "center", fontWeight: m.inProgress ? 400 : 700, fontStyle: m.inProgress ? "italic" : undefined }}>{m.inProgress ? "In progress" : m.grade}</td>
+                      <td style={{ padding: "5px 10px", textAlign: "center" }}>{counts(m) ? m.credits : "—"}</td>
                     </tr>
                   ))}
                 </tbody>
@@ -1126,7 +1148,7 @@ export function TranscriptView({ stu }: { stu: any }) {
                 }}
               >
                 {showGpa && <span>Semester GPA = {computeGPA(semGroups[semKey], scaleKey)}</span>}
-                <span>Credits = {semGroups[semKey].filter((m) => !m.superseded).reduce((s, m) => s + m.credits, 0)}</span>
+                <span>Credits = {semGroups[semKey].filter(counts).reduce((s, m) => s + m.credits, 0)}</span>
               </div>
             </div>
           ))
@@ -1166,8 +1188,8 @@ export function TranscriptView({ stu }: { stu: any }) {
 
       {/* Certification */}
       <p style={{ fontSize: 12, color: "#555", fontStyle: "italic", margin: "14px 0 8px" }}>
-        I do hereby self-certify and affirm that this is the official transcript and record of{" "}
-        <strong>{stu.name}</strong> in the academic studies of {studyYears}.
+        This is to certify that this is the official academic transcript and record of{" "}
+        <strong>{stu.name}</strong> for the period of study {studyYears}.
       </p>
 
       {/* Signatory (signature + issued by / position) */}

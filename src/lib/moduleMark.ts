@@ -10,8 +10,22 @@
 //   • Practical modules:     Coursework 40% + Practical 20% + Final Theory Exam 40%
 //   • Practical mark itself:  Practical CW (+ recipes) 70% + Final Practical 20%
 //                             + Final Practical Theory 10%
+//
+// Coursework is FOUR slots — Test 1, Test 2, Individual Assignment and Group
+// Assignment — each worth an equal share (15% of a theory module, 10% of a
+// practical one). A slot with no mark yet counts as 0, exactly as the academic
+// office's manual sheet does (UAT retest, Figure 13: 79, 45, 66 and no group
+// assignment → 11.85 + 6.75 + 9.9 = 28.5, + 73 × 40% = 29.2 → 58). Averaging
+// only the marks that existed gave 67. When more than four coursework
+// assessments are set, the share is split across all of them.
+//
+// A passed supplementary is applied here too (exam counted as 50), so every
+// screen that shows a module mark — results, dashboard, report, transcript —
+// shows the same figure (UAT retest corrections 3, 5, 6, 8).
 
 import { roundMark } from "./grading";
+// (PASS/SUPP constants are mirrored from progression.ts to avoid an import cycle;
+//  the tests assert they agree.)
 
 // Exam type → which section of the report it feeds.
 export const THEORY_TYPES = ["Written Exam", "Oral Exam"];
@@ -19,6 +33,14 @@ export const FINAL_THEORY = "Final Theory Exam";
 export const RECIPE_TYPE = "Recipe";
 export const FINAL_PRAC = "Final Practical Exam";
 export const FINAL_PRAC_THEO = "Final Practical Theory Exam";
+export const SUPP_TYPE = "Supplementary Exam";
+
+/** Coursework slots in the institute's scheme (Test 1, Test 2, Indiv., Group). */
+export const COURSEWORK_SLOTS = 4;
+/** Supplementary: offered when the final exam is below this; pass recorded as 50. */
+const SUPP_TRIGGER = 45;
+const SUPP_CAPPED = 50;
+const PASS = 50;
 
 export function r2(n: number) {
   return Math.round(n * 100) / 100;
@@ -45,6 +67,8 @@ export interface ModuleAssessments {
   finalPracExam: ExamLike | undefined;
   finalPracTheo: ExamLike | undefined;
   assignments: AssignmentLike[];
+  /** The module's supplementary exam for this class, if one has been set. */
+  suppExam?: ExamLike | undefined;
 }
 
 // Split a module's exams/assignments into the buckets the weighting needs.
@@ -63,6 +87,7 @@ export function categorizeModuleAssessments(
     finalPracExam: exams.find((e) => e.type === FINAL_PRAC),
     finalPracTheo: exams.find((e) => e.type === FINAL_PRAC_THEO),
     assignments,
+    suppExam: exams.find((e) => e.type === SUPP_TYPE),
   };
 }
 
@@ -90,6 +115,12 @@ export interface StudentModuleMark {
   moduleMark: number;
   /** The unrounded (2 dp) sum of the parts — for breakdown columns only. */
   rawModuleMark: number;
+  /** The module mark before any supplementary was applied (rounded). */
+  originalModuleMark: number;
+  /** The student's supplementary exam score, when one has been sat. */
+  suppScore: number | null;
+  /** Result of a sat supplementary: passed (exam counted as 50) or retake. */
+  suppOutcome: "passed" | "retake" | null;
 }
 
 // Compute one student's full module-mark breakdown. `scoreOf` returns the
@@ -99,17 +130,24 @@ export function computeStudentModuleMark(opts: {
   hasPractical: boolean;
   cat: ModuleAssessments;
   scoreOf: (studentId: string, assessmentId: string) => number | null;
+  /** Coursework slots for this module (modules.coursework_items); default 4. */
+  courseworkSlots?: number | null;
 }): StudentModuleMark {
   const { studentId, hasPractical, cat, scoreOf } = opts;
+  const configuredSlots = opts.courseworkSlots && opts.courseworkSlots > 0 ? opts.courseworkSlots : COURSEWORK_SLOTS;
   // Non-practical modules weight coursework 60%; practical modules 40%.
   const cwWeight = hasPractical ? 0.4 : 0.6;
 
-  // Theory CW: theory exams + assignments, averaged.
-  const theoryCWScores = [
-    ...cat.theoryCWExams.map((e) => scoreOf(studentId, e.id)),
-    ...cat.assignments.map((a) => scoreOf(studentId, a.id)),
-  ].filter((x) => x !== null) as number[];
-  const theoryCWAvg = theoryCWScores.length ? avg(theoryCWScores) : null;
+  // Theory CW: theory exams + assignments over at least four slots; a slot
+  // with no mark counts as 0 (see the header).
+  const theoryCWItems = [...cat.theoryCWExams, ...cat.assignments];
+  const theoryCWScores = theoryCWItems
+    .map((a) => scoreOf(studentId, a.id))
+    .filter((x) => x !== null) as number[];
+  const slots = Math.max(configuredSlots, theoryCWItems.length);
+  const theoryCWAvg = theoryCWScores.length
+    ? theoryCWScores.reduce((a, b) => a + b, 0) / slots
+    : null;
   const theory40 = theoryCWAvg !== null ? r2(theoryCWAvg * cwWeight) : null;
 
   // Final theory exam.
@@ -144,7 +182,21 @@ export function computeStudentModuleMark(opts: {
 
   // Module mark — always calculated, missing parts treated as 0.
   const rawModuleMark = r2((theory40 ?? 0) + (prac20 ?? 0) + (final40 ?? 0));
-  const moduleMark = roundMark(rawModuleMark);
+  const originalModuleMark = roundMark(rawModuleMark);
+  let moduleMark = originalModuleMark;
+
+  // Supplementary: only for a failed module whose final exam was below 45%.
+  const suppScore = cat.suppExam ? scoreOf(studentId, cat.suppExam.id) : null;
+  let suppOutcome: "passed" | "retake" | null = null;
+  if (suppScore !== null && originalModuleMark < PASS && finalTheory !== null && finalTheory < SUPP_TRIGGER) {
+    if (suppScore >= PASS) {
+      // Exam counted as 50; coursework and practical kept as they were.
+      moduleMark = roundMark((theory40 ?? 0) + (prac20 ?? 0) + SUPP_CAPPED * 0.4);
+      suppOutcome = moduleMark >= PASS ? "passed" : "retake";
+    } else {
+      suppOutcome = "retake";
+    }
+  }
 
   return {
     theoryCWAvg,
@@ -163,5 +215,8 @@ export function computeStudentModuleMark(opts: {
     prac20,
     moduleMark,
     rawModuleMark,
+    originalModuleMark,
+    suppScore,
+    suppOutcome,
   };
 }

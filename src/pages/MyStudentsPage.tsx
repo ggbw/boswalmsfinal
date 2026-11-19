@@ -55,7 +55,7 @@ export default function MyStudentsPage() {
               <td>{cls?.name || <span style={{color:'var(--text3)'}}>— no class</span>}</td>
               {/* prog?.type alone rendered "undefined Yr1" whenever a student's
                   programme was missing or misspelled. */}
-              <td>{prog?.type ? `${prog.type} Yr${s.year}` : `Year ${s.year}`}</td>
+              <td>{prog?.type ? `${prog.type} · Year ${s.year} · Semester ${s.semester}` : `Year ${s.year} · Semester ${s.semester}`}</td>
             </tr>;})}</tbody>
         </table></div>
       )}

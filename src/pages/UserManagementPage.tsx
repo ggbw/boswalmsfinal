@@ -339,7 +339,10 @@ export default function UserManagementPage({ scope = 'all' }: { scope?: UserMana
     // account had the Student role but no student record, so it appeared
     // nowhere as a student (UAT S1). Only records with no login are offered.
     let studentRecordId = '';
-    const linkedRefs = new Set(users.map(u => u.studentRecordId).filter(Boolean));
+    // Only students who already HAVE a login are taken. Every student record
+    // appears in `users` (with or without a login), so counting them all left
+    // the list empty (UAT retest correction 17).
+    const linkedRefs = new Set(users.filter(u => u.studentRecordId && u.authUserId).map(u => u.studentRecordId));
     const unlinkedStudents = db.students
       .filter(s => !linkedRefs.has(s.id))
       .sort((a, b) => a.name.localeCompare(b.name));

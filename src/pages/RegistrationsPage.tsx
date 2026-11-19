@@ -141,6 +141,10 @@ export default function RegistrationsPage() {
         .eq('id', student.id);
       if (stuErr) throw new Error('Could not update the student record: ' + stuErr.message);
 
+      // The class follows its cohort (correction 13). Best effort: the approval
+      // stands even if the class cannot be moved.
+      if (student.classId) await supabase.rpc('sync_class_period', { _class_id: student.classId });
+
       // 3. Record the decision.
       const { error: regErr } = await supabase.from('student_registrations' as never)
         .update({

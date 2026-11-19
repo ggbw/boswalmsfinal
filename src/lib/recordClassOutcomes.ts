@@ -43,7 +43,9 @@ async function studentAuthIds(students: Student[]): Promise<Map<string, string>>
 
 export async function recordClassOutcomes(db: DB, classId: string, decidedBy: string | null): Promise<ClassOutcomeResult> {
   const result: ClassOutcomeResult = { studentsSettled: 0, outcomesWritten: 0, suppsNotified: 0, errors: [] };
-  const students = db.students.filter(s => s.classId === classId);
+  // The class's own students plus anyone retaking a module with this class.
+  const retakeIds = new Set((db.studentModules || []).filter(sm => sm.classId === classId).map(sm => sm.studentId));
+  const students = db.students.filter(s => s.classId === classId || retakeIds.has(s.id));
   if (students.length === 0) return result;
 
   // Every mark these students hold, across all their modules — the semester

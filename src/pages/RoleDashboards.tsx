@@ -20,6 +20,7 @@ import {
   type DepartmentStats,
 } from '@/hooks/useDashboardStats';
 import { resolveDepartment } from '@/lib/scope';
+import { OutstandingWork } from '@/components/dashboard/OutstandingWork';
 import { DeptPerformanceChart, BreakdownDonut, TrendChart, ModulePerformanceChart } from '@/components/charts/DashboardCharts';
 
 // ── Shared pieces ───────────────────────────────────────────────────────────
@@ -323,7 +324,7 @@ export function PrincipalDashboard({ academicOnly }: { academicOnly: boolean }) 
             {academicOnly ? 'Academic Overview' : 'School Overview'}
           </div>
           <div className="page-sub">
-            {currentUser?.name} · {db.config.schoolName} · Year {db.config.currentYear} Semester {db.config.currentSemester}
+            {currentUser?.name} · {db.config.schoolName} · Academic year {db.config.currentYear} · Semester {db.config.currentSemester}
           </div>
         </div>
       </div>
@@ -450,7 +451,7 @@ export function HodDashboard() {
       <div className="page-header">
         <div>
           <div className="page-title">{dept.name}</div>
-          <div className="page-sub">{currentUser?.name} · Head of Department · Semester {db.config.currentSemester} {db.config.currentYear}</div>
+          <div className="page-sub">{currentUser?.name} · Head of Department · Academic year {db.config.currentYear} · Semester {db.config.currentSemester}</div>
         </div>
       </div>
 
@@ -565,38 +566,11 @@ export function LecturerDashboard() {
 
       <div className="two-col">
         <Panel title="Waiting on you" icon="fa-solid fa-list-check">
+          {/* Each outstanding item opens itself — the exact assignment or exam,
+              not the whole list (UAT retest correction 14). */}
           {todo === 0
             ? <Empty text="Nothing outstanding — every submission is graded and every assessment has marks." />
-            : (
-              <div style={{ display: 'grid', gap: 10, paddingTop: 6 }}>
-                {s.ungraded_submissions > 0 && (
-                  <div className="info-row">
-                    <span className="info-label">Student submissions with no grade</span>
-                    <span className="info-val">
-                      <button className="btn btn-outline btn-sm" onClick={() => navigate('assignments')}>
-                        {s.ungraded_submissions} to mark
-                      </button>
-                    </span>
-                  </div>
-                )}
-                {s.unmarked_assessments > 0 && (
-                  <div className="info-row">
-                    <span className="info-label">Assignments and exams with no marks entered</span>
-                    {/* Opens Assignments, as Boswa asked (UAT open issue 4): it
-                        used to open Exams. The count covers both, so Exams has
-                        its own button beside it. */}
-                    <span className="info-val" style={{ display: 'flex', gap: 6 }}>
-                      <button className="btn btn-outline btn-sm" data-testid="dash-unmarked-assignments" onClick={() => navigate('assignments')}>
-                        {s.unmarked_assessments} outstanding
-                      </button>
-                      <button className="btn btn-outline btn-sm" data-testid="dash-unmarked-exams" onClick={() => navigate('exams')}>
-                        Exams
-                      </button>
-                    </span>
-                  </div>
-                )}
-              </div>
-            )}
+            : <OutstandingWork />}
           {s.registers_last_14d === 0 && (
             <div style={{ marginTop: 12, fontSize: 12, color: '#9a6700', background: '#fff8c5', borderRadius: 6, padding: '8px 12px' }}>
               <i className="fa-solid fa-triangle-exclamation" style={{ marginRight: 6 }} />
