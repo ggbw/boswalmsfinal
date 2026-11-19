@@ -27,6 +27,36 @@ import { supabase } from '@/integrations/supabase/client';
 interface Row { student_id: string; assessment_id: string; score: number }
 
 /**
+ * Supabase returns at most 1,000 rows per request. The staff Results, Grades
+ * Overview and Progression pages ask for every class at once — well over 1,000
+ * marks — and a single request was silently cut off there, so those pages saw
+ * only part of the marks: whole modules and new marks were simply missing
+ * (UAT 6.1 "marks not visible"; Results not showing a newly marked student).
+ * Page through, ordered, until a short page says there is no more.
+ */
+const PAGE = 1000;
+const HARD_CAP = 200_000;
+
+/** Every assessment_marks row matching the filter, paged past the 1,000 cap. */
+export async function fetchAssessmentMarks(filter: { classIds?: string[]; studentNumbers?: string[] }): Promise<{
+  data: Row[]; error: { message: string } | null;
+}> {
+  const data: Row[] = [];
+  for (let from = 0; from < HARD_CAP; from += PAGE) {
+    let q = supabase.from('assessment_marks').select('id,student_id,assessment_id,score');
+    if (filter.classIds?.length) q = q.in('class_id', filter.classIds);
+    if (filter.studentNumbers?.length) q = q.in('student_id', filter.studentNumbers);
+    const { data: page, error } = await q.order('id', { ascending: true }).range(from, from + PAGE - 1);
+    if (error) return { data, error };
+    (page || []).forEach((x: Record<string, unknown>) => data.push({
+      student_id: String(x.student_id), assessment_id: String(x.assessment_id), score: Number(x.score),
+    }));
+    if (!page || page.length < PAGE) break;
+  }
+  return { data, error: null };
+}
+
+/**
  * Fetch the assessment marks needed by a screen.
  *
  * Scoped rather than loading everything: `assessment_marks` is the largest table
@@ -55,20 +85,15 @@ export function useAssessmentMarks(filter: { classIds?: string[]; studentNumbers
     let cancelled = false;
     (async () => {
       setLoading(true);
-      let q = supabase.from('assessment_marks').select('student_id,assessment_id,score');
-      if (classKey) q = q.in('class_id', classKey.split(','));
-      if (studentKey) q = q.in('student_id', studentKey.split(','));
-
-      const { data, error: err } = await q;
+      const { data, error: err } = await fetchAssessmentMarks({
+        classIds: classKey ? classKey.split(',') : undefined,
+        studentNumbers: studentKey ? studentKey.split(',') : undefined,
+      });
       if (cancelled) return;
       // Surfaced rather than swallowed — an empty list and a failed query must
       // not look the same, which is what made these faults so hard to place.
       setError(err?.message ?? null);
-      setRows((data || []).map((x: Record<string, unknown>) => ({
-        student_id: String(x.student_id),
-        assessment_id: String(x.assessment_id),
-        score: Number(x.score),
-      })));
+      setRows(data);
       setLoading(false);
     })();
     return () => { cancelled = true; };

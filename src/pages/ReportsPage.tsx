@@ -1,4 +1,5 @@
 import { useState, useEffect, useCallback, useMemo } from "react";
+import { fetchAssessmentMarks } from "@/hooks/useAssessmentMarks";
 import { useApp } from "@/context/AppContext";
 import { supabase } from "@/integrations/supabase/client";
 import { getLecturerClasses } from "@/lib/lecturerHelpers";
@@ -113,10 +114,8 @@ export default function ReportsPage() {
     if (classIds.length === 0) { setOvMarks([]); return; }
     let cancelled = false;
     (async () => {
-      const { data } = await supabase
-        .from("assessment_marks")
-        .select("student_id, assessment_id, score")
-        .in("class_id", classIds);
+      // Paged: every class at once is far over Supabase's 1,000-row cap.
+      const { data } = await fetchAssessmentMarks({ classIds });
       if (!cancelled) {
         setOvMarks(
           (data || []).map((x: any) => ({

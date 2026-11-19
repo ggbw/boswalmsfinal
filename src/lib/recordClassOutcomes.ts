@@ -16,6 +16,7 @@ import { supabase } from '@/integrations/supabase/client';
 import type { DB, Student } from '@/data/db';
 import { buildStudentProgress, loadRegisteredModuleIds } from '@/hooks/useStudentProgress';
 import { recordOutcomes } from '@/lib/recordOutcomes';
+import { fetchAssessmentMarks } from '@/hooks/useAssessmentMarks';
 
 export interface ClassOutcomeResult {
   studentsSettled: number;
@@ -47,10 +48,8 @@ export async function recordClassOutcomes(db: DB, classId: string, decidedBy: st
 
   // Every mark these students hold, across all their modules — the semester
   // verdict needs the whole picture, not just the exam just saved.
-  const { data, error } = await supabase
-    .from('assessment_marks')
-    .select('student_id,assessment_id,score')
-    .in('student_id', students.map(s => s.studentId));
+  // Paged — a class's marks across all its modules can pass the 1,000-row cap.
+  const { data, error } = await fetchAssessmentMarks({ studentNumbers: students.map(s => s.studentId) });
   if (error) return { ...result, errors: [error.message] };
   const scores = new Map<string, number>();
   (data || []).forEach(r => scores.set(`${r.student_id}|${r.assessment_id}`, Number(r.score)));
